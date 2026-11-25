@@ -181,15 +181,16 @@ public sealed class WorkflowAtomicTransitionTests
     {
         private int reads;
         private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly ConcurrentDictionary<DbConnection, byte> initialConnections = new();
         private readonly ConcurrentDictionary<DbCommand, byte> gatedCommands = new();
 
         private void MarkInitial(DbCommand command)
         {
             if (command.Connection is not null &&
-                command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase) &&
-                initialConnections.TryAdd(command.Connection, 0))
-                gatedCommands.TryAdd(command, 0);
+                command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase))
+            {
+                var candidate = Interlocked.Increment(ref reads);
+                if (candidate <= 2) gatedCommands.TryAdd(command, 0);
+            }
         }
 
         public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
@@ -208,8 +209,7 @@ public sealed class WorkflowAtomicTransitionTests
         {
             if (gatedCommands.TryRemove(command, out _))
             {
-                var readNumber = Interlocked.Increment(ref reads);
-                if (readNumber == 2) released.TrySetResult();
+                if (gatedCommands.IsEmpty) released.TrySetResult();
                 await released.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
             }
             return result;
