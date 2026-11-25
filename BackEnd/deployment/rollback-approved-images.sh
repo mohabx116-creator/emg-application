@@ -1,31 +1,85 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
 readonly COMPOSE_FILE="${COMPOSE_FILE:-$SCRIPT_DIR/docker-compose.prod.yml}"
 readonly ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
-readonly STATE_FILE="${STATE_FILE:-/opt/emg/deploy-state/last-success.env}"
+readonly COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must identify the existing production stack}"
+readonly STATE_DIR="${STATE_DIR:-/opt/emg/deploy-state}"
+readonly STATE_FILE="$STATE_DIR/release-state.env"
 readonly LOCK_FILE="${LOCK_FILE:-/run/lock/emg-deploy.lock}"
+readonly PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:?PUBLIC_HEALTH_URL is required}"
+readonly PUBLIC_API_HEALTH_URL="${PUBLIC_API_HEALTH_URL:?PUBLIC_API_HEALTH_URL is required}"
+readonly HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}"
+
+die() { echo "ROLLBACK BLOCKED: $*" >&2; exit 1; }
+read_state_value() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$STATE_FILE"
+}
+wait_http() {
+  local url="$1" deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
+  until curl --connect-timeout 5 --max-time 15 --fail --silent --show-error "$url" >/dev/null; do
+    (( SECONDS < deadline )) || return 1
+    sleep 3
+  done
+}
+service_container() {
+  local service="$1" id project name
+  id="$(docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -q "$service" | tr -d '\r')"
+  [[ -n "$id" && "$id" != *$'\n'* ]] || die "Expected exactly one $service service."
+  project="$(docker inspect "$id" --format '{{index .Config.Labels "com.docker.compose.project"}}')"
+  name="$(docker inspect "$id" --format '{{index .Config.Labels "com.docker.compose.service"}}')"
+  [[ "$project" == "$COMPOSE_PROJECT_NAME" && "$name" == "$service" ]] || die "Container identity mismatch for $service."
+  printf '%s' "$id"
+}
 
 exec 9>"$LOCK_FILE"
-flock -n 9 || { echo 'Another EMG deployment is already running.' >&2; exit 20; }
+flock -n 9 || die 'Another deployment operation is already running.'
+[[ -f "$COMPOSE_FILE" && -f "$ENV_FILE" && -s "$STATE_FILE" ]] || die 'Required deployment files are missing.'
+[[ "$(stat -c '%a' "$STATE_FILE")" == 600 ]] || die 'Release state permissions must be 0600.'
+pending="$(read_state_value pending)"
+[[ "$pending" != true ]] || die 'Cannot rollback while a deployment is pending recovery.'
+current_backend="$(read_state_value current_backend)"
+current_frontend="$(read_state_value current_frontend)"
+previous_backend="$(read_state_value previous_backend)"
+previous_frontend="$(read_state_value previous_frontend)"
+current_source="$(read_state_value current_source)"
+previous_source="$(read_state_value previous_source)"
+[[ "$current_backend" =~ ^[^[:space:]]+(@sha256:[0-9a-fA-F]{64})?$ ]] || die 'Invalid current Backend state.'
+[[ "$current_frontend" =~ ^[^[:space:]]+(@sha256:[0-9a-fA-F]{64})?$ ]] || die 'Invalid current Frontend state.'
+[[ "$previous_backend" =~ ^[^[:space:]]+(@sha256:[0-9a-fA-F]{64})?$ ]] || die 'Invalid previous Backend state.'
+[[ "$previous_frontend" =~ ^[^[:space:]]+(@sha256:[0-9a-fA-F]{64})?$ ]] || die 'Invalid previous Frontend state.'
 
-[[ -s "$STATE_FILE" ]] || { echo 'Rollback state is missing.' >&2; exit 1; }
-# shellcheck disable=SC1090
-source "$STATE_FILE"
-[[ "${previous_backend:-}" =~ ^[^[:space:]]+(@sha256:[0-9a-fA-F]{64})?$ ]] || exit 1
-[[ "${previous_frontend:-}" =~ ^[^[:space:]]+(@sha256:[0-9a-fA-F]{64})?$ ]] || exit 1
+compose=(docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+"${compose[@]}" config >/dev/null || die 'Effective Compose configuration is invalid.'
+service_container api >/dev/null
+service_container frontend >/dev/null
 
-compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
-"${compose[@]}" config >/dev/null
-export BACKEND_IMAGE="$previous_backend"
-export FRONTEND_IMAGE="$previous_frontend"
-export DATABASE_APPLY_MIGRATIONS=false
-export SECURITY_BOOTSTRAP_ADMIN_ENABLED=false
+export BACKEND_IMAGE="$previous_backend" FRONTEND_IMAGE="$previous_frontend"
+export DATABASE_APPLY_MIGRATIONS=false SECURITY_BOOTSTRAP_ADMIN_ENABLED=false
+"${compose[@]}" pull api frontend >/dev/null
 "${compose[@]}" up -d --no-build --no-deps api frontend >/dev/null
+wait_http http://127.0.0.1:5121/api/health || die 'Backend rollback health failed.'
+wait_http http://127.0.0.1:3100/ || die 'Frontend rollback health failed.'
+wait_http "$PUBLIC_API_HEALTH_URL" || die 'Public API rollback health failed.'
+wait_http "$PUBLIC_HEALTH_URL" || die 'Public frontend rollback health failed.'
 
-for endpoint in http://127.0.0.1:5121/api/health http://127.0.0.1:3100/; do
-  curl --fail --silent "$endpoint" >/dev/null || { echo "Rollback health check failed: $endpoint" >&2; exit 1; }
-done
+api_id="$(service_container api)"
+frontend_id="$(service_container frontend)"
+[[ "$(docker inspect "$api_id" --format '{{.Config.Image}}')" == "$previous_backend" ]] || die 'Backend rollback image mismatch.'
+[[ "$(docker inspect "$frontend_id" --format '{{.Config.Image}}')" == "$previous_frontend" ]] || die 'Frontend rollback image mismatch.'
 
-echo 'Application-only rollback passed health checks; database, uploads, keys and Caddy were not changed.'
+temp="$STATE_FILE.tmp.$$"
+umask 077
+{
+  printf 'state_version=1\npending=false\n'
+  printf 'current_backend=%s\ncurrent_frontend=%s\ncurrent_source=%s\n' "$previous_backend" "$previous_frontend" "$previous_source"
+  printf 'previous_backend=%s\nprevious_frontend=%s\nprevious_source=%s\n' "$current_backend" "$current_frontend" "$current_source"
+  printf 'candidate_backend=%s\ncandidate_frontend=%s\ncandidate_source=%s\n' "$previous_backend" "$previous_frontend" "$previous_source"
+  printf 'result=rollback-success\ndeployed_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+} > "$temp"
+chmod 600 "$temp"
+mv -f -- "$temp" "$STATE_FILE"
+echo 'ROLLBACK: SUCCESS'

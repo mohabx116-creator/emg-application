@@ -181,6 +181,7 @@ public sealed class WorkflowAtomicTransitionTests
     {
         private int reads;
         private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ConcurrentDictionary<DbCommand, byte> observedCommands = new();
         private readonly ConcurrentDictionary<DbCommand, byte> gatedCommands = new();
 
         private void MarkInitial(DbCommand command)
@@ -188,6 +189,11 @@ public sealed class WorkflowAtomicTransitionTests
             if (command.Connection is not null &&
                 command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase))
             {
+                // EF may invoke both sync and async interception hooks for the same
+                // command. Count each command once so the barrier cannot release
+                // after one request's duplicate callback while the other request
+                // has not observed the original row yet.
+                if (!observedCommands.TryAdd(command, 0)) return;
                 var candidate = Interlocked.Increment(ref reads);
                 if (candidate <= 2) gatedCommands.TryAdd(command, 0);
             }
