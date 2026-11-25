@@ -181,34 +181,38 @@ public sealed class WorkflowAtomicTransitionTests
     {
         private int reads;
         private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ConcurrentDictionary<DbConnection, byte> initialConnections = new();
+        private readonly ConcurrentDictionary<DbCommand, byte> gatedCommands = new();
+
+        private void MarkInitial(DbCommand command)
+        {
+            if (command.Connection is not null &&
+                command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase) &&
+                initialConnections.TryAdd(command.Connection, 0))
+                gatedCommands.TryAdd(command, 0);
+        }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            MarkInitial(command);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            MarkInitial(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
         public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
         {
-            if (IsInitialStatusRead(command.CommandText, entityType))
+            if (gatedCommands.TryRemove(command, out _))
             {
                 var readNumber = Interlocked.Increment(ref reads);
                 if (readNumber == 2) released.TrySetResult();
                 await released.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
             }
             return result;
-        }
-
-        private static bool IsInitialStatusRead(string sql, string type)
-        {
-            if (!sql.Contains($"\"{Table(type)}\"", StringComparison.OrdinalIgnoreCase) ||
-                !sql.Contains("LIMIT 1", StringComparison.OrdinalIgnoreCase) ||
-                !sql.Contains("\"ProjectId\"", StringComparison.OrdinalIgnoreCase) ||
-                !sql.Contains("\"Status\"", StringComparison.OrdinalIgnoreCase) ||
-                !sql.Contains("\"Id\"", StringComparison.OrdinalIgnoreCase) ||
-                (type == "supplier-supply" &&
-                 (!sql.Contains("\"CreatedByUserId\"", StringComparison.OrdinalIgnoreCase) ||
-                  sql.Contains("\"ItemName\"", StringComparison.OrdinalIgnoreCase) ||
-                  sql.Contains("\"Quantity\"", StringComparison.OrdinalIgnoreCase) ||
-                  sql.Contains("\"SupplyType\"", StringComparison.OrdinalIgnoreCase) ||
-                  sql.Contains("\"SupplierId\"", StringComparison.OrdinalIgnoreCase))))
-                return false;
-
-            return sql.Contains("\"TotalAmount\"", StringComparison.OrdinalIgnoreCase) ||
-                sql.Contains("\"Amount\"", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string Table(string type) => type switch
