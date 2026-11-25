@@ -183,13 +183,26 @@ public sealed class WorkflowAtomicTransitionTests
         private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
         {
-            if (command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase) && command.CommandText.Contains("LIMIT 1", StringComparison.OrdinalIgnoreCase))
+            if (IsInitialStatusRead(command.CommandText, entityType))
             {
                 var readNumber = Interlocked.Increment(ref reads);
                 if (readNumber == 2) released.TrySetResult();
                 await released.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
             }
             return result;
+        }
+
+        private static bool IsInitialStatusRead(string sql, string type)
+        {
+            if (!sql.Contains($"\"{Table(type)}\"", StringComparison.OrdinalIgnoreCase) ||
+                !sql.Contains("LIMIT 1", StringComparison.OrdinalIgnoreCase) ||
+                !sql.Contains("\"ProjectId\"", StringComparison.OrdinalIgnoreCase) ||
+                !sql.Contains("\"Status\"", StringComparison.OrdinalIgnoreCase) ||
+                !sql.Contains("\"Id\"", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return sql.Contains("\"TotalAmount\"", StringComparison.OrdinalIgnoreCase) ||
+                sql.Contains("\"Amount\"", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string Table(string type) => type switch
