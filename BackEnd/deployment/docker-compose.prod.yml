@@ -17,7 +17,7 @@ services:
       retries: 12
 
   api:
-    image: emg-dep03b-api:20261124-forwarded
+    image: ${BACKEND_IMAGE:-emg-dep03b-api:20261124-forwarded}
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
@@ -26,6 +26,7 @@ services:
       Jwt__Issuer: ${JWT_ISSUER:-EMG.Api}
       Jwt__Audience: ${JWT_AUDIENCE:-EMG.FrontEnd}
       Database__ApplyMigrations: ${DATABASE_APPLY_MIGRATIONS:-false}
+      Security__BootstrapAdmin__Enabled: ${SECURITY_BOOTSTRAP_ADMIN_ENABLED:-false}
       DataProtection__PersistKeys: ${DATAPROTECTION_PERSIST_KEYS:-true}
       DataProtection__KeyDirectory: /app/data-protection-keys
       ForwardedHeaders__TrustedProxies__0: ${FORWARDED_HEADERS_TRUSTED_PROXY:?FORWARDED_HEADERS_TRUSTED_PROXY is required}
@@ -49,7 +50,7 @@ services:
       - "127.0.0.1:5121:8080"
 
   frontend:
-    image: emg-dep04-frontend:20261124-csrf-fix
+    image: ${FRONTEND_IMAGE:-emg-dep04-frontend:20261124-csrf-fix}
     restart: unless-stopped
     depends_on:
       api:
