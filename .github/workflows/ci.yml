@@ -57,9 +57,9 @@ jobs:
 
       - name: PostgreSQL integration tests
         env:
-          ConnectionStrings__EmgDb: Host=localhost;Port=5432;Database=emg_ci;Username=emg_ci;Password=emg_ci_password
-          EMG_WORKFLOW_QA_CONNECTION: Host=localhost;Port=5432;Database=emg_ci;Username=emg_ci;Password=emg_ci_password
-          EMG_HISTORICAL_QA_CONNECTION: Host=localhost;Port=5432;Database=emg_ci;Username=emg_ci;Password=emg_ci_password
+          ConnectionStrings__EmgDb: Host=127.0.0.1;Port=5432;Database=emg_ci;Username=emg_ci;Password=emg_ci_password
+          EMG_WORKFLOW_QA_CONNECTION: Host=127.0.0.1;Port=5432;Database=emg_ci;Username=emg_ci;Password=emg_ci_password
+          EMG_HISTORICAL_QA_CONNECTION: Host=127.0.0.1;Port=5432;Database=emg_ci;Username=emg_ci;Password=emg_ci_password
         run: >-
           dotnet test EMG.slnx --no-restore --no-build --configuration Release
           --logger "trx;LogFileName=postgres-integration.trx"
