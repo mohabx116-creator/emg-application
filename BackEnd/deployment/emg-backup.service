@@ -1,0 +1,19 @@
+[Unit]
+Description=EMG complete encrypted recovery backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/emg/backup.env
+ExecStart=/opt/emg/backup/emg-backup-run.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/emg/backups /opt/emg/backup-state
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

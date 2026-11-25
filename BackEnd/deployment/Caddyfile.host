@@ -1,0 +1,17 @@
+emg-juzor.online {
+    encode gzip
+
+    @api path /api /api/*
+    handle @api {
+        reverse_proxy 127.0.0.1:5121
+    }
+
+    @profile-images path /profile-images /profile-images/*
+    handle @profile-images {
+        reverse_proxy 127.0.0.1:5121
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:3100
+    }
+}

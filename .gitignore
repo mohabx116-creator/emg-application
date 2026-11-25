@@ -1,0 +1,61 @@
+# Build and dependency output
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Local runtime and verification output
+.rc-runtime/
+**/.rc-runtime/
+**/build-verify/
+**/verification*/
+**/test-artifacts/
+**/.build-check*/
+**/.obj-check*/
+**/test-artifacts*/
+**/verification*/
+**/artifact-runtime/
+**/*.log
+
+# Local secrets and environment overrides
+**/.env
+**/.env.*
+!**/.env.example
+**/appsettings.Development.json
+**/appsettings*.Local.json
+**/*.pfx
+**/*.key
+**/*.pem
+**/*-recovery-key*.txt
+
+# Generated uploads and disposable QA output
+**/uploads/
+**/artifacts/
+
+# Disposable QA/test outputs and local history recovery bundles
+**/qa-runtime/
+**/*-qa-runtime*/
+**/qa-uploads/
+**/qa-data/
+**/test-results/
+**/TestResults/
+**/*.trx
+docs/recovery/.git-history/
+
+# Local backup and recovery material; never publish encrypted or plaintext copies
+**/EMG-backups/
+**/backups/
+**/*.dump
+**/*.dump.*
+**/*.age
+**/*.tar.gz
+**/*.tar.gz.age
+**/database-backups/
+
+# Generated import-audit reports; keep audit tools and project files tracked
+BackEnd/tools/ImportPlanAudit/audit-output*.txt
+BackEnd/tools/WorkbookCatalog/audit-output*.txt
+
+# Excel editor lock files are transient and must remain outside source control
+**/~$*

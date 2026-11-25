@@ -1,0 +1,11 @@
+[Unit]
+Description=EMG weekly backup timer
+
+[Timer]
+OnCalendar=Fri *-*-* 03:00:00 Africa/Cairo
+Persistent=true
+RandomizedDelaySec=10m
+Unit=emg-weekly-backup.service
+
+[Install]
+WantedBy=timers.target

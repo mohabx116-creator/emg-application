@@ -1,0 +1,434 @@
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  Grid,
+  IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography
+} from '@mui/material';
+import { IconCheck, IconPaperclip, IconPlus, IconSend, IconTransfer, IconX } from '@tabler/icons-react';
+import { useParams } from 'react-router-dom';
+import AttachmentGallery from 'ui-component/emg/AttachmentGallery';
+import SmartEntryAdvisor from 'ui-component/emg/SmartEntryAdvisor';
+import {
+  createEmgExcavation,
+  EmgProject,
+  EmgSupplier,
+  executeEmgWorkflow,
+  getEmgExcavation,
+  getEmgProject,
+  getEmgSuppliers,
+  getEmgWorkflowAudit,
+  uploadEmgAttachment
+} from 'api/emg';
+import type { EmgExcavation } from 'api/emg';
+import useAuth from 'hooks/useAuth';
+import WorkSectionShell, { formatWorkMoney, WorkSectionSkeleton, WorkStatusChip } from '../WorkSectionShell';
+
+const today = new Date().toISOString().slice(0, 10);
+
+export default function EmgExcavation() {
+  const { projectId } = useParams();
+  const id = Number(projectId);
+  const { user } = useAuth();
+  const canCreate = !user?.permissions || user.permissions.includes('excavation.create') || user.permissions.includes('excavation.manage');
+  const canSubmit = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('excavation.submit');
+  const canReview = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('excavation.approve');
+  const canPost = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('excavation.post');
+
+  const [project, setProject] = useState<EmgProject | null>(null);
+  const [records, setRecords] = useState<EmgExcavation[]>([]);
+  const [suppliers, setSuppliers] = useState<EmgSupplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [message, setMessage] = useState<{ severity: 'success' | 'warning' | 'error'; text: string } | null>(null);
+  const [workflowBusy, setWorkflowBusy] = useState<number | null>(null);
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [attachmentTarget, setAttachmentTarget] = useState<number | null>(null);
+
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+
+  const [form, setForm] = useState({
+    calculationMethod: 'كمية مباشرة',
+    directQuantity: '',
+    length: '',
+    width: '',
+    depth: '',
+    unit: 'م3',
+    unitPrice: '',
+    supplierId: '',
+    soilType: '',
+    description: '',
+    excavationDate: today,
+    notes: ''
+  });
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([getEmgProject(id), getEmgExcavation(id), getEmgSuppliers().catch(() => [])])
+      .then(([p, r, s]) => {
+        setProject(p);
+        setRecords(r);
+        setSuppliers(s);
+      })
+      .catch(() => setMessage({ severity: 'error', text: 'تعذر تحميل بيانات أعمال الحفر.' }))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (Number.isInteger(id)) load();
+  }, [id]);
+
+  const calculatedQuantity = useMemo(() => {
+    const length = Number(form.length) || 0;
+    const width = Number(form.width) || 0;
+    const depth = Number(form.depth) || 0;
+    if (form.calculationMethod === 'مساحة') return length * width;
+    if (form.calculationMethod === 'حجم') return length * width * depth;
+    return Number(form.directQuantity) || 0;
+  }, [form]);
+
+  const calculatedTotal = calculatedQuantity * (Number(form.unitPrice) || 0);
+  const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    try {
+      const created = await createEmgExcavation({
+        projectId: id,
+        supplierId: form.supplierId ? Number(form.supplierId) : null,
+        calculationMethod: form.calculationMethod,
+        directQuantity: form.directQuantity ? Number(form.directQuantity) : null,
+        length: form.length ? Number(form.length) : null,
+        width: form.width ? Number(form.width) : null,
+        depth: form.depth ? Number(form.depth) : null,
+        unit: form.unit,
+        unitPrice: Number(form.unitPrice),
+        soilType: form.soilType || null,
+        description: form.description,
+        excavationDate: form.excavationDate,
+        notes: form.notes || null
+      });
+      let severity: 'success' | 'warning' = 'success';
+      let text = 'تم تسجيل أعمال الحفر بنجاح.';
+      if (attachment) {
+        try {
+          await uploadEmgAttachment('excavation', created.id, attachment);
+          text = 'تم تسجيل أعمال الحفر ورفع المرفق بنجاح.';
+        } catch {
+          severity = 'warning';
+          text = 'تم تسجيل أعمال الحفر، لكن تعذر رفع المرفق.';
+        }
+      }
+      setMessage({ severity, text });
+      setAttachment(null);
+      setCreateOpen(false);
+      setForm({ ...form, directQuantity: '', length: '', width: '', depth: '', unitPrice: '', soilType: '', description: '', notes: '' });
+      load();
+    } catch (error: any) {
+      setMessage({ severity: 'error', text: error?.message || 'تعذر تسجيل أعمال الحفر.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const executeRecordAction = async (record: EmgExcavation, action: string) => {
+    setWorkflowBusy(record.id);
+    setMessage(null);
+    try {
+      if (action === 'اعتماد' || action === 'ترحيل') {
+        const audit = await getEmgWorkflowAudit('excavation', record.id);
+        if (audit.blockingChecks.length > 0) {
+          setMessage({ severity: 'error', text: audit.blockingChecks.join(' · ') });
+          return;
+        }
+      }
+      await executeEmgWorkflow('excavation', record.id, action);
+      setMessage({ severity: 'success', text: `تم تنفيذ إجراء ${action} على سجل الحفر.` });
+      load();
+    } catch (error: any) {
+      setMessage({ severity: 'error', text: error?.message || 'الإجراء غير مسموح للحالة الحالية أو لا تملك الصلاحية.' });
+    } finally {
+      setWorkflowBusy(null);
+    }
+  };
+
+  const availableStatuses = useMemo(() => Array.from(new Set(records.map((r) => r.status).filter(Boolean))), [records]);
+  const totalAmount = useMemo(() => records.reduce((sum, r) => sum + (r.totalAmount || 0), 0), [records]);
+  const approvedCount = useMemo(() => records.filter((r) => r.status === 'معتمد' || r.status === 'مرحّل').length, [records]);
+  const pendingCount = records.length - approvedCount;
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return records.filter((r) => {
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+      if (!q) return true;
+      return `${r.description} ${r.soilType || ''} ${r.supplierName || ''} ${r.calculationMethod || ''} ${r.notes || ''}`
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [records, search, statusFilter]);
+
+  const paginated = useMemo(() => filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage), [filtered, page, rowsPerPage]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search, statusFilter]);
+
+  if (loading && !project) return <WorkSectionSkeleton />;
+  if (!project) return <Alert severity="error">المشروع غير موجود أو لا تملك صلاحية الوصول إليه.</Alert>;
+
+  const createForm = (
+    <Box component="form" onSubmit={submit}>
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <FormControl fullWidth size="small">
+            <InputLabel>طريقة الحساب</InputLabel>
+            <Select value={form.calculationMethod} label="طريقة الحساب" onChange={(e) => update('calculationMethod', e.target.value)}>
+              <MenuItem value="كمية مباشرة">كمية مباشرة</MenuItem>
+              <MenuItem value="مساحة">مساحة (طول × عرض)</MenuItem>
+              <MenuItem value="حجم">حجم (طول × عرض × عمق)</MenuItem>
+            </Select>
+          </FormControl>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <TextField fullWidth size="small" required type="date" label="تاريخ الحفر" value={form.excavationDate} onChange={(e) => update('excavationDate', e.target.value)} InputLabelProps={{ shrink: true }} />
+        </Grid>
+
+        <Grid size={12}>
+          <TextField fullWidth size="small" required label="الوصف" value={form.description} onChange={(e) => update('description', e.target.value)} />
+        </Grid>
+
+        <Grid size={12}>
+          <SmartEntryAdvisor
+            projectId={id}
+            description={form.description}
+            unit={form.unit}
+            quantity={calculatedQuantity || null}
+            unitPrice={form.unitPrice ? Number(form.unitPrice) : null}
+            onApply={(s) => {
+              const matched = s.matchedSupplierName ? suppliers.find((x) => x.name === s.matchedSupplierName) : undefined;
+              setForm((cur) => ({
+                ...cur,
+                unit: s.suggestedUnit || cur.unit,
+                supplierId: matched ? String(matched.id) : cur.supplierId
+              }));
+            }}
+          />
+        </Grid>
+
+        {form.calculationMethod === 'كمية مباشرة' ? (
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField fullWidth size="small" required type="number" label="الكمية المباشرة" value={form.directQuantity} onChange={(e) => update('directQuantity', e.target.value)} />
+          </Grid>
+        ) : (
+          <>
+            <Grid size={{ xs: 4 }}>
+              <TextField fullWidth size="small" required type="number" label="الطول" value={form.length} onChange={(e) => update('length', e.target.value)} />
+            </Grid>
+            <Grid size={{ xs: 4 }}>
+              <TextField fullWidth size="small" required type="number" label="العرض" value={form.width} onChange={(e) => update('width', e.target.value)} />
+            </Grid>
+            {form.calculationMethod === 'حجم' && (
+              <Grid size={{ xs: 4 }}>
+                <TextField fullWidth size="small" required type="number" label="العمق" value={form.depth} onChange={(e) => update('depth', e.target.value)} />
+              </Grid>
+            )}
+          </>
+        )}
+
+        <Grid size={{ xs: 6, sm: 4 }}>
+          <TextField fullWidth size="small" required label="الوحدة" value={form.unit} onChange={(e) => update('unit', e.target.value)} />
+        </Grid>
+        <Grid size={{ xs: 6, sm: 4 }}>
+          <TextField fullWidth size="small" required type="number" label="سعر الوحدة" value={form.unitPrice} onChange={(e) => update('unitPrice', e.target.value)} />
+        </Grid>
+
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <FormControl fullWidth size="small">
+            <InputLabel>المقاول / المورد</InputLabel>
+            <Select value={form.supplierId} label="المقاول / المورد" onChange={(e) => update('supplierId', e.target.value)}>
+              <MenuItem value="">بدون مقاول محدد</MenuItem>
+              {suppliers.filter((s) => s.isActive).map((s) => (
+                <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6 }}>
+          <TextField fullWidth size="small" label="نوع التربة" value={form.soilType} onChange={(e) => update('soilType', e.target.value)} />
+        </Grid>
+
+        <Grid size={12}>
+          <Box sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'primary.light', bgcolor: 'rgba(30, 136, 229, 0.06)' }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Box>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>الكمية المحسوبة</Typography>
+                <Typography variant="h4" fontWeight={800}>{calculatedQuantity} {form.unit}</Typography>
+              </Box>
+              <Box sx={{ textAlign: 'end' }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>الإجمالي المحسوب</Typography>
+                <Typography variant="h3" color="primary.main" fontWeight={900}>{formatWorkMoney(calculatedTotal)}</Typography>
+              </Box>
+            </Stack>
+          </Box>
+        </Grid>
+
+        <Grid size={12}>
+          <TextField fullWidth size="small" multiline minRows={2} label="ملاحظات" value={form.notes} onChange={(e) => update('notes', e.target.value)} />
+        </Grid>
+
+        <Grid size={12}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} spacing={1.5}>
+            <Button component="label" size="small" variant="outlined" startIcon={<IconPaperclip size={16} />} sx={{ borderRadius: 2 }}>
+              {attachment ? `المرفق: ${attachment.name}` : 'إرفاق مستند أو قياس (اختياري)'}
+              <input hidden type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.doc,.docx" onChange={(e) => setAttachment(e.target.files?.[0] || null)} />
+            </Button>
+            <Stack direction="row" spacing={1.25} justifyContent="flex-end">
+              <Button onClick={() => setCreateOpen(false)} disabled={saving} color="inherit" sx={{ borderRadius: 2, fontWeight: 700 }}>إلغاء</Button>
+              <Button type="submit" disabled={saving} variant="contained" color="secondary" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <IconPlus size={18} />} sx={{ borderRadius: 2, fontWeight: 700, px: 3 }}>
+                {saving ? 'جاري الحفظ...' : 'تسجيل الحفر'}
+              </Button>
+            </Stack>
+          </Stack>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+
+  return (
+    <>
+      <WorkSectionShell
+        project={project}
+        activeSection="excavation"
+        title="أعمال الحفر"
+        addButtonLabel="تسجيل عمل حفر جديد"
+        canCreate={canCreate}
+        onOpenCreate={() => setCreateOpen(true)}
+        onRefresh={load}
+        loading={loading}
+        message={message}
+        onCloseMessage={() => setMessage(null)}
+        totalAmount={totalAmount}
+        totalCount={records.length}
+        approvedCount={approvedCount}
+        pendingCount={pendingCount}
+        search={search}
+        onSearchChange={setSearch}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+        availableStatuses={availableStatuses}
+        filteredCount={filtered.length}
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={setPage}
+        onRowsPerPageChange={setRowsPerPage}
+        createModalOpen={createOpen}
+        createModalTitle="تسجيل أعمال حفر جديدة"
+        onCloseCreateModal={() => !saving && setCreateOpen(false)}
+        createModalContent={createForm}
+      >
+        <TableContainer sx={{ maxHeight: 580, overflowX: 'auto' }}>
+          <Table stickyHeader size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 800 }}>التاريخ</TableCell>
+                <TableCell sx={{ fontWeight: 800 }}>الوصف ونوع التربة</TableCell>
+                <TableCell sx={{ fontWeight: 800 }}>المقاول / المورد</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 800 }}>الكمية × السعر</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 800 }}>الإجمالي</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 800 }}>الحالة</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 800 }}>الإجراءات</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {paginated.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                    <Typography color="text.secondary" fontWeight={600}>
+                      {search || statusFilter !== 'all' ? 'لا توجد سجلات حفر مطابقة.' : 'لا توجد أعمال حفر مسجلة حتى الآن.'}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginated.map((record) => (
+                  <TableRow key={record.id} hover>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.excavationDate).toLocaleDateString('ar-EG')}</TableCell>
+                    <TableCell sx={{ maxWidth: 300 }}>
+                      <Typography variant="body2" fontWeight={700}>{record.description}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {record.calculationMethod}{record.soilType ? ` · ${record.soilType}` : ''}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{record.supplierName || '—'}</TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      <Chip size="small" variant="outlined" label={`${record.calculatedQuantity} ${record.unit}`} sx={{ fontWeight: 600 }} />
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        سعر: {formatWorkMoney(record.unitPrice)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                      {formatWorkMoney(record.totalAmount)}
+                    </TableCell>
+                    <TableCell align="center"><WorkStatusChip status={record.status} /></TableCell>
+                    <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
+                      <Stack direction="row" spacing={0.5} justifyContent="center">
+                        <Button size="small" onClick={() => setAttachmentTarget(record.id)} startIcon={<IconPaperclip size={14} />}>المرفقات</Button>
+                        {canSubmit && (record.status === 'مسودة' || record.status === 'مرفوض') && (
+                          <Button size="small" disabled={workflowBusy === record.id} onClick={() => executeRecordAction(record, 'إرسال')} startIcon={<IconSend size={14} />}>إرسال</Button>
+                        )}
+                        {canReview && record.status === 'للمراجعة' && (
+                          <>
+                            <Button size="small" color="success" disabled={workflowBusy === record.id} onClick={() => executeRecordAction(record, 'اعتماد')} startIcon={<IconCheck size={14} />}>اعتماد</Button>
+                            <Button size="small" color="error" disabled={workflowBusy === record.id} onClick={() => executeRecordAction(record, 'رفض')} startIcon={<IconX size={14} />}>رفض</Button>
+                          </>
+                        )}
+                        {canPost && record.status === 'معتمد' && (
+                          <Button size="small" color="secondary" disabled={workflowBusy === record.id} onClick={() => executeRecordAction(record, 'ترحيل')} startIcon={<IconTransfer size={14} />}>ترحيل</Button>
+                        )}
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </WorkSectionShell>
+
+      <Dialog open={attachmentTarget !== null} onClose={() => setAttachmentTarget(null)} fullWidth maxWidth="md">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          مرفقات سجل الحفر
+          <IconButton onClick={() => setAttachmentTarget(null)} size="small"><IconX size={18} /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {attachmentTarget !== null && <AttachmentGallery entityType="excavation" entityId={attachmentTarget} />}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

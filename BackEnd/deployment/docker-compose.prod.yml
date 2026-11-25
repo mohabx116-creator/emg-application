@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-emg}
+      POSTGRES_USER: ${POSTGRES_USER:-emg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - emg_postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    image: emg-dep03b-api:20261124-forwarded
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__EmgDb: Host=postgres;Port=5432;Database=${POSTGRES_DB:-emg};Username=${POSTGRES_USER:-emg};Password=${POSTGRES_PASSWORD}
+      Jwt__Key: ${JWT_KEY:?JWT_KEY is required}
+      Jwt__Issuer: ${JWT_ISSUER:-EMG.Api}
+      Jwt__Audience: ${JWT_AUDIENCE:-EMG.FrontEnd}
+      Database__ApplyMigrations: ${DATABASE_APPLY_MIGRATIONS:-false}
+      DataProtection__PersistKeys: ${DATAPROTECTION_PERSIST_KEYS:-true}
+      DataProtection__KeyDirectory: /app/data-protection-keys
+      ForwardedHeaders__TrustedProxies__0: ${FORWARDED_HEADERS_TRUSTED_PROXY:?FORWARDED_HEADERS_TRUSTED_PROXY is required}
+      Cors__Origins__0: ${CORS_ORIGIN:-https://${EMG_DOMAIN:?EMG_DOMAIN is required}}
+    volumes:
+      - emg_uploads:/app/uploads
+      - data_protection_keys:/app/data-protection-keys
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8080"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "127.0.0.1:5121:8080"
+
+  frontend:
+    image: emg-dep04-frontend:20261124-csrf-fix
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    expose:
+      - "80"
+    ports:
+      - "127.0.0.1:3100:80"
+    networks:
+      - internal
+
+volumes:
+  emg_postgres_data:
+  emg_uploads:
+  data_protection_keys:
+
+networks:
+  internal:

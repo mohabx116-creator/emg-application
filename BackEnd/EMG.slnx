@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EMG.Domain/EMG.Domain.csproj" />
+    <Project Path="src/EMG.Infrastructure/EMG.Infrastructure.csproj" />
+    <Project Path="src/EMG.Shared/EMG.Shared.csproj" />
+    <Project Path="src/EMG.WebApi/EMG.WebApi.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EMG.WebApi.Tests/EMG.WebApi.Tests.csproj" />
+  </Folder>
+</Solution>

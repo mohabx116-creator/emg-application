@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: emg-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-emg}
+      POSTGRES_USER: ${POSTGRES_USER:-emg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports:
+      - "5432:5432"
+    volumes:
+      - emg_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-emg} -d ${POSTGRES_DB:-emg}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  emg_postgres_data:

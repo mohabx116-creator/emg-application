@@ -1,0 +1,11 @@
+[Unit]
+Description=EMG monthly backup timer
+
+[Timer]
+OnCalendar=*-*-01 03:00:00 Africa/Cairo
+Persistent=true
+RandomizedDelaySec=10m
+Unit=emg-monthly-backup.service
+
+[Install]
+WantedBy=timers.target

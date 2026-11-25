@@ -1,0 +1,8 @@
+[Unit]
+Description=EMG weekly encrypted backup
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/emg/backup.env
+Environment=BACKUP_CATEGORY=weekly
+ExecStart=/opt/emg/backup/emg-backup-run.sh
