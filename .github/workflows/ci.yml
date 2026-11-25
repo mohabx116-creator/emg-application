@@ -75,7 +75,7 @@ jobs:
           pg_container="$(docker ps --filter ancestor=postgres:16.16 --format '{{.ID}}' | head -n 1)"
           test -n "$pg_container"
           docker exec "$pg_container" psql -v ON_ERROR_STOP=1 -U emg_ci -d emg_qa_stg01c -c \
-            "INSERT INTO projects (id, name, code, status, office_share_percentage, created_at_utc) VALUES (3, 'CI historical QA', 'CI-HISTORICAL-QA', 'نشط', 0, NOW()) ON CONFLICT (id) DO NOTHING;"
+            "INSERT INTO projects (\"Id\", \"Name\", \"Code\", \"Status\", \"OfficeSharePercentage\", \"CreatedAtUtc\") VALUES (3, 'CI historical QA', 'CI-HISTORICAL-QA', 'نشط', 0, NOW()) ON CONFLICT (\"Id\") DO NOTHING;"
 
       - name: Historical rollback integration test
         env:
