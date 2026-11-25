@@ -18,6 +18,7 @@ jobs:
     permissions:
       contents: read
       checks: read
+      actions: read
       packages: write
     env:
       REGISTRY: ghcr.io
@@ -31,17 +32,21 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Verify successful CI for this exact commit
+      - name: Verify successful ci.yml run for this exact commit
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          api="repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs"
-          backend="$(gh api "$api" --jq '[.check_runs[] | select(.name == "Backend build and tests" and .conclusion == "success")] | length')"
-          frontend="$(gh api "$api" --jq '[.check_runs[] | select(.name == "Frontend validation" and .conclusion == "success")] | length')"
-          test "$backend" -ge 1
-          test "$frontend" -ge 1
+          runs="repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=completed&per_page=100"
+          ci_run_id="$(gh api "$runs" --jq '[.workflow_runs[] | select(.status == "completed" and .conclusion == "success")] | sort_by(.completed_at) | last | .id // empty')"
+          test -n "$ci_run_id"
+          jobs="repos/${GITHUB_REPOSITORY}/actions/runs/${ci_run_id}/jobs?per_page=100"
+          backend="$(gh api "$jobs" --jq '[.jobs[] | select(.name == "Backend build and tests" and .status == "completed" and .conclusion == "success")] | length')"
+          frontend="$(gh api "$jobs" --jq '[.jobs[] | select(.name == "Frontend validation" and .status == "completed" and .conclusion == "success")] | length')"
+          test "$backend" -eq 1
+          test "$frontend" -eq 1
+          printf 'ci_run_id=%s\n' "$ci_run_id" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -56,28 +61,52 @@ jobs:
       - name: Compute immutable image tag
         id: image
         shell: bash
-        run: echo "tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        run: printf 'tag=sha-%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Reject existing immutable tags
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Inspect existing commit-tagged images
+        id: existing
         shell: bash
         run: |
           set -euo pipefail
           tag="sha-${GITHUB_SHA}"
-          for image in backend frontend; do
-            status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-              --user "${GITHUB_ACTOR}:${GHCR_TOKEN}" \
-              --header 'Accept: application/vnd.oci.image.index.v1+json' \
-              "https://ghcr.io/v2/mohabx116-creator/emg-application/${image}/manifests/${tag}")"
-            if [ "$status" != 404 ]; then
-              echo "Expected an absent tag for ${image}, received HTTP ${status}."
+          inspect_image() {
+            image="$1"
+            ref="${IMAGE_PREFIX}/${image}:${tag}"
+            set +e
+            output="$(docker pull "$ref" 2>&1)"
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              repo_digest="$(docker image inspect "$ref" --format '{{index .RepoDigests 0}}')"
+              digest="${repo_digest##*@}"
+              revision="$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+              os="$(docker image inspect "$ref" --format '{{.Os}}')"
+              arch="$(docker image inspect "$ref" --format '{{.Architecture}}')"
+              [[ "$digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]
+              test "$repo_digest" = "${IMAGE_PREFIX}/${image}@${digest}"
+              test "$revision" = "$GITHUB_SHA"
+              test "$os" = linux
+              test "$arch" = amd64
+              printf '%s_exists=true\n%s_digest=%s\n' "$image" "$image" "$digest" >> "$GITHUB_OUTPUT"
+              return
+            fi
+            if printf '%s' "$output" | grep -Eiq 'manifest unknown|manifest not found|name unknown'; then
+              printf '%s_exists=false\n' "$image" >> "$GITHUB_OUTPUT"
+              return
+            fi
+            if printf '%s' "$output" | grep -Eiq 'unauthorized|authentication required|denied|forbidden'; then
+              echo "GHCR authentication or authorization failed for ${image}."
               exit 1
             fi
-          done
+            echo "GHCR registry or network failure while inspecting ${image}."
+            exit 1
+          }
+          inspect_image backend
+          inspect_image frontend
 
       - name: Build and publish Backend image
         id: backend
+        if: steps.existing.outputs.backend_exists != 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./BackEnd
@@ -94,6 +123,7 @@ jobs:
 
       - name: Build and publish Frontend image
         id: frontend
+        if: steps.existing.outputs.frontend_exists != 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./FrontEnd
@@ -108,12 +138,41 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.image.outputs.tag }}
 
-      - name: Record published digests
+      - name: Validate both published images
+        id: final
         shell: bash
         run: |
-          {
-            echo '### GHCR image digests'
-            echo "- Source commit: `${GITHUB_SHA}`"
-            echo "- Backend: `${{ steps.backend.outputs.digest }}`"
-            echo "- Frontend: `${{ steps.frontend.outputs.digest }}`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          tag="sha-${GITHUB_SHA}"
+          verify_image() {
+            image="$1"
+            ref="${IMAGE_PREFIX}/${image}:${tag}"
+            docker pull "$ref" >/dev/null
+            repo_digest="$(docker image inspect "$ref" --format '{{index .RepoDigests 0}}')"
+            digest="${repo_digest##*@}"
+            revision="$(docker image inspect "$ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            os="$(docker image inspect "$ref" --format '{{.Os}}')"
+            arch="$(docker image inspect "$ref" --format '{{.Architecture}}')"
+            [[ "$digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]
+            test "$repo_digest" = "${IMAGE_PREFIX}/${image}@${digest}"
+            test "$revision" = "$GITHUB_SHA"
+            test "$os" = linux
+            test "$arch" = amd64
+            printf '%s_digest=%s\n' "$image" "$digest" >> "$GITHUB_OUTPUT"
+          }
+          verify_image backend
+          verify_image frontend
+
+      - name: Record publication metadata
+        shell: bash
+        run: |
+          build_timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          printf '%s\n' \
+            '### GHCR image publication' \
+            "- Source commit: \`${GITHUB_SHA}\`" \
+            "- CI run ID: \`${ci_run_id}\`" \
+            "- Publication run ID: \`${GITHUB_RUN_ID}\`" \
+            "- Build timestamp: \`${build_timestamp}\`" \
+            "- Backend: \`${IMAGE_PREFIX}/backend@${{ steps.final.outputs.backend_digest }}\`" \
+            "- Frontend: \`${IMAGE_PREFIX}/frontend@${{ steps.final.outputs.frontend_digest }}\`" \
+            >> "$GITHUB_STEP_SUMMARY"
