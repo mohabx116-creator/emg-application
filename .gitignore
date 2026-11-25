@@ -59,3 +59,19 @@ BackEnd/tools/WorkbookCatalog/audit-output*.txt
 
 # Excel editor lock files are transient and must remain outside source control
 **/~$*
+
+# Private business evidence and local review material; never publish
+docs/اعمال المواقع/
+docs/اعمال المواقع.rar
+BackEnd/tools/ImportPlanAudit/audit-output*.txt
+BackEnd/tools/WorkbookCatalog/audit-output*.txt
+FrontEnd/PHASE31_*.md
+FrontEnd/apply_phase32_fixes.cjs
+FrontEnd/audit_visual_and_a11y.cjs
+FrontEnd/capture_phase31_authentic.cjs
+FrontEnd/generate_contact_sheets.cjs
+FrontEnd/test_dark_theme.cjs
+FrontEnd/tests/capture_phase32_authentic.cjs
+FrontEnd/tests/test_dark_close.cjs
+FrontEnd/yarn.lock
+FrontEnd/.yarnrc.yml

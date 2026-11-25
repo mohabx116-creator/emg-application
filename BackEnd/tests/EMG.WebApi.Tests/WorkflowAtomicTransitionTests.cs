@@ -181,9 +181,32 @@ public sealed class WorkflowAtomicTransitionTests
     {
         private int reads;
         private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ConcurrentDictionary<DbConnection, byte> initialConnections = new();
+        private readonly ConcurrentDictionary<DbCommand, byte> gatedCommands = new();
+
+        private void MarkInitial(DbCommand command)
+        {
+            if (command.Connection is not null &&
+                command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase) &&
+                initialConnections.TryAdd(command.Connection, 0))
+                gatedCommands.TryAdd(command, 0);
+        }
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
+        {
+            MarkInitial(command);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            MarkInitial(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
         public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
         {
-            if (command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase) && command.CommandText.Contains("LIMIT 1", StringComparison.OrdinalIgnoreCase))
+            if (gatedCommands.TryRemove(command, out _))
             {
                 var readNumber = Interlocked.Increment(ref reads);
                 if (readNumber == 2) released.TrySetResult();
