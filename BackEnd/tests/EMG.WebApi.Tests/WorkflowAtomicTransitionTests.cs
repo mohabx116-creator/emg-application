@@ -198,7 +198,13 @@ public sealed class WorkflowAtomicTransitionTests
                 !sql.Contains("LIMIT 1", StringComparison.OrdinalIgnoreCase) ||
                 !sql.Contains("\"ProjectId\"", StringComparison.OrdinalIgnoreCase) ||
                 !sql.Contains("\"Status\"", StringComparison.OrdinalIgnoreCase) ||
-                !sql.Contains("\"Id\"", StringComparison.OrdinalIgnoreCase))
+                !sql.Contains("\"Id\"", StringComparison.OrdinalIgnoreCase) ||
+                (type == "supplier-supply" &&
+                 (!sql.Contains("\"CreatedByUserId\"", StringComparison.OrdinalIgnoreCase) ||
+                  sql.Contains("\"ItemName\"", StringComparison.OrdinalIgnoreCase) ||
+                  sql.Contains("\"Quantity\"", StringComparison.OrdinalIgnoreCase) ||
+                  sql.Contains("\"SupplyType\"", StringComparison.OrdinalIgnoreCase) ||
+                  sql.Contains("\"SupplierId\"", StringComparison.OrdinalIgnoreCase))))
                 return false;
 
             return sql.Contains("\"TotalAmount\"", StringComparison.OrdinalIgnoreCase) ||
