@@ -55,6 +55,21 @@ jobs:
           --logger "trx;LogFileName=safe-regression.trx"
           --filter "FullyQualifiedName!~PostgresTests&FullyQualifiedName!~UniversalImportCoverageCrosswalkTests&FullyQualifiedName!~UniversalImportPreviewTests&FullyQualifiedName!~WorkflowAtomicTransitionTests"
 
+      - name: Apply disposable PostgreSQL migrations
+        env:
+          ConnectionStrings__EmgDb: Host=127.0.0.1;Port=55432;Database=emg_qa_stg01c;Username=emg_ci;Password=emg_ci_password
+          EMG_MIGRATION_HOST: 127.0.0.1
+          EMG_MIGRATION_PORT: 55432
+          EMG_MIGRATION_DATABASE: emg_qa_stg01c
+        run: >-
+          dotnet tool install --global dotnet-ef --version 10.0.4
+          --add-source https://api.nuget.org/v3/index.json
+          && export PATH="$PATH:$HOME/.dotnet/tools"
+          && dotnet ef database update
+          --project src/EMG.Infrastructure/EMG.Infrastructure.csproj
+          --startup-project src/EMG.WebApi/EMG.WebApi.csproj
+          --configuration Release
+
       - name: PostgreSQL integration tests
         env:
           ConnectionStrings__EmgDb: Host=127.0.0.1;Port=55432;Database=emg_qa_stg01c;Username=emg_ci;Password=emg_ci_password
