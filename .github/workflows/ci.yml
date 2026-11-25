@@ -70,15 +70,29 @@ jobs:
           --startup-project src/EMG.WebApi/EMG.WebApi.csproj
           --configuration Release
 
-      - name: PostgreSQL integration tests
+      - name: Seed synthetic historical QA project
+        run: |
+          pg_container="$(docker ps --filter ancestor=postgres:16.16 --format '{{.ID}}' | head -n 1)"
+          test -n "$pg_container"
+          docker exec "$pg_container" psql -v ON_ERROR_STOP=1 -U emg_ci -d emg_qa_stg01c -c \
+            "INSERT INTO projects (id, name, code, status, office_share_percentage, created_at_utc) VALUES (3, 'CI historical QA', 'CI-HISTORICAL-QA', 'نشط', 0, NOW()) ON CONFLICT (id) DO NOTHING;"
+
+      - name: Historical rollback integration test
         env:
-          ConnectionStrings__EmgDb: Host=127.0.0.1;Port=55432;Database=emg_qa_stg01c;Username=emg_ci;Password=emg_ci_password
-          EMG_WORKFLOW_QA_CONNECTION: Host=127.0.0.1;Port=55432;Database=emg_qa_stg01c;Username=emg_ci;Password=emg_ci_password
           EMG_HISTORICAL_QA_CONNECTION: Host=127.0.0.1;Port=55432;Database=emg_qa_stg01c;Username=emg_ci;Password=emg_ci_password
+          EMG_HISTORICAL_QA_PORT: 55432
         run: >-
           dotnet test EMG.slnx --no-restore --no-build --configuration Release
-          --logger "trx;LogFileName=postgres-integration.trx"
-          --filter "FullyQualifiedName~PostgresTests|FullyQualifiedName~WorkflowAtomicTransitionTests"
+          --logger "trx;LogFileName=historical-rollback.trx"
+          --filter "FullyQualifiedName~HistoricalImportPostgresTests"
+
+      - name: PostgreSQL workflow integration tests
+        env:
+          EMG_WORKFLOW_QA_CONNECTION: Host=127.0.0.1;Port=55432;Database=emg_qa_stg01c;Username=emg_ci;Password=emg_ci_password
+        run: >-
+          dotnet test EMG.slnx --no-restore --no-build --configuration Release
+          --logger "trx;LogFileName=postgres-workflow.trx"
+          --filter "FullyQualifiedName~WorkflowAtomicTransitionTests"
 
       - name: Publish test results
         if: ${{ always() }}
