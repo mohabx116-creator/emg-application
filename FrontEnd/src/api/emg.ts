@@ -720,6 +720,12 @@ export async function updateEmgSiteMovement(id: number, payload: Record<string, 
 export async function deleteEmgSiteMovement(id: number): Promise<void> {
   await axios.delete(`/api/site-movements/${id}`);
 }
+export async function correctEmgTransaction(entityType: string, entityId: number, values: Record<string, unknown>, reason: string): Promise<void> {
+  await axios.put(`/api/transactions/${encodeURIComponent(entityType)}/${entityId}`, { values, reason });
+}
+export async function cancelEmgTransaction(entityType: string, entityId: number, reason: string): Promise<void> {
+  await axios.post(`/api/transactions/${encodeURIComponent(entityType)}/${entityId}/cancel`, { reason });
+}
 export async function getEmgAttachments(entityType: string, entityId: number): Promise<EmgAttachment[]> {
   return (await axios.get<EmgAttachment[]>(`/api/attachments/${entityType}/${entityId}`)).data;
 }

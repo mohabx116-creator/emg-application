@@ -23,6 +23,7 @@ using EMG.Api.Modules.ConsolidatedStatements;
 using EMG.Api.Modules.ReportBuilder;
 using EMG.Api.Modules.UniversalImports;
 using EMG.Api.Modules.Contractors;
+using EMG.Api.Modules.Transactions;
 using EMG.Infrastructure;
 using EMG.Infrastructure.Db;
 using Microsoft.AspNetCore.Authentication;
@@ -91,6 +92,7 @@ builder.Services.AddImportsModule();
 builder.Services.AddUniversalImportModule();
 builder.Services.AddContractorsModule();
 builder.Services.AddIntelligenceModule();
+builder.Services.AddTransactionCorrections();
 builder.Services.AddEmgInfrastructure(builder.Configuration);
 builder.Services.AddAuthentication(SessionAuthenticationHandler.Scheme)
     .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthenticationHandler.Scheme, _ => { });

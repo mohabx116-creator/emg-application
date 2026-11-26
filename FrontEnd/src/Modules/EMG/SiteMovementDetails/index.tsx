@@ -44,6 +44,7 @@ import {
   getEmgSiteMovement,
   getEmgWorkflowHistory,
   getEmgWorkflowAudit,
+  cancelEmgTransaction,
   updateEmgSiteMovement,
   uploadEmgAttachment
 } from 'api/emg';
@@ -58,6 +59,7 @@ export default function EmgSiteMovementDetails() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canUpdate = user?.permissions?.includes('transactions.correct');
+  const canCancel = user?.permissions?.includes('transactions.cancel');
   const canSubmit = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.submit');
   const canReview =
     user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.approve');
@@ -217,6 +219,23 @@ export default function EmgSiteMovementDetails() {
     }
   };
 
+  const cancel = async () => {
+    if (!movement) return;
+    const reason = window.prompt('اكتب سبب الإلغاء:');
+    if (!reason?.trim()) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await cancelEmgTransaction('site-movement', movement.id, reason.trim());
+      setMessage({ severity: 'success', text: 'تم إلغاء الحركة وتسجيل السبب في سجل التعديلات.' });
+      await load();
+    } catch (error: any) {
+      setMessage({ severity: 'error', text: error?.message || 'تعذر إلغاء الحركة.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading)
     return (
       <Box sx={{ p: 4, display: 'grid', placeItems: 'center' }}>
@@ -330,6 +349,7 @@ export default function EmgSiteMovementDetails() {
               <Button disabled={busy} onClick={() => setEditOpen(true)} startIcon={<IconEdit size={16} />}>
                 تصحيح
               </Button>
+              {canCancel && <Button color="error" disabled={busy} onClick={cancel} startIcon={<IconX size={16} />}>إلغاء</Button>}
               {(movement.status === 'مسودة' || movement.status === 'مرفوض') && <Button color="error" disabled={busy} onClick={remove} startIcon={<IconTrash size={16} />}>حذف</Button>}
             </Stack>
           </>
