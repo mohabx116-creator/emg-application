@@ -11,7 +11,11 @@ public sealed record CreateSupplierInvoiceRequest(
     decimal InitialPayment,
     string? PaymentMethod,
     string? PaymentReference,
-    string? Notes);
+    string? Notes,
+    string? MovementDescription = null,
+    string? ExpenseCategory = null,
+    string? PaidTo = null,
+    string? Details = null);
 
 public sealed record UpdateSupplierInvoiceRequest(IReadOnlyList<SupplierInvoiceLineRequest> Lines, DateTime? InvoiceDate, string? Notes);
 

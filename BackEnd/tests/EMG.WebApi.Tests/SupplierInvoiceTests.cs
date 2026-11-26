@@ -4,11 +4,15 @@ using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.AspNetCore.Hosting;
 
 namespace EMG.WebApi.Tests;
 
 public sealed class SupplierInvoiceTests
 {
+    private static IWebHostEnvironment TestEnvironment() => new TestWebHostEnvironment(AppContext.BaseDirectory);
+
     [Theory]
     [InlineData(39223, 39223, 0)]
     [InlineData(39223, 0, 39223)]
@@ -25,7 +29,7 @@ public sealed class SupplierInvoiceTests
         db.AddRange(project, supplier);
         await db.SaveChangesAsync();
 
-        var result = await new SupplierInvoiceService(db).CreateAsync(new CreateSupplierInvoiceRequest(
+        var result = await new SupplierInvoiceService(db, TestEnvironment()).CreateAsync(new CreateSupplierInvoiceRequest(
             supplier.Id, project.Id, null, null, [new SupplierInvoiceLineRequest("خامات", "مقطوعية", 1m, supplied, "خامات")],
             paid, paid == supplied ? "نقدي" : paid == 0 ? "آجل" : "جزئي", $"INV-QA-{paid}", null), 7, true, CancellationToken.None);
 
@@ -37,6 +41,7 @@ public sealed class SupplierInvoiceTests
         Assert.Single(result.Lines);
         Assert.Equal(paid > 0, await db.SupplierPayments.AnyAsync(item => item.InvoiceId == result.Id && item.Amount == paid));
         Assert.Equal(1, await db.SupplierSupplies.CountAsync(item => item.InvoiceId == result.Id));
+        Assert.Equal(supplied, await db.SiteMovements.Where(item => item.Id == result.SiteMovementId).Select(item => item.TotalAmount).SingleAsync());
     }
 
     [Fact]
@@ -54,7 +59,7 @@ public sealed class SupplierInvoiceTests
         var movement = new SiteMovement { ProjectId = project.Id, Description = "شراء الموقع", MovementType = "مصروفات", TotalAmount = 39223m, Status = "مرحّل" };
         db.SiteMovements.Add(movement);
         await db.SaveChangesAsync();
-        var service = new SupplierInvoiceService(db);
+        var service = new SupplierInvoiceService(db, TestEnvironment());
         var request = new CreateSupplierInvoiceRequest(supplier.Id, project.Id, movement.Id, null,
             [new SupplierInvoiceLineRequest("خامات", "مقطوعية", 1m, 39223m, null)], 0, "آجل", null, null);
         var first = await service.CreateAsync(request, 7, true, CancellationToken.None);
@@ -75,13 +80,13 @@ public sealed class SupplierInvoiceTests
         var supplier = new Supplier { Name = "Subsequent payment supplier" };
         db.AddRange(project, supplier);
         await db.SaveChangesAsync();
-        var invoice = await new SupplierInvoiceService(db).CreateAsync(new CreateSupplierInvoiceRequest(supplier.Id, project.Id, null, null,
+        var invoice = await new SupplierInvoiceService(db, TestEnvironment()).CreateAsync(new CreateSupplierInvoiceRequest(supplier.Id, project.Id, null, null,
             [new SupplierInvoiceLineRequest("خامات", "مقطوعية", 1m, 39223m, null)], 0, "آجل", null, null), 7, true, CancellationToken.None);
         var line = Assert.Single(invoice!.Lines);
         await new SuppliersService(db).AddPaymentAsync(supplier.Id,
             new CreateSupplierPaymentRequest(project.Id, line.SupplyId, 20000m, null, "جزئي", "FOLLOW-UP-1", null), 7, true, CancellationToken.None);
 
-        var refreshed = await new SupplierInvoiceService(db).GetAsync(invoice.Id, 7, true, CancellationToken.None);
+        var refreshed = await new SupplierInvoiceService(db, TestEnvironment()).GetAsync(invoice.Id, 7, true, CancellationToken.None);
         Assert.NotNull(refreshed);
         Assert.Equal(20000m, refreshed!.PaidAmount);
         Assert.Equal(19223m, refreshed.OutstandingAmount);
@@ -100,7 +105,7 @@ public sealed class SupplierInvoiceTests
         var supplier = new Supplier { Name = "Lifecycle supplier" };
         db.AddRange(project, supplier);
         await db.SaveChangesAsync();
-        var service = new SupplierInvoiceService(db);
+        var service = new SupplierInvoiceService(db, TestEnvironment());
         var invoice = await service.CreateAsync(new CreateSupplierInvoiceRequest(supplier.Id, project.Id, null, null,
             [new SupplierInvoiceLineRequest("بند أول", "طن", 1m, 1000m, null)], 0, "آجل", null, null), 7, true, CancellationToken.None);
         var updated = await service.UpdateAsync(invoice!.Id, new UpdateSupplierInvoiceRequest(
@@ -112,4 +117,14 @@ public sealed class SupplierInvoiceTests
         Assert.False(await db.SupplierSupplies.AnyAsync());
         Assert.False(await db.SupplierInvoiceLines.AnyAsync());
     }
+}
+
+file sealed class TestWebHostEnvironment(string root) : IWebHostEnvironment
+{
+    public string ApplicationName { get; set; } = "EMG.WebApi.Tests";
+    public string EnvironmentName { get; set; } = "QA";
+    public string WebRootPath { get; set; } = root;
+    public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+    public string ContentRootPath { get; set; } = root;
+    public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
 }

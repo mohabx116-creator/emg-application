@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EMG.Api.Modules.Suppliers.Services;
 
-public sealed class SupplierInvoiceService(EmgDbContext db) : ISupplierInvoiceService
+public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment environment) : ISupplierInvoiceService
 {
     public async Task<SupplierInvoiceSummary?> CreateAsync(CreateSupplierInvoiceRequest request, int? userId, bool globalAccess, CancellationToken cancellationToken)
     {
@@ -26,11 +26,27 @@ public sealed class SupplierInvoiceService(EmgDbContext db) : ISupplierInvoiceSe
         var total = decimal.Round(request.Lines.Sum(line => line.Quantity * line.UnitPrice), 2);
         if (request.InitialPayment > total) throw new DuplicateSupplierTransactionException("الدفعة الأولية تتجاوز إجمالي الفاتورة.");
         var invoiceNumber = GenerateInvoiceNumber(request.ProjectId, request.SupplierId);
+        var invoiceDate = request.InvoiceDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.InvoiceDate.Value.Date, DateTimeKind.Utc);
+        if (request.SiteMovementId is null)
+        {
+            var movement = new SiteMovement
+            {
+                ProjectId = request.ProjectId, SupplierId = request.SupplierId, MovementType = "مصروفات",
+                Description = string.IsNullOrWhiteSpace(request.MovementDescription) ? request.Lines[0].Description.Trim() : request.MovementDescription.Trim(),
+                TotalAmount = total, ExpenseCategory = request.ExpenseCategory?.Trim(), PaidTo = request.PaidTo?.Trim(),
+                PaymentMethod = request.InitialPayment == 0 ? "آجل" : request.PaymentMethod?.Trim() ?? "نقدي",
+                IsPaid = request.InitialPayment >= total && total > 0, MovementDate = invoiceDate, Status = "مرحّل",
+                Reference = invoiceNumber, Details = request.Details?.Trim(), CreatedByUserId = userId
+            };
+            db.SiteMovements.Add(movement);
+            await db.SaveChangesAsync(cancellationToken);
+            request = request with { SiteMovementId = movement.Id };
+        }
         var invoice = new SupplierInvoice
         {
             ProjectId = request.ProjectId, SupplierId = request.SupplierId, SiteMovementId = request.SiteMovementId,
             InvoiceNumber = invoiceNumber, Currency = "EGP", Status = "مرحّل", CreatedByUserId = userId,
-            InvoiceDate = request.InvoiceDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.InvoiceDate.Value.Date, DateTimeKind.Utc)
+            InvoiceDate = invoiceDate
         };
         db.SupplierInvoices.Add(invoice);
         await db.SaveChangesAsync(cancellationToken);
@@ -84,7 +100,8 @@ public sealed class SupplierInvoiceService(EmgDbContext db) : ISupplierInvoiceSe
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var invoice = await db.SupplierInvoices.Include(item => item.Lines).ThenInclude(line => line.SupplierSupply)
             .Include(item => item.Payments).SingleOrDefaultAsync(item => item.Id == invoiceId, cancellationToken);
-        if (invoice is null || !await CanManage(invoice.ProjectId, invoice.CreatedByUserId, userId, globalAccess, cancellationToken)) return null;
+        if (invoice is null || !await CanManage(invoice.ProjectId, invoice.CreatedByUserId, userId, globalAccess,
+                invoice.Lines.Sum(item => item.SupplierSupply.TotalAmount), "transactions.correct", cancellationToken)) return null;
         var paid = invoice.Payments.Where(payment => payment.Status is "معتمد" or "مرحّل").Sum(payment => payment.Amount);
         var total = decimal.Round(request.Lines.Sum(line => line.Quantity * line.UnitPrice), 2);
         if (paid > total) throw new InvalidOperationException("لا يمكن خفض إجمالي الفاتورة عن الدفعات المسجلة.");
@@ -114,10 +131,13 @@ public sealed class SupplierInvoiceService(EmgDbContext db) : ISupplierInvoiceSe
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var invoice = await db.SupplierInvoices.Include(item => item.Lines).ThenInclude(line => line.SupplierSupply)
             .Include(item => item.Payments).SingleOrDefaultAsync(item => item.Id == invoiceId, cancellationToken);
-        if (invoice is null || !await CanManage(invoice.ProjectId, invoice.CreatedByUserId, userId, globalAccess, cancellationToken)) return false;
+        if (invoice is null || !await CanManage(invoice.ProjectId, invoice.CreatedByUserId, userId, globalAccess,
+                invoice.Lines.Sum(item => item.SupplierSupply.TotalAmount), "transactions.cancel", cancellationToken)) return false;
         if (invoice.Payments.Any(payment => payment.Status is "معتمد" or "مرحّل"))
             throw new InvalidOperationException("لا يمكن حذف فاتورة عليها دفعات؛ عالج الدفعات المرتبطة أولاً.");
         var supplyIds = invoice.Lines.Select(item => item.SupplierSupplyId).ToList();
+        var attachmentPaths = await db.Attachments.Where(item => item.EntityType == "supplier-invoice" && item.EntityId == invoiceId)
+            .Select(item => item.RelativePath).ToListAsync(cancellationToken);
         db.SupplierInvoiceLines.RemoveRange(invoice.Lines);
         var supplies = await db.SupplierSupplies.Where(item => supplyIds.Contains(item.Id)).ToListAsync(cancellationToken);
         db.SupplierSupplies.RemoveRange(supplies);
@@ -125,12 +145,40 @@ public sealed class SupplierInvoiceService(EmgDbContext db) : ISupplierInvoiceSe
         db.Attachments.RemoveRange(db.Attachments.Where(item => item.EntityType == "supplier-invoice" && item.EntityId == invoiceId));
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        DeleteFilesSafely(attachmentPaths);
         return true;
     }
 
-    private async Task<bool> CanManage(int projectId, int? ownerId, int? userId, bool globalAccess, CancellationToken cancellationToken) =>
-        globalAccess || ownerId == userId && userId.HasValue || userId.HasValue && await db.UserProjectAssignments.AnyAsync(item =>
-            item.UserId == userId && item.ProjectId == projectId && item.IsActive, cancellationToken);
+    private async Task<bool> CanManage(int projectId, int? ownerId, int? userId, bool globalAccess, decimal amount,
+        string permissionCode, CancellationToken cancellationToken)
+    {
+        if (userId is not int accountId) return false;
+        var assigned = await db.UserProjectAssignments.AnyAsync(item =>
+            item.UserId == accountId && item.ProjectId == projectId && item.IsActive, cancellationToken);
+        if (!assigned && !globalAccess) return false;
+        if (ownerId == accountId) return true;
+
+        var grants = await db.UserRoles.Where(item => item.UserId == accountId && item.User.IsActive)
+            .SelectMany(item => item.Role.RolePermissions)
+            .Where(item => item.Permission.Code == permissionCode)
+            .Select(item => new { item.Scope, item.AmountLimit })
+            .ToListAsync(cancellationToken);
+        return grants.Any(grant =>
+            (grant.AmountLimit is null || grant.AmountLimit >= Math.Abs(amount)) &&
+            (grant.Scope == "all" && globalAccess || assigned && grant.Scope is "assigned" or "project"));
+    }
+
+    private void DeleteFilesSafely(IEnumerable<string> relativePaths)
+    {
+        var uploadsRoot = Path.GetFullPath(Path.Combine(environment.ContentRootPath, "uploads"));
+        var allowedPrefix = uploadsRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        foreach (var relativePath in relativePaths)
+        {
+            var fullPath = Path.GetFullPath(Path.Combine(environment.ContentRootPath, relativePath));
+            if (fullPath.StartsWith(allowedPrefix, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
+                File.Delete(fullPath);
+        }
+    }
 
     private static void ValidateLines(IReadOnlyList<SupplierInvoiceLineRequest> lines)
     {

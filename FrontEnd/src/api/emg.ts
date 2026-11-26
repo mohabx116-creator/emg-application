@@ -362,6 +362,18 @@ export type EmgSupply = {
   status: string;
 };
 export type EmgSupplyCorrection = Pick<EmgSupply, 'supplyType' | 'itemName' | 'unit' | 'quantity' | 'unitPrice' | 'invoiceNumber'>;
+export type EmgSupplierInvoice = {
+  id: number;
+  supplierId: number;
+  projectId: number;
+  siteMovementId: number | null;
+  invoiceNumber: string;
+  currency: string;
+  totalAmount: number;
+  paidAmount: number;
+  outstandingAmount: number;
+  lines: Array<{ id: number; supplyId: number; description: string; unit: string; quantity: number; unitPrice: number; totalAmount: number }>;
+};
 export type EmgExcavation = {
   id: number;
   projectId: number;
@@ -763,6 +775,10 @@ export async function getEmgAttachmentPreviewUrl(id: number): Promise<string> {
 
 export async function createEmgSiteMovement(payload: Record<string, unknown>): Promise<EmgSiteMovement> {
   const response = await axios.post<EmgSiteMovement>('/api/site-movements', payload);
+  return response.data;
+}
+export async function createEmgSupplierInvoice(payload: Record<string, unknown>): Promise<EmgSupplierInvoice> {
+  const response = await axios.post<EmgSupplierInvoice>('/api/suppliers/invoices', payload);
   return response.data;
 }
 export async function suggestEmgEntry(payload: Record<string, unknown>): Promise<EmgEntrySuggestion> {
