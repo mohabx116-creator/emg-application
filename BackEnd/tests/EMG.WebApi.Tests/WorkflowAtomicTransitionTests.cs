@@ -184,7 +184,7 @@ public sealed class WorkflowAtomicTransitionTests
         private readonly ConcurrentDictionary<DbCommand, byte> observedCommands = new();
         private readonly ConcurrentDictionary<DbCommand, byte> gatedCommands = new();
 
-        private void MarkInitial(DbCommand command)
+        private int MarkInitial(DbCommand command)
         {
             if (command.Connection is not null &&
                 command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase))
@@ -193,10 +193,12 @@ public sealed class WorkflowAtomicTransitionTests
                 // command. Count each command once so the barrier cannot release
                 // after one request's duplicate callback while the other request
                 // has not observed the original row yet.
-                if (!observedCommands.TryAdd(command, 0)) return;
+                if (!observedCommands.TryAdd(command, 0)) return 0;
                 var candidate = Interlocked.Increment(ref reads);
                 if (candidate <= 2) gatedCommands.TryAdd(command, 0);
+                return candidate;
             }
+            return 0;
         }
 
         public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
@@ -205,19 +207,20 @@ public sealed class WorkflowAtomicTransitionTests
             return base.ReaderExecuting(command, eventData, result);
         }
 
-        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
         {
-            MarkInitial(command);
-            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+            var candidate = MarkInitial(command);
+            if (candidate is > 0 and <= 2)
+            {
+                if (candidate == 2) released.TrySetResult();
+                await released.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            }
+            return await base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }
 
         public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
         {
-            if (gatedCommands.TryRemove(command, out _))
-            {
-                if (gatedCommands.IsEmpty) released.TrySetResult();
-                await released.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
-            }
+            gatedCommands.TryRemove(command, out _);
             return result;
         }
 

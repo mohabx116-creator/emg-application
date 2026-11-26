@@ -54,7 +54,7 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         var type = Normalize(entityType);
         if (!EditableProperties.ContainsKey(type)) return null;
         var record = await FindAsync(type, entityId, cancellationToken);
-        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, cancellationToken) || IsCancelled(record) || HasDependentFinancialEffects(type, entityId)) return null;
+        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, cancellationToken) || IsCancelled(record) || await HasDependentFinancialEffectsAsync(type, entityId, cancellationToken)) return null;
         var previousStatus = StatusOf(record);
         SetStatus(record, "ملغى");
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
@@ -91,12 +91,12 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         return projectId is not null && await db.UserProjectAssignments.AnyAsync(x => x.ProjectId == projectId && x.UserId == userId && x.IsActive, cancellationToken);
     }
 
-    private bool HasDependentFinancialEffects(string type, int id) => type switch
+    private async Task<bool> HasDependentFinancialEffectsAsync(string type, int id, CancellationToken cancellationToken)
     {
-        "supplier-supply" => db.SupplierPayments.Any(x => x.SupplyId == id && (x.Status == "معتمد" || x.Status == "مرحّل")),
-        "advance-payment" => db.AdvanceAllocations.Any(x => x.AdvancePaymentId == id),
-        _ => false
-    };
+        if (type == "supplier-supply" && await db.SupplierPayments.AnyAsync(x => x.SupplyId == id && (x.Status == "معتمد" || x.Status == "مرحّل"), cancellationToken)) return true;
+        if (type == "advance-payment" && await db.AdvanceAllocations.AnyAsync(x => x.AdvancePaymentId == id, cancellationToken)) return true;
+        return await db.ContractorStatementLines.AnyAsync(x => x.SourceEntityType == type && x.SourceEntityId == id, cancellationToken);
+    }
 
     private static bool ValidateValues(string type, IReadOnlyDictionary<string, JsonElement> values, out IReadOnlyList<string>? errors)
     {

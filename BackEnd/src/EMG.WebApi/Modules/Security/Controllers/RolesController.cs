@@ -40,6 +40,12 @@ public sealed class RolesController(EmgDbContext db) : ControllerBase
         var requestedGrants = request.Grants is { Count: > 0 }
             ? request.Grants
             : request.PermissionIds.Select(permissionId => new RolePermissionGrantRequest(permissionId));
+        if (!User.IsInRole("admin") && int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var managerId))
+        {
+            var managerPermissionIds = await db.UserRoles.Where(link => link.UserId == managerId)
+                .SelectMany(link => link.Role.RolePermissions.Select(grant => grant.PermissionId)).Distinct().ToListAsync(cancellationToken);
+            if (requestedGrants.Any(grant => !managerPermissionIds.Contains(grant.PermissionId))) return Forbid();
+        }
         var validPermissions = await db.Permissions.Where(item => requestedGrants.Select(grant => grant.PermissionId).Contains(item.Id)).ToListAsync(cancellationToken);
         db.RolePermissions.RemoveRange(role.RolePermissions);
         db.RolePermissions.AddRange(requestedGrants

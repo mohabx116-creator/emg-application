@@ -104,7 +104,7 @@ public sealed class ContractorStatementService(EmgDbContext db) : IContractorSta
     {
         var query = db.ContractorStatements.AsNoTracking().Include(item => item.Project).Include(item => item.Contractor).Include(item => item.Contract).Include(item => item.Lines).ThenInclude(line => line.ContractItem).AsQueryable();
         if (projectId is not null) query = query.Where(item => item.ProjectId == projectId);
-        if (!globalAccess) query = query.Where(item => HasProjectAccess(item.ProjectId, userId));
+        if (!globalAccess) query = query.Where(item => userId.HasValue && db.UserProjectAssignments.Any(assignment => assignment.ProjectId == item.ProjectId && assignment.UserId == userId && assignment.IsActive));
         var statements = await query.OrderByDescending(item => item.Id).ToListAsync(cancellationToken);
         return statements.Select(ToSummary).ToList();
     }
