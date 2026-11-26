@@ -12,6 +12,8 @@ readonly LOCK_FILE="${LOCK_FILE:-/run/lock/emg-deploy.lock}"
 readonly PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:?PUBLIC_HEALTH_URL is required}"
 readonly PUBLIC_API_HEALTH_URL="${PUBLIC_API_HEALTH_URL:?PUBLIC_API_HEALTH_URL is required}"
 readonly PUBLIC_ACCOUNT_URL="${PUBLIC_ACCOUNT_URL:?PUBLIC_ACCOUNT_URL is required}"
+readonly AUTH_ACCEPTANCE_COOKIE_FILE="${AUTH_ACCEPTANCE_COOKIE_FILE:?AUTH_ACCEPTANCE_COOKIE_FILE is required}"
+readonly AUTH_ACCEPTANCE_URL="${AUTH_ACCEPTANCE_URL:?AUTH_ACCEPTANCE_URL is required}"
 readonly HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}"
 
 die() { echo "ROLLBACK BLOCKED: $*" >&2; exit 1; }
@@ -30,6 +32,12 @@ expect_http_status() {
   local url="$1" expected="$2" actual
   actual="$(curl --connect-timeout 5 --max-time 15 --silent --output /dev/null --write-out '%{http_code}' "$url")" || return 1
   [[ "$actual" == "$expected" ]]
+}
+verify_authenticated_acceptance() {
+  [[ "$(stat -c '%a' "$AUTH_ACCEPTANCE_COOKIE_FILE" 2>/dev/null || true)" == 600 ]] || return 1
+  local status
+  status="$(curl --connect-timeout 5 --max-time 15 --silent --output /dev/null --write-out '%{http_code}' --cookie "$AUTH_ACCEPTANCE_COOKIE_FILE" "$AUTH_ACCEPTANCE_URL")" || return 1
+  [[ "$status" == 200 ]]
 }
 service_container() {
   local service="$1" id project name
@@ -73,6 +81,7 @@ wait_http http://127.0.0.1:3100/ || die 'Frontend rollback health failed.'
 wait_http "$PUBLIC_API_HEALTH_URL" || die 'Public API rollback health failed.'
 wait_http "$PUBLIC_HEALTH_URL" || die 'Public frontend rollback health failed.'
 expect_http_status "$PUBLIC_ACCOUNT_URL" 401 || die 'Public account rollback readiness failed.'
+verify_authenticated_acceptance || die 'Authenticated rollback acceptance failed.'
 
 api_id="$(service_container api)"
 frontend_id="$(service_container frontend)"

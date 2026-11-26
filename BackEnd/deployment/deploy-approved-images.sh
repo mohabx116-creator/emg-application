@@ -24,6 +24,8 @@ readonly EXPECTED_KEYS_VOLUME="${EXPECTED_KEYS_VOLUME:?EXPECTED_KEYS_VOLUME is r
 readonly PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:?PUBLIC_HEALTH_URL is required}"
 readonly PUBLIC_API_HEALTH_URL="${PUBLIC_API_HEALTH_URL:?PUBLIC_API_HEALTH_URL is required}"
 readonly PUBLIC_ACCOUNT_URL="${PUBLIC_ACCOUNT_URL:?PUBLIC_ACCOUNT_URL is required}"
+readonly AUTH_ACCEPTANCE_COOKIE_FILE="${AUTH_ACCEPTANCE_COOKIE_FILE:?AUTH_ACCEPTANCE_COOKIE_FILE is required}"
+readonly AUTH_ACCEPTANCE_URL="${AUTH_ACCEPTANCE_URL:?AUTH_ACCEPTANCE_URL is required}"
 readonly HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}"
 readonly BACKUP_MAX_AGE_SECONDS="${BACKUP_MAX_AGE_SECONDS:-86400}"
 readonly MIN_AVAILABLE_MEMORY_MB="${MIN_AVAILABLE_MEMORY_MB:-512}"
@@ -77,8 +79,14 @@ expect_http_status() {
   [[ "$actual" == "$expected" ]]
 }
 env_value() {
-  local key="$1"
-  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE"
+  local service="$1" key="$2"
+  "${compose[@]}" config --format json | python3 -c 'import json,sys; d=json.load(sys.stdin); e=d["services"][sys.argv[1]].get("environment", {}); v=e.get(sys.argv[2], ""); print(v if v is not None else "")' "$service" "$key"
+}
+verify_authenticated_acceptance() {
+  [[ "$(stat -c '%a' "$AUTH_ACCEPTANCE_COOKIE_FILE" 2>/dev/null || true)" == 600 ]] || return 1
+  local status
+  status="$(curl --connect-timeout 5 --max-time 15 --silent --output /dev/null --write-out '%{http_code}' --cookie "$AUTH_ACCEPTANCE_COOKIE_FILE" "$AUTH_ACCEPTANCE_URL")" || return 1
+  [[ "$status" == 200 ]]
 }
 
 exec 9>"$LOCK_FILE"
@@ -121,11 +129,13 @@ postgres_id="$(service_container postgres)"
 [[ "$(mount_volume "$api_id" /app/uploads)" == "$EXPECTED_UPLOADS_VOLUME" ]] || die 'Uploads volume mismatch.'
 [[ "$(mount_volume "$api_id" /app/data-protection-keys)" == "$EXPECTED_KEYS_VOLUME" ]] || die 'Data Protection volume mismatch.'
 
-db_user="$(env_value POSTGRES_USER)"
-db_name="$(env_value POSTGRES_DB)"
-db_password="$(env_value POSTGRES_PASSWORD)"
+db_user="$(env_value postgres POSTGRES_USER)"
+db_name="$(env_value postgres POSTGRES_DB)"
+db_password="$(env_value postgres POSTGRES_PASSWORD)"
 [[ -n "$db_user" && -n "$db_name" && -n "$db_password" ]] || die 'Database credential configuration is incomplete.'
-docker exec -e "PGPASSWORD=$db_password" "$postgres_id" psql -h 127.0.0.1 -U "$db_user" -d "$db_name" -Atqc 'select 1' >/dev/null 2>&1 || die 'Password-authenticated PostgreSQL readiness check failed.'
+api_connection="$(env_value api ConnectionStrings__EmgDb)"
+[[ "$api_connection" == *"Host=postgres;"* && "$api_connection" == *"Database=$db_name;"* && "$api_connection" == *"Username=$db_user;"* && "$api_connection" == *"Password=$db_password"* ]] || die 'Effective API database configuration does not match PostgreSQL credentials.'
+docker exec -e "PGPASSWORD=$db_password" "$postgres_id" psql -h postgres -U "$db_user" -d "$db_name" -Atqc 'select 1' >/dev/null 2>&1 || die 'Password-authenticated PostgreSQL readiness check failed.'
 
 current_backend="$(docker inspect "$api_id" --format '{{.Config.Image}}')"
 current_frontend="$(docker inspect "$frontend_id" --format '{{.Config.Image}}')"
@@ -153,6 +163,8 @@ rollback_application() {
   wait_http http://127.0.0.1:3100/ || return 1
   wait_http "$PUBLIC_API_HEALTH_URL" || return 1
   wait_http "$PUBLIC_HEALTH_URL" || return 1
+  expect_http_status "$PUBLIC_ACCOUNT_URL" 401 || return 1
+  verify_authenticated_acceptance || return 1
   return 0
 }
 on_exit() {
@@ -184,6 +196,7 @@ wait_http http://127.0.0.1:3100/ || die 'Frontend health timeout.'
 wait_http "$PUBLIC_API_HEALTH_URL" || die 'Public API routing health check failed.'
 wait_http "$PUBLIC_HEALTH_URL" || die 'Public frontend routing health check failed.'
 expect_http_status "$PUBLIC_ACCOUNT_URL" 401 || die 'Authenticated database readiness check failed.'
+verify_authenticated_acceptance || die 'Authenticated functional acceptance failed.'
 
 api_id="$(service_container api)"
 frontend_id="$(service_container frontend)"

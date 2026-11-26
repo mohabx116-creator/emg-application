@@ -87,11 +87,31 @@ count=$((count + 1)); printf '%s' "$count" >"$count_file"
 if [[ "${FAKE_CURL_MODE:-pass}" == always-fail ]]; then exit 22; fi
 if [[ "${FAKE_CURL_MODE:-pass}" == fail-candidate && -f "$FAKE_RUNTIME_DIR/backend" && "$(cat "$FAKE_RUNTIME_DIR/backend")" == "$FAKE_CANDIDATE_BACKEND" ]]; then exit 22; fi
 if [[ "${FAKE_CURL_MODE:-pass}" == fail-first && "$count" -eq 1 ]]; then exit 22; fi
-if [[ " $* " == *'https://emg.example.test/api/account/me'* ]]; then printf '401'; else printf '200'; fi
+if [[ " $* " == *'https://emg.example.test/authenticated/me'* ]]; then
+  printf '%s' "${FAKE_AUTH_STATUS:-200}"
+elif [[ " $* " == *'https://emg.example.test/api/account/me'* ]]; then
+  printf '401'
+else
+  printf '200'
+fi
 exit 0
 MOCK_CURL
 
 chmod 700 "$MOCK_BIN/docker" "$MOCK_BIN/curl"
+cat >"$MOCK_BIN/python3" <<'MOCK_PYTHON'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "${1:-}" == -c ]]; then
+  case "${3:-}:${4:-}" in
+    postgres:POSTGRES_USER) printf 'emg\n' ;;
+    postgres:POSTGRES_DB) printf 'emg\n' ;;
+    postgres:POSTGRES_PASSWORD) printf 'synthetic\n' ;;
+    api:ConnectionStrings__EmgDb) printf 'Host=postgres;Port=5432;Database=emg;Username=emg;Password=synthetic\n' ;;
+    *) printf '\n' ;;
+  esac
+fi
+MOCK_PYTHON
+chmod 700 "$MOCK_BIN/python3"
 export PATH="$MOCK_BIN:$PATH"
 export FAKE_RUNTIME_DIR="$RUNTIME_DIR" FAKE_CANDIDATE_BACKEND="$CANDIDATE_BACKEND" COMPOSE_PROJECT_NAME=emg-test
 export COMPOSE_FILE="$TEST_ROOT/docker-compose.prod.yml" ENV_FILE="$TEST_ROOT/.env"
@@ -99,8 +119,11 @@ export STATE_DIR BACKUP_MARKER="$ARTIFACTS/COMPLETE" BACKUP_MANIFEST="$ARTIFACTS
 export BACKUP_REQUIRED_FILES="$ARTIFACTS/database.enc,$ARTIFACTS/uploads.enc,$ARTIFACTS/keys.enc,$ARTIFACTS/config.enc"
 export EXPECTED_SOURCE_SHA EXPECTED_POSTGRES_VOLUME=emg_postgres_data EXPECTED_UPLOADS_VOLUME=emg_uploads EXPECTED_KEYS_VOLUME=data_protection_keys
 export PUBLIC_HEALTH_URL=https://emg.example.test/ PUBLIC_API_HEALTH_URL=https://emg.example.test/api/health PUBLIC_ACCOUNT_URL=https://emg.example.test/api/account/me
+export AUTH_ACCEPTANCE_URL=https://emg.example.test/authenticated/me AUTH_ACCEPTANCE_COOKIE_FILE="$TEST_ROOT/auth.cookies"
 export BACKUP_MAX_AGE_SECONDS=86400 HEALTH_TIMEOUT_SECONDS=2
 printf 'POSTGRES_USER=emg\nPOSTGRES_DB=emg\nPOSTGRES_PASSWORD=synthetic\n' >"$TEST_ROOT/.env"
+printf '# synthetic authenticated cookie\n' >"$TEST_ROOT/auth.cookies"
+chmod 600 "$TEST_ROOT/auth.cookies"
 
 export BACKEND_IMAGE="$CANDIDATE_BACKEND" FRONTEND_IMAGE="$CANDIDATE_FRONTEND"
 printf '%s' "$OLD_BACKEND" >"$RUNTIME_DIR/backend"
@@ -123,6 +146,17 @@ set +e; "$DEPLOY_SCRIPT" >/dev/null 2>&1; code=$?; set -e
 [[ "$(cat "$RUNTIME_DIR/backend")" == "$OLD_BACKEND" ]]
 echo 'invalid database credential blocks deployment: PASS'
 unset FAKE_DB_AUTH_FAIL
+
+printf '%s' "$OLD_BACKEND" >"$RUNTIME_DIR/backend"
+printf '%s' "$OLD_FRONTEND" >"$RUNTIME_DIR/frontend"
+rm -f "$STATE_DIR/release-state.env"
+export FAKE_AUTH_STATUS=401
+set +e; "$DEPLOY_SCRIPT" >/dev/null 2>&1; code=$?; set -e
+[[ "$code" -eq 90 ]]
+grep -q '^pending=true$' "$STATE_DIR/release-state.env"
+echo 'unauthenticated acceptance blocks success: PASS'
+unset FAKE_AUTH_STATUS
+rm -f "$STATE_DIR/release-state.env"
 
 printf '%s' "$OLD_BACKEND" >"$RUNTIME_DIR/backend"
 printf '%s' "$OLD_FRONTEND" >"$RUNTIME_DIR/frontend"

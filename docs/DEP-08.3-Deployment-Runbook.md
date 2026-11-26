@@ -10,6 +10,7 @@ This runbook is prepared for review only. It is not an authorization to deploy.
 - `BACKUP_MARKER` and `BACKUP_MANIFEST` must identify a fresh, verified encrypted backup.
 - `BACKUP_REQUIRED_FILES` must list the encrypted database dump, uploads archive, Data Protection keys and recovery configuration artifacts from that same set.
 - `PUBLIC_ACCOUNT_URL` must identify the unauthenticated account endpoint; deployment acceptance requires HTTP 401 there so a shallow health response cannot mask database authentication failure.
+- `AUTH_ACCEPTANCE_URL` and `AUTH_ACCEPTANCE_COOKIE_FILE` must provide an owner-authorized authenticated `/api/account/me` request; deployment and rollback cannot be marked successful from HTTP 401 alone.
 - The deployment gate performs a password-authenticated TCP `select 1` against the existing PostgreSQL container using the protected production environment file before application mutation.
 - `BACKEND_IMAGE` and `FRONTEND_IMAGE` must be full immutable GHCR digest references from the same source SHA.
 - Confirm adequate disk and memory before execution.
@@ -26,6 +27,8 @@ export BACKUP_REQUIRED_FILES='/opt/emg/backups/manual/<verified-set>/<database-d
 export PUBLIC_HEALTH_URL='https://emg.example.test/'
 export PUBLIC_API_HEALTH_URL='https://emg.example.test/api/health'
 export PUBLIC_ACCOUNT_URL='https://emg.example.test/api/account/me'
+export AUTH_ACCEPTANCE_URL='https://emg.example.test/api/account/me'
+export AUTH_ACCEPTANCE_COOKIE_FILE='/run/emg-deploy/auth.cookies'
 export COMPOSE_FILE='/opt/emg/deployment/docker-compose.prod.yml'
 export ENV_FILE='/opt/emg/deployment/.env'
 sudo -u emg-deploy /opt/emg/deployment/deploy-approved-images.sh
