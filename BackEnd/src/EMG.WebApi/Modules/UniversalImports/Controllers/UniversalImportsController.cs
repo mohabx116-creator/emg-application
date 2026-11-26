@@ -17,5 +17,9 @@ public sealed class UniversalImportsController(IUniversalImportPreviewService pr
         if (file is null) return BadRequest(new { message = "An XLSX file is required." });
         try { return Ok(await previewService.PreviewAsync(file, cancellationToken)); }
         catch (InvalidOperationException exception) { return BadRequest(new { message = exception.Message }); }
+        catch (Exception exception) when (exception is ArgumentException or System.IO.InvalidDataException or System.Xml.XmlException or DocumentFormat.OpenXml.Packaging.OpenXmlPackageException)
+        {
+            return BadRequest(new { message = "تعذر قراءة ملف Excel. تحقق من صيغة XLSX وسلامة الملف." });
+        }
     }
 }

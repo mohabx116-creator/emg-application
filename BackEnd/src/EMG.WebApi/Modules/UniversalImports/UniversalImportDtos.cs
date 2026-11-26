@@ -34,7 +34,15 @@ public sealed record UniversalPreviewResponse(
     IReadOnlyList<UniversalReconciliationPreview> Reconciliations,
     IReadOnlyList<UniversalDuplicateCandidate> DuplicateCandidates,
     IReadOnlyList<string> Exceptions,
-    string? SourceProjectCode = null);
+    string? SourceProjectCode = null)
+{
+    public UniversalProjectMetadata? ProjectMetadata { get; init; }
+    public IReadOnlyList<UniversalImportIssue> Issues { get; init; } = [];
+}
+
+public sealed record UniversalProjectMetadata(string? ClientName, string? OwnerName, string? PayerName, string? Location);
+
+public sealed record UniversalImportIssue(string Code, string SheetName, string SourceCoordinate, string? RecordId, string Message);
 
 public sealed record UniversalSectionPreview(
     string SectionId,

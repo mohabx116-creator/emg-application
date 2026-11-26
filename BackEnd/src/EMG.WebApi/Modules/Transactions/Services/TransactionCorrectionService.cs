@@ -30,15 +30,19 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         if (!EditableProperties.ContainsKey(type)) return null;
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var record = await FindAsync(type, entityId, cancellationToken);
-        var requestedAmount = request.Values.TryGetValue("Amount", out var amountValue) && amountValue.TryGetDecimal(out var directAmount)
-            ? directAmount
-            : request.Values.TryGetValue("TotalAmount", out var totalValue) && totalValue.TryGetDecimal(out var directTotal) ? directTotal : (decimal?)null;
-        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasCorrectionPermission, permissionCode, cancellationToken, requestedAmount) || IsCancelled(record)) return null;
+        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasCorrectionPermission, permissionCode, cancellationToken) || IsCancelled(record)) return null;
         if (!ValidateValues(type, request.Values, out var validation)) throw new TransactionValidationException(validation!);
 
         var before = Capture(record, EditableProperties[type]);
+        var originalAmount = FinancialAmount(record);
         Apply(record, request.Values, EditableProperties[type]);
         Recalculate(record, type);
+        if (!await CanAccessAsync(type, record, userId.Value, globalAccess, hasCorrectionPermission, permissionCode, cancellationToken, originalAmount))
+        {
+            foreach (var (name, value) in before)
+                record.GetType().GetProperty(name)!.SetValue(record, value);
+            return null;
+        }
         var dependencyError = await ValidateFinancialDependenciesAsync(type, record, entityId, cancellationToken);
         if (dependencyError is not null) throw new TransactionValidationException([dependencyError]);
         var after = Capture(record, EditableProperties[type]);
@@ -89,7 +93,7 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         _ => null
     };
 
-    private async Task<bool> CanAccessAsync(string type, object record, int userId, bool globalAccess, bool hasOverridePermission, string permissionCode, CancellationToken cancellationToken, decimal? requestedAmount = null)
+    private async Task<bool> CanAccessAsync(string type, object record, int userId, bool globalAccess, bool hasOverridePermission, string permissionCode, CancellationToken cancellationToken, decimal originalAmount = 0m)
     {
         if (globalAccess) return true;
         var projectValue = record.GetType().GetProperty("ProjectId")?.GetValue(record);
@@ -104,18 +108,18 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         var owner = record.GetType().GetProperty("CreatedByUserId")?.GetValue(record) as int?;
         owner ??= record.GetType().GetProperty("UserId")?.GetValue(record) as int?;
         if (owner == userId && (inProject || projectId is null)) return true;
-        return hasOverridePermission && await HasScopedGrantAsync(record, projectId, userId, permissionCode, cancellationToken, requestedAmount);
+        return hasOverridePermission && await HasScopedGrantAsync(record, projectId, userId, permissionCode, cancellationToken, originalAmount);
     }
 
-    private async Task<bool> HasScopedGrantAsync(object record, int? projectId, int userId, string permissionCode, CancellationToken cancellationToken, decimal? requestedAmount)
+    private async Task<bool> HasScopedGrantAsync(object record, int? projectId, int userId, string permissionCode, CancellationToken cancellationToken, decimal originalAmount)
     {
         var owner = record.GetType().GetProperty("CreatedByUserId")?.GetValue(record) as int? ?? record.GetType().GetProperty("UserId")?.GetValue(record) as int?;
-        var amount = requestedAmount ?? (record.GetType().GetProperty("Amount")?.GetValue(record) as decimal? ?? record.GetType().GetProperty("TotalAmount")?.GetValue(record) as decimal? ?? 0m);
+        var amount = Math.Max(Math.Abs(originalAmount), Math.Abs(FinancialAmount(record)));
         var assigned = projectId is int target && await db.UserProjectAssignments.AnyAsync(x => x.ProjectId == target && x.UserId == userId && x.IsActive, cancellationToken);
         var grants = await db.UserRoles.Where(x => x.UserId == userId && x.User.IsActive).SelectMany(x => x.Role.RolePermissions)
             .Where(x => x.Permission.Code == permissionCode).Select(x => new { x.Scope, x.AmountLimit, Role = x.Role.Name }).ToListAsync(cancellationToken);
         return grants.Any(grant =>
-            (grant.AmountLimit is null || grant.AmountLimit >= Math.Abs(amount)) &&
+            (grant.AmountLimit is null || grant.AmountLimit >= amount) &&
             (grant.Scope switch
             {
                 "own" => assigned && owner == userId,
@@ -124,6 +128,11 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
                 _ => false
             }));
     }
+
+    private static decimal FinancialAmount(object record) =>
+        record.GetType().GetProperty("Amount")?.GetValue(record) as decimal?
+        ?? record.GetType().GetProperty("TotalAmount")?.GetValue(record) as decimal?
+        ?? 0m;
 
     private async Task<bool> HasDependentFinancialEffectsAsync(string type, int id, CancellationToken cancellationToken)
     {

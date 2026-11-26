@@ -233,5 +233,16 @@ public sealed class DirectPostingTests
         Assert.NotNull(corrected);
         using var aboveLimit = JsonDocument.Parse("{\"TotalAmount\":150}");
         Assert.Null(await service.CorrectAsync("site-movement", movement.Id, new TransactionCorrectionRequest(aboveLimit.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""), editor.Id, false, true, CancellationToken.None));
+
+        var excavation = new ExcavationRecord { ProjectId = project.Id, Description = "حفر", CalculationMethod = "مساحة",
+            Length = 2m, Width = 2m, CalculatedQuantity = 4m, UnitPrice = 20m, TotalAmount = 80m, CreatedByUserId = owner.Id, Status = "مرحّل" };
+        db.ExcavationRecords.Add(excavation);
+        await db.SaveChangesAsync();
+        using var derivedAboveLimit = JsonDocument.Parse("{\"Length\":3}");
+        Assert.Null(await service.CorrectAsync("excavation", excavation.Id,
+            new TransactionCorrectionRequest(derivedAboveLimit.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""),
+            editor.Id, false, true, CancellationToken.None));
+        Assert.Equal(80m, excavation.TotalAmount);
+        Assert.Equal(80m, await db.ExcavationRecords.AsNoTracking().Where(x => x.Id == excavation.Id).Select(x => x.TotalAmount).SingleAsync());
     }
 }

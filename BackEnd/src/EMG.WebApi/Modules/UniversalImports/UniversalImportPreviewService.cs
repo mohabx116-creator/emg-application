@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using ClosedXML.Excel;
+using EMG.Api.Modules.Imports.Services;
 
 namespace EMG.Api.Modules.UniversalImports;
 
@@ -23,8 +24,8 @@ public sealed partial class UniversalImportPreviewService(UniversalImportMapping
         await using var input = file.OpenReadStream();
         await using var memory = new MemoryStream();
         await input.CopyToAsync(memory, cancellationToken);
-        var bytes = memory.ToArray();
-        var sha = Convert.ToHexString(SHA256.HashData(bytes));
+        memory.Position = 0;
+        var sha = Convert.ToHexString(await SHA256.HashDataAsync(memory, cancellationToken));
         memory.Position = 0;
 
         using var workbook = new XLWorkbook(memory);
@@ -102,7 +103,36 @@ public sealed partial class UniversalImportPreviewService(UniversalImportMapping
             .ToList();
         return new UniversalPreviewResponse(Path.GetFileName(file.FileName), file.Length, sha, UniversalImportMappingRegistry.Version,
             sections.Any(item => item.RequiresMapping), sections, records, totals, reconciliations, duplicates,
-            exceptions.Distinct().ToList(), WorkbookProjectCode(workbook));
+            exceptions.Distinct().ToList(), WorkbookProjectCode(workbook))
+        {
+            ProjectMetadata = new(
+                WorkbookImportService.ExtractClient(workbook),
+                WorkbookImportService.ExtractLabeledValue(workbook, "اسم المالك", exactLabel: true),
+                WorkbookImportService.ExtractLabeledValue(workbook, "الدافع", exactLabel: true),
+                WorkbookImportService.ExtractLabeledValue(workbook, "الموقع", exactLabel: true)),
+            Issues = BuildIssues(sections, records)
+        };
+    }
+
+    private static IReadOnlyList<UniversalImportIssue> BuildIssues(
+        IReadOnlyList<UniversalSectionPreview> sections, IReadOnlyList<UniversalRecordPreview> records)
+    {
+        var issues = sections.Where(section => section.MappingFamily == "MAPPING_REQUIRED")
+            .Select(section => new UniversalImportIssue("SHEET_MAPPING_REQUIRED", section.SheetName,
+                $"{section.SheetName}!{section.SourceRange}", null, "يحتاج هذا النطاق إلى تحديد نوع البيانات من المصدر."))
+            .ToList();
+        foreach (var record in records.Where(record => !record.IsSummary && !record.EligibleForPosting))
+        {
+            var code = record.OperationalEvidence?.RequiresManualMapping == true
+                ? "ROW_MAPPING_REQUIRED"
+                : record.RecordType == UniversalRecordType.Unresolved ? "ROW_UNRESOLVED" : null;
+            if (code is null) continue;
+            var message = code == "ROW_MAPPING_REQUIRED"
+                ? "تحتاج الحركة إلى تأكيد المطابقة مع نوع العملية في النظام."
+                : "لم يمكن إثبات المعنى المحاسبي من بيانات الصف.";
+            issues.Add(new(code, record.SheetName, record.SourceCoordinate, record.RecordId, message));
+        }
+        return issues;
     }
 
     private static List<Block> BuildGroups(IXLWorksheet sheet)

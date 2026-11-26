@@ -1287,7 +1287,7 @@ public sealed partial class WorkbookImportService : IWorkbookImportService
     private static bool IsGeneratedImportCode(string? value) =>
         !string.IsNullOrWhiteSpace(value) && Regex.IsMatch(value.Trim(), "^IMP-[A-F0-9]{8}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private static string? ExtractClient(XLWorkbook workbook)
+    internal static string? ExtractClient(XLWorkbook workbook)
     {
         var labeled = ExtractLabeledValue(workbook, "اسم العميل", LooksLikeClientName);
         if (LooksLikeClientName(labeled)) return labeled;
@@ -1346,7 +1346,7 @@ public sealed partial class WorkbookImportService : IWorkbookImportService
         return match.Success ? match.Value.Replace(" ", string.Empty) : null;
     }
 
-    private static string? ExtractLabeledValue(XLWorkbook workbook, string label, Func<string, bool>? validator = null)
+    internal static string? ExtractLabeledValue(XLWorkbook workbook, string label, Func<string, bool>? validator = null, bool exactLabel = false)
     {
         validator ??= static value => !string.IsNullOrWhiteSpace(value);
         var normalizedLabel = NormalizeHeader(label);
@@ -1361,8 +1361,10 @@ public sealed partial class WorkbookImportService : IWorkbookImportService
                 for (var index = 0; index < cells.Count; index++)
                 {
                     var text = SafeCellText(cells[index]);
-                    if (!NormalizeHeader(text).Contains(normalizedLabel, StringComparison.Ordinal)) continue;
                     var separator = text.IndexOf(':');
+                    var candidateLabel = exactLabel && separator >= 0 ? text[..separator] : text;
+                    var normalized = NormalizeHeader(candidateLabel);
+                    if (exactLabel ? normalized != normalizedLabel : !normalized.Contains(normalizedLabel, StringComparison.Ordinal)) continue;
                     if (separator >= 0 && separator < text.Length - 1)
                     {
                         var inline = NullIfEmpty(text[(separator + 1)..]);
@@ -1374,10 +1376,17 @@ public sealed partial class WorkbookImportService : IWorkbookImportService
                     // at O2). That old approach could turn "حساب الحفر"
                     // into a plot number. Only accept an inline value, the
                     // immediately adjacent physical cell, or the cell below.
-                    var adjacent = SafeCellText(sheet.Cell(cells[index].Address.RowNumber, cells[index].Address.ColumnNumber + 1));
-                    if (!LooksLikeStandaloneLabel(adjacent) && validator(adjacent)) candidates.Add((adjacent.Trim(), 50));
-                    var below = SafeCellText(sheet.Cell(cells[index].Address.RowNumber + 1, cells[index].Address.ColumnNumber));
-                    if (!LooksLikeStandaloneLabel(below) && validator(below)) candidates.Add((below.Trim(), 40));
+                    var anchor = cells[index].Address;
+                    if (anchor.ColumnNumber < 16_384)
+                    {
+                        var adjacent = SafeCellText(sheet.Cell(anchor.RowNumber, anchor.ColumnNumber + 1));
+                        if (!LooksLikeStandaloneLabel(adjacent) && validator(adjacent)) candidates.Add((adjacent.Trim(), 50));
+                    }
+                    if (anchor.RowNumber < 1_048_576)
+                    {
+                        var below = SafeCellText(sheet.Cell(anchor.RowNumber + 1, anchor.ColumnNumber));
+                        if (!LooksLikeStandaloneLabel(below) && validator(below)) candidates.Add((below.Trim(), 40));
+                    }
                 }
             }
         }

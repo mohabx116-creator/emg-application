@@ -49,6 +49,8 @@ public sealed class UniversalImportPreviewTests
         Assert.Equal("SiteMovement", local.OperationalEvidence?.Target);
         Assert.True(local.OperationalEvidence?.RequiresManualMapping);
         Assert.False(local.EligibleForPosting);
+        Assert.Contains(preview.Issues, issue => issue.Code == "ROW_MAPPING_REQUIRED" &&
+            issue.RecordId == local.RecordId && issue.SourceCoordinate == "Daily records!C2");
         var foreign = Assert.Single(preview.Records, row => row.SourceCoordinate == "Daily records!C3");
         Assert.Equal("USD", foreign.Currency);
         Assert.False(foreign.EligibleForPosting);
@@ -60,6 +62,8 @@ public sealed class UniversalImportPreviewTests
         using var workbook = new XLWorkbook();
         var sheet = workbook.AddWorksheet("خاص باعمال الموقع");
         sheet.Cell("A1").Value = "رقم القطعة: 315";
+        sheet.Cell("A2").Value = "اسم المالك: مالك تجريبي";
+        sheet.Cell("A3").Value = "خاص بأعمال الموقع: مصروفات";
         sheet.Cell("A9").Value = "رقم البند";
         sheet.Cell("B9").Value = "التاريخ";
         sheet.Cell("C9").Value = "نوع الاعمال";
@@ -97,6 +101,9 @@ public sealed class UniversalImportPreviewTests
 
         var preview = await service.PreviewAsync(upload, CancellationToken.None);
 
+        Assert.Equal("315", preview.SourceProjectCode);
+        Assert.Equal("مالك تجريبي", preview.ProjectMetadata?.OwnerName);
+        Assert.Null(preview.ProjectMetadata?.Location);
         var rows = preview.Records.Where(item => item.SheetName == "خاص باعمال الموقع" && item.OperationalEvidence is not null).ToList();
         Assert.Equal(2, rows.Count);
         Assert.Contains(rows, item => item.SourceCoordinate == "خاص باعمال الموقع!J10" && item.Amount == 4050m && item.EligibleForPosting);
