@@ -3,6 +3,7 @@ using EMG.Api.Modules.SiteMovements.Dtos;
 using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace EMG.Api.Modules.SiteMovements.Services;
 
@@ -44,6 +45,7 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
 
         var amount = request.Amount ?? (request.Quantity ?? 0) * (request.UnitPrice ?? 0);
         if (amount < 0) return null;
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var movement = new SiteMovement
         {
             ProjectId = request.ProjectId, SupplierId = request.SupplierId,
@@ -51,12 +53,15 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
             Description = request.Description.Trim(), Unit = request.Unit?.Trim(), Quantity = request.Quantity,
             UnitPrice = request.UnitPrice, TotalAmount = decimal.Round(amount, 2),
             MovementDate = request.MovementDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.MovementDate.Value.Date, DateTimeKind.Utc),
-            Status = "مسودة", Reference = request.Reference?.Trim(), Details = request.Details?.Trim(), CreatedByUserId = userId,
+            Status = "مرحّل", Reference = request.Reference?.Trim(), Details = request.Details?.Trim(), CreatedByUserId = userId,
             ExpenseCategory = request.ExpenseCategory?.Trim(), PaidTo = request.PaidTo?.Trim(),
             PaymentMethod = request.PaymentMethod?.Trim(), IsPaid = request.IsPaid ?? false
         };
         db.SiteMovements.Add(movement);
         await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "site-movement", EntityId = movement.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل مباشر وفق سياسة النشر الموحد" });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await db.SiteMovements.AsNoTracking().Where(item => item.Id == movement.Id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 
@@ -64,12 +69,13 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
     {
         var movement = await db.SiteMovements.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (movement is null || (!isAdmin && (userId is null || !await HasProjectAccessAsync(movement.ProjectId, userId.Value, cancellationToken)))) return null;
-        if (movement.Status is not ("مسودة" or "مرفوض") || request.ProjectId != movement.ProjectId) return null;
+        if (movement.Status == "محذوف" || request.ProjectId != movement.ProjectId) return null;
         if (request.SupplierId is not null && !await db.Suppliers.AnyAsync(item => item.Id == request.SupplierId && item.IsActive, cancellationToken)) return null;
 
         var amount = request.Amount ?? (request.Quantity ?? 0) * (request.UnitPrice ?? 0);
         if (amount < 0) return null;
         var previousStatus = movement.Status;
+        var previousValues = JsonSerializer.Serialize(new { movement.Description, movement.Quantity, movement.UnitPrice, movement.TotalAmount, movement.MovementDate, movement.SupplierId });
         movement.SupplierId = request.SupplierId;
         movement.MovementType = request.MovementType.Trim();
         movement.Description = request.Description.Trim();
@@ -84,7 +90,8 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
         movement.PaidTo = request.PaidTo?.Trim();
         movement.PaymentMethod = request.PaymentMethod?.Trim();
         movement.IsPaid = request.IsPaid ?? false;
-        db.WorkflowActions.Add(new WorkflowAction { EntityType = "site-movement", EntityId = id, Action = "تعديل", FromStatus = previousStatus, ToStatus = previousStatus, UserId = userId, Notes = "تعديل بيانات الحركة" });
+        var updatedValues = JsonSerializer.Serialize(new { movement.Description, movement.Quantity, movement.UnitPrice, movement.TotalAmount, movement.MovementDate, movement.SupplierId });
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "site-movement", EntityId = id, Action = "تصحيح", FromStatus = previousStatus, ToStatus = previousStatus, UserId = userId, Notes = $"قبل={previousValues};بعد={updatedValues}" });
         await db.SaveChangesAsync(cancellationToken);
         return await db.SiteMovements.AsNoTracking().Where(item => item.Id == id).Select(ToSummary()).FirstAsync(cancellationToken);
     }

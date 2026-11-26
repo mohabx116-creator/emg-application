@@ -26,6 +26,7 @@ public sealed class ConcreteService(EmgDbContext db) : IConcreteService
         if (!await db.Projects.AnyAsync(item => item.Id == request.ProjectId, cancellationToken)) return null;
         if (request.SupplierId is not null && !await db.Suppliers.AnyAsync(item => item.Id == request.SupplierId && item.IsActive, cancellationToken)) return null;
         if (request.Quantity <= 0 || request.UnitPrice < 0 || string.IsNullOrWhiteSpace(request.ElementType)) return null;
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var record = new ConcreteRecord
         {
             ProjectId = request.ProjectId, SupplierId = request.SupplierId, AccountCategory = string.IsNullOrWhiteSpace(request.AccountCategory) ? "المقاول" : request.AccountCategory.Trim(),
@@ -33,11 +34,14 @@ public sealed class ConcreteService(EmgDbContext db) : IConcreteService
             ElementType = request.ElementType.Trim(), MixGrade = request.MixGrade?.Trim(), Quantity = request.Quantity,
             Unit = string.IsNullOrWhiteSpace(request.Unit) ? "م3" : request.Unit.Trim(), UnitPrice = request.UnitPrice,
             TotalAmount = decimal.Round(request.Quantity * request.UnitPrice, 2),
-            PourDate = request.PourDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.PourDate.Value.Date, DateTimeKind.Utc),
+            PourDate = request.PourDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.PourDate.Value.Date, DateTimeKind.Utc), Status = "مرحّل",
             DeliveryNoteNumber = request.DeliveryNoteNumber?.Trim(), Description = request.Description.Trim(), Notes = request.Notes?.Trim(), CreatedByUserId = userId
         };
         db.ConcreteRecords.Add(record);
         await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "concrete", EntityId = record.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل مباشر وفق سياسة النشر الموحد" });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await db.ConcreteRecords.AsNoTracking().Where(item => item.Id == record.Id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 

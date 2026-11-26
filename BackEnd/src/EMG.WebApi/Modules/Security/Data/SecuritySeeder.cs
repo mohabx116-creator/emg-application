@@ -33,6 +33,9 @@ public static class SecuritySeeder
             new Permission { Code = "attendance.manage", DisplayName = "إدارة الحضور والانصراف" },
             new Permission { Code = "notifications.view", DisplayName = "عرض الإشعارات" },
             new Permission { Code = "workflow.execute", DisplayName = "تنفيذ إجراءات الاعتماد" },
+            new Permission { Code = "transactions.correct", DisplayName = "تصحيح المعاملات المسجلة" },
+            new Permission { Code = "transactions.cancel", DisplayName = "إلغاء أو عكس المعاملات" },
+            new Permission { Code = "transactions.history", DisplayName = "عرض تاريخ تعديلات المعاملات" },
             new Permission { Code = "search.view", DisplayName = "استخدام البحث" },
 
             // الصلاحيات التفصيلية الجديدة: كل إجراء حساس له صلاحية مستقلة.
@@ -208,7 +211,7 @@ public static class SecuritySeeder
                 "steel.view", "steel.submit", "steel.approve", "steel.reject", "steel.post",
                 "finishing.view", "finishing.submit", "finishing.approve", "finishing.reject", "finishing.post",
                 "final-accounts.view", "final-accounts.approve", "final-accounts.export",
-                "attachments.view", "workflow.execute", "notifications.view", "attendance.view", "attendance.check-in", "attendance.check-out", "search.view"
+                "attachments.view", "workflow.execute", "transactions.correct", "transactions.cancel", "transactions.history", "notifications.view", "attendance.view", "attendance.check-in", "attendance.check-out", "search.view"
             ],
             ["accountant"] =
             [
@@ -216,7 +219,7 @@ public static class SecuritySeeder
                 "projects.view", "reports.view", "reports.export", "suppliers.view", "suppliers.supplies-create", "suppliers.payments-create", "suppliers.submit", "suppliers.approve", "suppliers.reject", "suppliers.post", "suppliers.export",
                 "suppliers.supplies-approve-financial",
                 "advances.view", "advances.create", "advances.allocate", "advances.submit", "advances.approve", "advances.reject", "advances.post", "advances.export", "final-accounts.view", "final-accounts.approve", "final-accounts.export",
-                "attachments.view", "attachments.upload", "notifications.view", "attendance.view", "attendance.check-in", "attendance.check-out", "search.view"
+                "attachments.view", "attachments.upload", "transactions.correct", "transactions.cancel", "transactions.history", "notifications.view", "attendance.view", "attendance.check-in", "attendance.check-out", "search.view"
             ],
             ["user"] = ["notifications.view", "attendance.view", "attendance.check-in", "attendance.check-out"]
         };

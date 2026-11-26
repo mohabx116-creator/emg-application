@@ -17,9 +17,13 @@ public sealed class AttendanceService(EmgDbContext db) : IAttendanceService
         var today = Today();
         var existing = await db.AttendanceRecords.Include(item => item.User).FirstOrDefaultAsync(item => item.UserId == userId && item.AttendanceDate == today, cancellationToken);
         if (existing is not null) return ToSummary(existing);
-        var record = new AttendanceRecord { UserId = userId, AttendanceDate = today, CheckInAtUtc = DateTime.UtcNow, Notes = notes?.Trim() };
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var record = new AttendanceRecord { UserId = userId, AttendanceDate = today, CheckInAtUtc = DateTime.UtcNow, Notes = notes?.Trim(), Status = "مرحّل" };
         db.AttendanceRecords.Add(record);
         await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new EMG.Domain.Entities.WorkflowAction { EntityType = "attendance", EntityId = record.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل حضور مباشر" });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         await db.Entry(record).Reference(item => item.User).LoadAsync(cancellationToken);
         return ToSummary(record);
     }

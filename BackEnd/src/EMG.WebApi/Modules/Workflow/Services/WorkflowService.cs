@@ -260,7 +260,7 @@ public sealed class WorkflowService(EmgDbContext db, INotificationService notifi
         access.IsCanonicalAdmin || HasScopedGrant(access, record, GetPermissionCode(type, "view"));
 
     private static bool CanCorrectSupply(WorkflowAccess access, WorkflowRecord record, decimal amount) =>
-        access.IsCanonicalAdmin || HasScopedGrant(access, record, "suppliers.supplies-create", amount: Math.Abs(amount));
+        access.IsCanonicalAdmin || HasScopedGrant(access, record, "transactions.correct", amount: Math.Abs(amount));
 
     private static bool CanPerformAction(WorkflowAccess access, WorkflowRecord record, string type, string action)
     {

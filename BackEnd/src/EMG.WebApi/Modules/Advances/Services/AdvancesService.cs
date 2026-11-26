@@ -30,6 +30,7 @@ public sealed class AdvancesService(EmgDbContext db) : IAdvancesService
         if (!isAdmin && (userId is null || !await db.UserProjectAssignments.AnyAsync(item => item.ProjectId == request.ProjectId && item.UserId == userId && item.IsActive, cancellationToken))) return null;
         var project = await db.Projects.FirstOrDefaultAsync(item => item.Id == request.ProjectId, cancellationToken);
         if (project is null || request.Amount <= 0) return null;
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var advance = new AdvancePayment
         {
             ProjectId = request.ProjectId,
@@ -38,10 +39,13 @@ public sealed class AdvancesService(EmgDbContext db) : IAdvancesService
             Amount = request.Amount,
             PaymentDate = request.PaymentDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.PaymentDate.Value.Date, DateTimeKind.Utc),
             PaymentMethod = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "تحويل" : request.PaymentMethod.Trim(),
-            Reference = request.Reference?.Trim(), Notes = request.Notes?.Trim(), CreatedByUserId = userId
+            Reference = request.Reference?.Trim(), Notes = request.Notes?.Trim(), CreatedByUserId = userId, Status = "مرحّل"
         };
         db.AdvancePayments.Add(advance);
         await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "advance-payment", EntityId = advance.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل مباشر وفق سياسة النشر الموحد" });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await db.AdvancePayments.AsNoTracking().Where(item => item.Id == advance.Id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 

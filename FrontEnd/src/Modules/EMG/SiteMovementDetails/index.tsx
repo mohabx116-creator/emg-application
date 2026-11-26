@@ -57,7 +57,7 @@ export default function EmgSiteMovementDetails() {
   const id = Number(movementId);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canUpdate = user?.permissions?.includes('site-movements.update');
+  const canUpdate = user?.permissions?.includes('transactions.correct');
   const canSubmit = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.submit');
   const canReview =
     user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.approve');
@@ -323,16 +323,14 @@ export default function EmgSiteMovementDetails() {
             </Button>
           )}
         </Stack>
-        {canUpdate && (movement.status === 'مسودة' || movement.status === 'مرفوض') && (
+        {canUpdate && movement.status !== 'محذوف' && (
           <>
             <Divider sx={{ my: 2 }} />
             <Stack direction="row" spacing={1}>
               <Button disabled={busy} onClick={() => setEditOpen(true)} startIcon={<IconEdit size={16} />}>
-                تعديل
+                تصحيح
               </Button>
-              <Button color="error" disabled={busy} onClick={remove} startIcon={<IconTrash size={16} />}>
-                حذف
-              </Button>
+              {(movement.status === 'مسودة' || movement.status === 'مرفوض') && <Button color="error" disabled={busy} onClick={remove} startIcon={<IconTrash size={16} />}>حذف</Button>}
             </Stack>
           </>
         )}

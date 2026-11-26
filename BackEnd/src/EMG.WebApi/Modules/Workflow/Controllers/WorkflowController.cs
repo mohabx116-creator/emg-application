@@ -3,6 +3,7 @@ using EMG.Api.Modules.Workflow.Dtos;
 using EMG.Api.Modules.Workflow.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using EMG.Api.Modules.Security.Authorization;
 
 namespace EMG.Api.Modules.Workflow.Controllers;
 
@@ -41,6 +42,7 @@ public sealed class WorkflowController(IWorkflowService workflowService) : Contr
     }
 
     [HttpGet("{entityType}/{entityId:int}/history")]
+    [PermissionAuthorize("transactions.history")]
     public async Task<ActionResult<IReadOnlyList<WorkflowResult>>> History(string entityType, int entityId, CancellationToken cancellationToken)
     {
         if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ||
@@ -49,6 +51,7 @@ public sealed class WorkflowController(IWorkflowService workflowService) : Contr
     }
 
     [HttpPost("supplier-supply/{entityId:int}/correction")]
+    [PermissionAuthorize("transactions.correct")]
     public async Task<IActionResult> CorrectSupply(int entityId, CorrectSupplyRequest request, CancellationToken cancellationToken)
     {
         try

@@ -41,7 +41,7 @@ public sealed class SiteMovementsController(ISiteMovementsService siteMovementsS
     }
 
     [HttpPut("{id:int}")]
-    [PermissionAuthorize("site-movements.update")]
+    [PermissionAuthorize("transactions.correct")]
     public async Task<ActionResult<SiteMovementSummary>> Update(int id, CreateSiteMovementRequest request, CancellationToken cancellationToken)
     {
         if (request.ProjectId <= 0 || string.IsNullOrWhiteSpace(request.Description) || string.IsNullOrWhiteSpace(request.MovementType) || request.Amount < 0 || request.Quantity < 0 || request.UnitPrice < 0)
@@ -53,7 +53,7 @@ public sealed class SiteMovementsController(ISiteMovementsService siteMovementsS
     }
 
     [HttpDelete("{id:int}")]
-    [PermissionAuthorize("site-movements.update")]
+    [PermissionAuthorize("transactions.cancel")]
     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken) =>
         await siteMovementsService.DeleteAsync(id, CurrentUserId(), IsAdmin(), cancellationToken)
             ? NoContent()

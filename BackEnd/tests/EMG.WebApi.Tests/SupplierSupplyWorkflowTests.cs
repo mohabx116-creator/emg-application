@@ -185,6 +185,7 @@ public sealed partial class WorkflowAuthorizationTests
         var accountant = await qa.AddUserAsync("accountant");
         await qa.AssignAsync(engineer, project);
         await qa.AssignAsync(manager, project);
+        await qa.GrantAsync("engineer", "transactions.correct", "assigned", 1000m);
         var supply = await AddSupplierSupplyAsync(qa.Db, project, notes: "استيراد: مصدر تجريبي");
         var technical = qa.Controller(manager, "project_manager");
         var finance = qa.Controller(accountant, "accountant");

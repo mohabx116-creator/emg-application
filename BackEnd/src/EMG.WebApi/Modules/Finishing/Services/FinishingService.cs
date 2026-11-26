@@ -26,15 +26,19 @@ public sealed class FinishingService(EmgDbContext db) : IFinishingService
         if (!await db.Projects.AnyAsync(item => item.Id == request.ProjectId, cancellationToken)) return null;
         if (request.SupplierId is not null && !await db.Suppliers.AnyAsync(item => item.Id == request.SupplierId && item.IsActive, cancellationToken)) return null;
         if (request.Quantity <= 0 || request.UnitPrice < 0 || string.IsNullOrWhiteSpace(request.WorkType) || string.IsNullOrWhiteSpace(request.Description)) return null;
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var record = new FinishingRecord
         {
             ProjectId = request.ProjectId, SupplierId = request.SupplierId, AccountCategory = string.IsNullOrWhiteSpace(request.AccountCategory) ? "غير محدد" : request.AccountCategory.Trim(), WorkType = request.WorkType.Trim(), AreaName = request.AreaName?.Trim(),
             Quantity = request.Quantity, Unit = string.IsNullOrWhiteSpace(request.Unit) ? "م2" : request.Unit.Trim(), UnitPrice = request.UnitPrice,
-            TotalAmount = decimal.Round(request.Quantity * request.UnitPrice, 2), WorkDate = request.WorkDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.WorkDate.Value.Date, DateTimeKind.Utc),
+            TotalAmount = decimal.Round(request.Quantity * request.UnitPrice, 2), WorkDate = request.WorkDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.WorkDate.Value.Date, DateTimeKind.Utc), Status = "مرحّل",
             Description = request.Description.Trim(), Notes = request.Notes?.Trim(), CreatedByUserId = userId
         };
         db.FinishingRecords.Add(record);
         await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "finishing", EntityId = record.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل مباشر وفق سياسة النشر الموحد" });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await db.FinishingRecords.AsNoTracking().Where(item => item.Id == record.Id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 

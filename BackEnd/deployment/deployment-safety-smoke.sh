@@ -45,6 +45,7 @@ if [[ "${1:-}" == compose ]]; then
   if [[ "$args" == *' pull '* ]]; then exit 0; fi
   if [[ "$args" == *' up '* ]]; then
     [[ "${FAKE_UP_FAIL:-0}" != 1 ]] || exit 1
+    printf '%s\n' "$args" >>"$runtime/up-args"
     printf '%s' "${BACKEND_IMAGE:?}" >"$runtime/backend"
     printf '%s' "${FRONTEND_IMAGE:?}" >"$runtime/frontend"
     exit 0
@@ -196,6 +197,7 @@ rm -f "$RUNTIME_DIR/curl-count"
 set +e; "$DEPLOY_SCRIPT" >/dev/null 2>&1; code=$?; set -e
 [[ "$code" -eq 10 ]]
 grep -q '^result=rollback-success$' "$STATE_DIR/release-state.env"
+grep -q -- '--pull never' "$RUNTIME_DIR/up-args"
 echo 'failed health with successful rollback: PASS'
 
 export FAKE_CURL_MODE=always-fail

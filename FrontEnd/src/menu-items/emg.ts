@@ -234,7 +234,6 @@ export const emgGroups: NavItemType[] = [
   emgOverviewGroup,
   emgSiteOperationsGroup,
   emgProcurementGroup,
-  emgApprovalsGroup,
   emgReportsGroup,
   emgAdministrationGroup
 ];

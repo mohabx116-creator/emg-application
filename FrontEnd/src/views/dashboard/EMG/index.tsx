@@ -455,7 +455,7 @@ export default function EmgDashboard() {
       case 'admin':
         add(canReadUsers, { label: 'إدارة المستخدمين', to: '/emg/users', icon: <IconUsers size={22} />, tone: 'primary' });
         add(canReadRoles, { label: 'الأدوار والصلاحيات', to: '/emg/roles', icon: <IconUserShield size={22} />, tone: 'secondary' });
-        add(canReadReviewCenter, {
+        add(false, {
           label: 'مركز المراجعة',
           to: '/emg/review-center',
           icon: <IconChecklist size={22} />,
@@ -469,7 +469,7 @@ export default function EmgDashboard() {
 
       case 'director':
         add(canReadProjects, { label: 'محفظة المشاريع', to: '/emg/projects', icon: <IconBuilding size={22} />, tone: 'primary' });
-        add(canReadReviewCenter, {
+        add(false, {
           label: 'مركز الاعتمادات',
           to: '/emg/review-center',
           icon: <IconChecklist size={22} />,
@@ -485,7 +485,7 @@ export default function EmgDashboard() {
       case 'accountant':
         add(canReadAdvances, { label: 'دفعات تحت الحساب', to: '/emg/advances', icon: <IconCash size={22} />, tone: 'success' });
         add(canReadSuppliers, { label: 'حسابات الموردين', to: '/emg/suppliers', icon: <IconTruckDelivery size={22} />, tone: 'warning' });
-        add(canReadReviewCenter, {
+        add(false, {
           label: 'المراجعة المالية',
           to: '/emg/review-center',
           icon: <IconChecklist size={22} />,
@@ -498,7 +498,7 @@ export default function EmgDashboard() {
         break;
 
       case 'project_manager':
-        add(canReadReviewCenter, {
+        add(false, {
           label: 'الاعتمادات الفنية',
           to: '/emg/review-center',
           icon: <IconChecklist size={22} />,

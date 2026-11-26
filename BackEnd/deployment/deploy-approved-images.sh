@@ -215,7 +215,7 @@ rollback_in_progress=false
 rollback_application() {
   rollback_in_progress=true
   export BACKEND_IMAGE="$current_backend" FRONTEND_IMAGE="$current_frontend"
-  "${compose[@]}" up -d --no-build --no-deps api frontend || return 1
+  "${compose[@]}" up -d --pull never --no-build --no-deps api frontend || return 1
   wait_http http://127.0.0.1:5121/api/health || return 1
   wait_http http://127.0.0.1:3100/ || return 1
   wait_http "$PUBLIC_API_HEALTH_URL" || return 1
@@ -254,6 +254,7 @@ wait_http http://127.0.0.1:3100/ || die 'Frontend health timeout.'
 wait_http "$PUBLIC_API_HEALTH_URL" || die 'Public API routing health check failed.'
 wait_http "$PUBLIC_HEALTH_URL" || die 'Public frontend routing health check failed.'
 expect_http_status "$PUBLIC_ACCOUNT_URL" 401 || die 'Authenticated database readiness check failed.'
+  check_fresh_authenticated_acceptance
 verify_authenticated_acceptance || die 'Authenticated functional acceptance failed.'
 
 api_id="$(service_container api)"

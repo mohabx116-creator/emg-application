@@ -35,17 +35,21 @@ public sealed class ExcavationService(EmgDbContext db) : IExcavationService
         };
         if (quantity <= 0 || request.UnitPrice < 0 || method is not ("كمية مباشرة" or "مساحة" or "حجم")) return null;
 
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var record = new ExcavationRecord
         {
             ProjectId = request.ProjectId, SupplierId = request.SupplierId, AccountCategory = string.IsNullOrWhiteSpace(request.AccountCategory) ? "العرب" : request.AccountCategory.Trim(), CalculationMethod = method,
             Length = request.Length, Width = request.Width, Depth = request.Depth, CalculatedQuantity = decimal.Round(quantity, 3),
             Unit = string.IsNullOrWhiteSpace(request.Unit) ? "م3" : request.Unit.Trim(), UnitPrice = request.UnitPrice,
             TotalAmount = decimal.Round(quantity * request.UnitPrice, 2), SoilType = request.SoilType?.Trim(),
-            Description = request.Description.Trim(), ExcavationDate = request.ExcavationDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.ExcavationDate.Value.Date, DateTimeKind.Utc),
+            Description = request.Description.Trim(), ExcavationDate = request.ExcavationDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.ExcavationDate.Value.Date, DateTimeKind.Utc), Status = "مرحّل",
             Notes = request.Notes?.Trim(), CreatedByUserId = userId
         };
         db.ExcavationRecords.Add(record);
         await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "excavation", EntityId = record.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل مباشر وفق سياسة النشر الموحد" });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await db.ExcavationRecords.AsNoTracking().Where(item => item.Id == record.Id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 

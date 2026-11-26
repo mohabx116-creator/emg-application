@@ -116,6 +116,7 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
                 item.InvoiceNumber != null && item.InvoiceNumber.ToLower() == invoice, cancellationToken);
             if (duplicateInvoice) throw new DuplicateSupplierTransactionException("رقم الفاتورة مستخدم بالفعل لهذا المورد داخل نفس المشروع.");
         }
+        await using var supplyTransaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var supply = new SupplierSupply
         {
             SupplierId = supplierId, ProjectId = request.ProjectId,
@@ -125,10 +126,13 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
             SupplyDate = request.SupplyDate is null
                 ? DateTime.UtcNow.Date
                 : DateTime.SpecifyKind(request.SupplyDate.Value.Date, DateTimeKind.Utc),
-            InvoiceNumber = request.InvoiceNumber?.Trim(), Notes = request.Notes?.Trim(), Status = "مسودة", CreatedByUserId = userId
+            InvoiceNumber = request.InvoiceNumber?.Trim(), Notes = request.Notes?.Trim(), Status = "مرحّل", CreatedByUserId = userId
         };
         db.SupplierSupplies.Add(supply);
         await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "supplier-supply", EntityId = supply.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل مباشر وفق سياسة النشر الموحد" });
+        await db.SaveChangesAsync(cancellationToken);
+        await supplyTransaction.CommitAsync(cancellationToken);
         return await db.SupplierSupplies.AsNoTracking().Where(item => item.Id == supply.Id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 
@@ -159,15 +163,19 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
             if (duplicateReference) throw new DuplicateSupplierTransactionException("مرجع الدفع مستخدم بالفعل لنفس المورد والقيمة والمشروع.");
         }
 
+        await using var paymentTransaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var payment = new SupplierPayment
         {
             SupplierId = supplierId, ProjectId = request.ProjectId, SupplyId = request.SupplyId, Amount = request.Amount,
             PaymentDate = request.PaymentDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.PaymentDate.Value.Date, DateTimeKind.Utc),
             PaymentMethod = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "نقدي" : request.PaymentMethod.Trim(),
-            Reference = request.Reference?.Trim(), Notes = request.Notes?.Trim(), Status = "مسودة"
+            Reference = request.Reference?.Trim(), Notes = request.Notes?.Trim(), Status = "مرحّل"
         };
         db.SupplierPayments.Add(payment);
         await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "supplier-payment", EntityId = payment.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل مباشر وفق سياسة النشر الموحد" });
+        await db.SaveChangesAsync(cancellationToken);
+        await paymentTransaction.CommitAsync(cancellationToken);
         return await db.SupplierPayments.AsNoTracking().Where(item => item.Id == payment.Id).Select(ToPaymentSummary()).FirstAsync(cancellationToken);
     }
 
