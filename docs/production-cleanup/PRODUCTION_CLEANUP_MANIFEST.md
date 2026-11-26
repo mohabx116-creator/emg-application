@@ -23,6 +23,8 @@ The deletion order is explicit and follows the current EF foreign-key graph. It 
 
 The script does not delete physical uploads/profile files. Those require a separate manifest of exact paths, archive verification, and owner approval.
 
+Before any commit of a production cleanup, the script now fails closed unless it can prove that the four protected account IDs, password-hash fingerprints, role rows, permission rows, scope/amount-limit mappings, and retained user-role mappings are unchanged. It also checks every intended business table for zero rows after deletion. If a supported financial-period table exists in the final schema, it is preserved and must already contain zero disposable rows; the script never drops its schema.
+
 ## Post-cleanup acceptance
 
 On a disposable PostgreSQL clone, verify:
@@ -33,3 +35,9 @@ On a disposable PostgreSQL clone, verify:
 4. Migration history, Data Protection keys, templates and required assets remain present.
 5. Login, project creation, direct posting, reports and XLSX export work with synthetic records.
 6. No historical pending record is auto-posted and no production database is touched.
+
+## Isolated smoke-test gate
+
+The cleanup rehearsal proves database preservation and emptiness. Before production execution, run the application smoke gate against the same cleaned disposable clone with a valid synthetic password hash: login and `/api/account/me`, project creation, direct site-work posting, authorized correction, cancellation, report read, and XLSX export. The gate must also assert that a cancelled transaction has no remaining active financial effect and that the protected fingerprints still match.
+
+The current repository already contains focused coverage for these operations (`DirectPostingTests`, project creation tests, authentication regression tests, and XLSX/report integrity tests). Production execution remains blocked until the isolated authenticated API smoke run and a fresh verified encrypted backup are both recorded.
