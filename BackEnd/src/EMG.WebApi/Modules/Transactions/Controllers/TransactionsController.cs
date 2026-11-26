@@ -19,7 +19,7 @@ public sealed class TransactionsController(ITransactionCorrectionService service
     {
         try
         {
-            var result = await service.CorrectAsync(entityType, entityId, request, CurrentUserId(), GlobalAccess(), await HasPermissionAsync("transactions.correct"), cancellationToken);
+            var result = await service.CorrectAsync(entityType, entityId, request, CurrentUserId(), GlobalAccess(), await HasPermissionAsync("transactions.correct"), cancellationToken, "transactions.correct");
             return result is null ? BadRequest(new { message = "التصحيح غير مسموح أو السجل غير موجود." }) : Ok(result);
         }
         catch (TransactionValidationException exception) { return UnprocessableEntity(new { message = exception.Message, checks = exception.Errors }); }
@@ -28,7 +28,7 @@ public sealed class TransactionsController(ITransactionCorrectionService service
     [HttpDelete("{entityType}/{entityId:int}")]
     public async Task<ActionResult<TransactionOperationResult>> Delete(string entityType, int entityId, CancellationToken cancellationToken)
     {
-        var result = await service.DeleteAsync(entityType, entityId, CurrentUserId(), GlobalAccess(), await HasPermissionAsync("transactions.cancel"), cancellationToken);
+        var result = await service.DeleteAsync(entityType, entityId, CurrentUserId(), GlobalAccess(), await HasPermissionAsync("transactions.cancel"), cancellationToken, "transactions.cancel");
         return result is null ? BadRequest(new { message = "لا يمكن حذف السجل: لا تملك الصلاحية، أو يوجد اعتماد مالي تابع، أو السجل غير موجود." }) : Ok(result);
     }
 

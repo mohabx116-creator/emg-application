@@ -7,6 +7,10 @@ import {
   Card,
   CardContent,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Grid,
   Skeleton,
   Stack,
@@ -20,9 +24,9 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { IconCalendar, IconClock, IconLogin, IconLogout, IconRefresh, IconTrash, IconUserCheck } from '@tabler/icons-react';
+import { IconCalendar, IconClock, IconEdit, IconLogin, IconLogout, IconRefresh, IconTrash, IconUserCheck } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
-import { checkInAttendance, checkOutAttendance, deleteEmgTransaction, EmgAttendance as AttendanceRecord, getEmgAttendance, getTodayAttendance } from 'api/emg';
+import { checkInAttendance, checkOutAttendance, correctEmgTransaction, deleteEmgTransaction, EmgAttendance as AttendanceRecord, getEmgAttendance, getTodayAttendance } from 'api/emg';
 
 const formatTime = (value: string | null) =>
   value ? new Date(value).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—';
@@ -39,6 +43,8 @@ export default function EmgAttendance() {
   const [message, setMessage] = useState<{ severity: 'success' | 'warning'; text: string } | null>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(15);
+  const [editing, setEditing] = useState<AttendanceRecord | null>(null);
+  const [editForm, setEditForm] = useState({ checkIn: '', checkOut: '', notes: '' });
 
   const load = (dateStr = selectedDate) => {
     setLoading(true);
@@ -87,6 +93,18 @@ export default function EmgAttendance() {
     if (!window.confirm('سيتم حذف سجل الحضور نهائيًا. هل تريد المتابعة؟')) return;
     try { await deleteEmgTransaction('attendance', record.id); setMessage({ severity: 'success', text: 'تم حذف سجل الحضور.' }); load(selectedDate); }
     catch { setMessage({ severity: 'warning', text: 'تعذر حذف سجل الحضور.' }); }
+  };
+
+  const openEdit = (record: AttendanceRecord) => {
+    const local = (value: string | null) => value ? new Date(value).toISOString().slice(0, 16) : '';
+    setEditing(record); setEditForm({ checkIn: local(record.checkInAtUtc), checkOut: local(record.checkOutAtUtc), notes: record.notes || '' });
+  };
+  const saveEdit = async () => {
+    if (!editing || !editForm.checkIn) return;
+    try {
+      await correctEmgTransaction('attendance', editing.id, { CheckInAtUtc: new Date(editForm.checkIn).toISOString(), CheckOutAtUtc: editForm.checkOut ? new Date(editForm.checkOut).toISOString() : null, Notes: editForm.notes }, 'تصحيح مباشر');
+      setEditing(null); setMessage({ severity: 'success', text: 'تم تصحيح سجل الحضور.' }); load(selectedDate);
+    } catch (e: any) { setMessage({ severity: 'warning', text: e?.response?.data?.message || 'تعذر تصحيح سجل الحضور.' }); }
   };
 
   const paginatedRecords = useMemo(
@@ -332,7 +350,7 @@ export default function EmgAttendance() {
                             sx={{ fontWeight: 700 }}
                           />
                         </TableCell>
-                        <TableCell><Button size="small" color="error" onClick={() => void remove(record)} startIcon={<IconTrash size={15} />}>حذف</Button></TableCell>
+                        <TableCell><Stack direction="row" spacing={0.5}><Button size="small" onClick={() => openEdit(record)} startIcon={<IconEdit size={15} />}>تعديل</Button><Button size="small" color="error" onClick={() => void remove(record)} startIcon={<IconTrash size={15} />}>حذف</Button></Stack></TableCell>
                       </TableRow>
                     ))
                   )}
@@ -359,6 +377,15 @@ export default function EmgAttendance() {
           </MainCard>
         </>
       )}
+      <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} fullWidth maxWidth="sm">
+        <DialogTitle>تعديل سجل الحضور</DialogTitle>
+        <DialogContent dividers><Stack spacing={2} sx={{ pt: 1 }}>
+          <TextField required type="datetime-local" label="وقت الحضور" value={editForm.checkIn} onChange={(e) => setEditForm({ ...editForm, checkIn: e.target.value })} InputLabelProps={{ shrink: true }} />
+          <TextField type="datetime-local" label="وقت الانصراف" value={editForm.checkOut} onChange={(e) => setEditForm({ ...editForm, checkOut: e.target.value })} InputLabelProps={{ shrink: true }} />
+          <TextField label="ملاحظات" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+        </Stack></DialogContent>
+        <DialogActions><Button onClick={() => setEditing(null)}>إلغاء</Button><Button variant="contained" onClick={() => void saveEdit()} disabled={!editForm.checkIn}>حفظ</Button></DialogActions>
+      </Dialog>
     </Box>
   );
 }

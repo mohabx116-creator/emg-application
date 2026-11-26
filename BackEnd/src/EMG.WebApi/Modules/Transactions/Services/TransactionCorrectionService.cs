@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Data;
 using EMG.Api.Modules.Transactions.Dtos;
 using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
@@ -22,14 +23,17 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         ["attendance"] = ["CheckInAtUtc", "CheckOutAtUtc", "Notes"]
     };
 
-    public async Task<TransactionOperationResult?> CorrectAsync(string entityType, int entityId, TransactionCorrectionRequest request, int? userId, bool globalAccess, bool hasCorrectionPermission, CancellationToken cancellationToken)
+    public async Task<TransactionOperationResult?> CorrectAsync(string entityType, int entityId, TransactionCorrectionRequest request, int? userId, bool globalAccess, bool hasCorrectionPermission, CancellationToken cancellationToken, string permissionCode = "transactions.correct")
     {
         if (userId is null || request is null) return null;
         var type = Normalize(entityType);
         if (!EditableProperties.ContainsKey(type)) return null;
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var record = await FindAsync(type, entityId, cancellationToken);
-        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasCorrectionPermission, cancellationToken) || IsCancelled(record)) return null;
+        var requestedAmount = request.Values.TryGetValue("Amount", out var amountValue) && amountValue.TryGetDecimal(out var directAmount)
+            ? directAmount
+            : request.Values.TryGetValue("TotalAmount", out var totalValue) && totalValue.TryGetDecimal(out var directTotal) ? directTotal : (decimal?)null;
+        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasCorrectionPermission, permissionCode, cancellationToken, requestedAmount) || IsCancelled(record)) return null;
         if (!ValidateValues(type, request.Values, out var validation)) throw new TransactionValidationException(validation!);
 
         var before = Capture(record, EditableProperties[type]);
@@ -50,13 +54,13 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         return new TransactionOperationResult(type, entityId, StatusOf(record), "تصحيح", DateTime.UtcNow);
     }
 
-    public async Task<TransactionOperationResult?> DeleteAsync(string entityType, int entityId, int? userId, bool globalAccess, bool hasDeletePermission, CancellationToken cancellationToken)
+    public async Task<TransactionOperationResult?> DeleteAsync(string entityType, int entityId, int? userId, bool globalAccess, bool hasDeletePermission, CancellationToken cancellationToken, string permissionCode = "transactions.cancel")
     {
         if (userId is null) return null;
         var type = Normalize(entityType);
         if (!EditableProperties.ContainsKey(type)) return null;
         var record = await FindAsync(type, entityId, cancellationToken);
-        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasDeletePermission, cancellationToken) || await HasDependentFinancialEffectsAsync(type, entityId, cancellationToken)) return null;
+        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasDeletePermission, permissionCode, cancellationToken) || await HasDependentFinancialEffectsAsync(type, entityId, cancellationToken)) return null;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.WorkflowActions.Where(x => x.EntityType == type && x.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
         await db.Attachments.Where(x => x.EntityType == type && x.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
@@ -85,7 +89,7 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         _ => null
     };
 
-    private async Task<bool> CanAccessAsync(string type, object record, int userId, bool globalAccess, bool hasOverridePermission, CancellationToken cancellationToken)
+    private async Task<bool> CanAccessAsync(string type, object record, int userId, bool globalAccess, bool hasOverridePermission, string permissionCode, CancellationToken cancellationToken, decimal? requestedAmount = null)
     {
         if (globalAccess) return true;
         var projectValue = record.GetType().GetProperty("ProjectId")?.GetValue(record);
@@ -99,7 +103,26 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         if (!inProject && projectId is not null) return false;
         var owner = record.GetType().GetProperty("CreatedByUserId")?.GetValue(record) as int?;
         owner ??= record.GetType().GetProperty("UserId")?.GetValue(record) as int?;
-        return inProject && (hasOverridePermission || owner == userId) || projectId is null && (hasOverridePermission || owner == userId);
+        if (owner == userId && (inProject || projectId is null)) return true;
+        return hasOverridePermission && await HasScopedGrantAsync(record, projectId, userId, permissionCode, cancellationToken, requestedAmount);
+    }
+
+    private async Task<bool> HasScopedGrantAsync(object record, int? projectId, int userId, string permissionCode, CancellationToken cancellationToken, decimal? requestedAmount)
+    {
+        var owner = record.GetType().GetProperty("CreatedByUserId")?.GetValue(record) as int? ?? record.GetType().GetProperty("UserId")?.GetValue(record) as int?;
+        var amount = requestedAmount ?? (record.GetType().GetProperty("Amount")?.GetValue(record) as decimal? ?? record.GetType().GetProperty("TotalAmount")?.GetValue(record) as decimal? ?? 0m);
+        var assigned = projectId is int target && await db.UserProjectAssignments.AnyAsync(x => x.ProjectId == target && x.UserId == userId && x.IsActive, cancellationToken);
+        var grants = await db.UserRoles.Where(x => x.UserId == userId && x.User.IsActive).SelectMany(x => x.Role.RolePermissions)
+            .Where(x => x.Permission.Code == permissionCode).Select(x => new { x.Scope, x.AmountLimit, Role = x.Role.Name }).ToListAsync(cancellationToken);
+        return grants.Any(grant =>
+            (grant.AmountLimit is null || grant.AmountLimit >= Math.Abs(amount)) &&
+            (grant.Scope switch
+            {
+                "own" => assigned && owner == userId,
+                "assigned" or "project" => assigned,
+                "all" => assigned || grant.Role is "accountant" or "director",
+                _ => false
+            }));
     }
 
     private async Task<bool> HasDependentFinancialEffectsAsync(string type, int id, CancellationToken cancellationToken)
@@ -136,8 +159,16 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
                 return "إجمالي التوريدة لا يمكن أن يقل عن الدفعات المسجلة عليها.";
             }
         }
+        if (type == "site-movement")
+        {
+            var allocated = await db.AdvanceAllocations.Where(x => x.SiteMovementId == id).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
+            if ((record.GetType().GetProperty("TotalAmount")?.GetValue(record) as decimal? ?? 0m) < allocated)
+                return "قيمة حركة الموقع لا يمكن أن تقل عن تخصيصاتها الحالية.";
+        }
         if (type == "supplier-payment")
         {
+            var allocated = await db.AdvanceAllocations.Where(x => x.SupplierPaymentId == id).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
+            if ((amount ?? 0m) < allocated) return "قيمة دفعة المورد لا يمكن أن تقل عن تخصيصاتها الحالية.";
             var supplyId = (int?)record.GetType().GetProperty("SupplyId")?.GetValue(record);
             if (supplyId is not null)
             {
@@ -178,8 +209,18 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
 
     private static void Recalculate(object record, string type)
     {
-        var quantity = record.GetType().GetProperty(type == "site-movement" ? "Quantity" : "Quantity")?.GetValue(record) as decimal?;
-        var unitPrice = record.GetType().GetProperty("UnitPrice")?.GetValue(record) as decimal?;
+        var quantityProperty = record.GetType().GetProperty(type == "excavation" ? "CalculatedQuantity" : "Quantity");
+        var quantity = quantityProperty?.GetValue(record) is decimal quantityValue ? quantityValue : (decimal?)null;
+        if (type == "excavation")
+        {
+            var method = record.GetType().GetProperty("CalculationMethod")?.GetValue(record) as string;
+            var length = record.GetType().GetProperty("Length")?.GetValue(record) is decimal lengthValue ? lengthValue : 0m;
+            var width = record.GetType().GetProperty("Width")?.GetValue(record) is decimal widthValue ? widthValue : 0m;
+            var depth = record.GetType().GetProperty("Depth")?.GetValue(record) is decimal depthValue ? depthValue : 0m;
+            quantity = method switch { "مساحة" => length * width, "حجم" => length * width * depth, _ => quantity };
+            quantityProperty?.SetValue(record, decimal.Round(quantity ?? 0m, 3));
+        }
+        var unitPrice = record.GetType().GetProperty("UnitPrice")?.GetValue(record) is decimal priceValue ? priceValue : (decimal?)null;
         var total = record.GetType().GetProperty("TotalAmount");
         if (quantity is not null && unitPrice is not null && total is not null && type is not "site-movement" && type is not "supplier-payment" && type is not "advance-payment") total.SetValue(record, decimal.Round(quantity.Value * unitPrice.Value, 2));
     }

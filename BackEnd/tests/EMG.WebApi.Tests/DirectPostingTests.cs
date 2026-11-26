@@ -147,4 +147,91 @@ public sealed class DirectPostingTests
             new TransactionCorrectionRequest(document.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""), 7, false, false, CancellationToken.None));
         Assert.Equal(100m, await db.AdvancePayments.Where(x => x.Id == advance.Id).Select(x => x.Amount).SingleAsync());
     }
+
+    [Fact]
+    public async Task ExcavationCorrectionRecalculatesQuantityAndAmountFromDimensions()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<EmgDbContext>().UseSqlite(connection).Options;
+        await using var db = new EmgDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.Users.Add(new AppUser { Id = 7, UserName = "excavation-owner", Email = "exc-owner@example.test", DisplayName = "Excavation owner", PasswordHash = "test-hash" });
+        var project = new Project { Name = "Excavation correction QA", Code = "EXC-CORRECTION-QA" };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+        db.UserProjectAssignments.Add(new UserProjectAssignment { UserId = 7, ProjectId = project.Id, IsActive = true });
+        await db.SaveChangesAsync();
+        var record = new ExcavationRecord { ProjectId = project.Id, CalculationMethod = "حجم", Length = 2m, Width = 3m, Depth = 4m, CalculatedQuantity = 24m, UnitPrice = 10m, TotalAmount = 240m, Description = "حفر", CreatedByUserId = 7, Status = "مرحّل" };
+        db.ExcavationRecords.Add(record);
+        await db.SaveChangesAsync();
+        using var document = JsonDocument.Parse("{\"Length\":3,\"Width\":3,\"Depth\":4}");
+        var corrected = await new TransactionCorrectionService(db).CorrectAsync("excavation", record.Id,
+            new TransactionCorrectionRequest(document.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""), 7, false, false, CancellationToken.None);
+        Assert.Equal("تصحيح", corrected!.Action);
+        var saved = await db.ExcavationRecords.SingleAsync(x => x.Id == record.Id);
+        Assert.Equal(36m, saved.CalculatedQuantity);
+        Assert.Equal(360m, saved.TotalAmount);
+    }
+
+    [Fact]
+    public async Task CorrectionCannotReduceSiteMovementOrSupplierPaymentBelowAllocations()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<EmgDbContext>().UseSqlite(connection).Options;
+        await using var db = new EmgDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.Users.Add(new AppUser { Id = 7, UserName = "allocation-owner", Email = "alloc-owner@example.test", DisplayName = "Allocation owner", PasswordHash = "test-hash" });
+        var project = new Project { Name = "Allocation correction QA", Code = "ALLOC-CORRECTION-QA" };
+        var supplier = new Supplier { Name = "Allocation supplier" };
+        db.AddRange(project, supplier);
+        await db.SaveChangesAsync();
+        db.UserProjectAssignments.Add(new UserProjectAssignment { UserId = 7, ProjectId = project.Id, IsActive = true });
+        var movement = new SiteMovement { ProjectId = project.Id, Description = "حركة", MovementType = "مصروفات", TotalAmount = 100m, CreatedByUserId = 7, Status = "مرحّل" };
+        var payment = new SupplierPayment { SupplierId = supplier.Id, ProjectId = project.Id, Amount = 100m, CreatedByUserId = 7, Status = "مرحّل" };
+        db.AddRange(movement, payment);
+        await db.SaveChangesAsync();
+        var advance = new AdvancePayment { ProjectId = project.Id, ClientName = "عميل", PayerName = "دافع", Amount = 200m, Status = "مرحّل" };
+        db.AdvancePayments.Add(advance);
+        await db.SaveChangesAsync();
+        db.AdvanceAllocations.AddRange(new AdvanceAllocation { AdvancePaymentId = advance.Id, SiteMovementId = movement.Id, Amount = 75m }, new AdvanceAllocation { AdvancePaymentId = advance.Id, SupplierPaymentId = payment.Id, Amount = 80m });
+        await db.SaveChangesAsync();
+        var service = new TransactionCorrectionService(db);
+        using var movementJson = JsonDocument.Parse("{\"TotalAmount\":50}");
+        using var paymentJson = JsonDocument.Parse("{\"Amount\":70}");
+        await Assert.ThrowsAsync<TransactionValidationException>(() => service.CorrectAsync("site-movement", movement.Id, new TransactionCorrectionRequest(movementJson.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""), 7, false, false, CancellationToken.None));
+        await Assert.ThrowsAsync<TransactionValidationException>(() => service.CorrectAsync("supplier-payment", payment.Id, new TransactionCorrectionRequest(paymentJson.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""), 7, false, false, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OtherUserCorrectionHonorsProjectScopeAndAmountLimit()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<EmgDbContext>().UseSqlite(connection).Options;
+        await using var db = new EmgDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var owner = new AppUser { Id = 7, UserName = "scope-owner", Email = "scope-owner@example.test", DisplayName = "Owner", PasswordHash = "test-hash" };
+        var editor = new AppUser { Id = 8, UserName = "scope-editor", Email = "scope-editor@example.test", DisplayName = "Editor", PasswordHash = "test-hash" };
+        var role = new Role { Name = "accountant", DisplayName = "Accountant" };
+        var permission = new Permission { Code = "transactions.correct", DisplayName = "Correct transactions" };
+        db.AddRange(owner, editor, role, permission);
+        await db.SaveChangesAsync();
+        db.UserRoles.Add(new UserRole { UserId = editor.Id, RoleId = role.Id });
+        db.RolePermissions.Add(new RolePermission { RoleId = role.Id, PermissionId = permission.Id, Scope = "assigned", AmountLimit = 100m });
+        var project = new Project { Name = "Scoped correction QA", Code = "SCOPED-CORRECTION-QA" };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+        db.UserProjectAssignments.Add(new UserProjectAssignment { UserId = editor.Id, ProjectId = project.Id, IsActive = true });
+        var movement = new SiteMovement { ProjectId = project.Id, Description = "مملوك لمستخدم آخر", MovementType = "مصروفات", TotalAmount = 80m, CreatedByUserId = owner.Id, Status = "مرحّل" };
+        db.SiteMovements.Add(movement);
+        await db.SaveChangesAsync();
+        var service = new TransactionCorrectionService(db);
+        using var withinLimit = JsonDocument.Parse("{\"TotalAmount\":90}");
+        var corrected = await service.CorrectAsync("site-movement", movement.Id, new TransactionCorrectionRequest(withinLimit.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""), editor.Id, false, true, CancellationToken.None);
+        Assert.NotNull(corrected);
+        using var aboveLimit = JsonDocument.Parse("{\"TotalAmount\":150}");
+        Assert.Null(await service.CorrectAsync("site-movement", movement.Id, new TransactionCorrectionRequest(aboveLimit.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""), editor.Id, false, true, CancellationToken.None));
+    }
 }
