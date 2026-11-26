@@ -46,6 +46,32 @@ public sealed class DirectPostingTests
     }
 
     [Fact]
+    public async Task InlineSupplierCreationGeneratesAnInvoiceAndPostsTheLineAtomically()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<EmgDbContext>().UseSqlite(connection).Options;
+        await using var db = new EmgDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var project = new Project { Name = "Inline supplier QA", Code = "INLINE-SUPPLIER-QA" };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+
+        var result = await new SuppliersService(db).AddInlineSupplyAsync(new CreateInlineSupplierSupplyRequest(
+            "مورد جديد", "مورد", "01000000000", null, null, project.Id, "خامات", "أسمنت", "طن", 2m, 300m,
+            null, null, "إنشاء مباشر"), 17, true, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(result!.Supplier.Id, result.Supply.SupplierId);
+        Assert.Equal("مرحّل", result.Supply.Status);
+        Assert.Equal(600m, result.Supply.TotalAmount);
+        Assert.StartsWith($"AUTO-{project.Id}-{result.Supplier.Id}-", result.Supply.InvoiceNumber);
+        Assert.Equal(1, await db.Suppliers.CountAsync());
+        Assert.Equal(1, await db.SupplierSupplies.CountAsync());
+        Assert.Contains(await db.WorkflowActions.ToListAsync(), item => item.EntityType == "supplier-supply" && item.EntityId == result.Supply.Id);
+    }
+
+    [Fact]
     public async Task CreatorCanCorrectAndPermanentlyDeleteWithoutExtraPermission()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

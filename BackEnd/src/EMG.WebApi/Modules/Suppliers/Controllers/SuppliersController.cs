@@ -63,6 +63,29 @@ public sealed class SuppliersController(ISuppliersService suppliersService) : Co
         return supply is null ? NotFound() : Ok(supply);
     }
 
+    [HttpPost("inline-supply")]
+    [PermissionAuthorize("suppliers.supplies-create")]
+    public async Task<ActionResult<InlineSupplierSupplySummary>> AddInlineSupply(CreateInlineSupplierSupplyRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.SupplierName) || request.ProjectId <= 0 ||
+            string.IsNullOrWhiteSpace(request.ItemName) || string.IsNullOrWhiteSpace(request.Unit) ||
+            request.Quantity <= 0 || request.UnitPrice < 0)
+            return BadRequest(new { message = "بيانات المورد والمشروع والبند والكمية والسعر مطلوبة بشكل صحيح." });
+        try
+        {
+            var result = await suppliersService.AddInlineSupplyAsync(request, CurrentUserId(), HasGlobalProjectAccess(), cancellationToken);
+            return result is null ? BadRequest(new { message = "بيانات التوريدة أو صلاحية المشروع غير صحيحة." }) : Ok(result);
+        }
+        catch (DuplicateSupplierException exception)
+        {
+            return Conflict(new { message = "يوجد مورد مسجل بالفعل بنفس الاسم أو رقم الهاتف أو الرقم الضريبي.", matches = exception.Matches });
+        }
+        catch (DuplicateSupplierTransactionException exception)
+        {
+            return Conflict(new { message = exception.Message });
+        }
+    }
+
     [HttpGet("{supplierId:int}/payments")]
     [PermissionAuthorize("suppliers.view")]
     public async Task<ActionResult<IReadOnlyList<PaymentSummary>>> GetPayments(int supplierId, CancellationToken cancellationToken) =>

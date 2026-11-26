@@ -2,6 +2,7 @@ using EMG.Api.Modules.Suppliers.Dtos;
 using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace EMG.Api.Modules.Suppliers.Services;
 
@@ -72,6 +73,55 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
         await db.SaveChangesAsync(cancellationToken);
         return new SupplierSummary(supplier.Id, supplier.Name, supplier.SupplierType, supplier.Phone ?? string.Empty,
             supplier.TaxNumber ?? string.Empty, supplier.Notes ?? string.Empty, supplier.IsActive, 0, 0, 0, 0);
+    }
+
+    public async Task<InlineSupplierSupplySummary?> AddInlineSupplyAsync(CreateInlineSupplierSupplyRequest request, int? userId,
+        bool globalAccess, CancellationToken cancellationToken)
+    {
+        if (!globalAccess && (!userId.HasValue || !await db.UserProjectAssignments.AnyAsync(item =>
+                item.UserId == userId && item.ProjectId == request.ProjectId && item.IsActive, cancellationToken))) return null;
+        if (!await db.Projects.AnyAsync(item => item.Id == request.ProjectId, cancellationToken)) return null;
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var normalizedName = Normalize(request.SupplierName);
+        var normalizedPhone = NormalizeDigits(request.Phone);
+        var normalizedTaxNumber = Normalize(request.TaxNumber);
+        var existingSuppliers = await db.Suppliers.AsNoTracking().Where(item => item.IsActive)
+            .Select(item => new { item.Name, item.Phone, item.TaxNumber }).ToListAsync(cancellationToken);
+        var duplicate = existingSuppliers.Any(item =>
+            Normalize(item.Name) == normalizedName ||
+            !string.IsNullOrWhiteSpace(normalizedPhone) && NormalizeDigits(item.Phone) == normalizedPhone ||
+            !string.IsNullOrWhiteSpace(normalizedTaxNumber) && Normalize(item.TaxNumber) == normalizedTaxNumber);
+        if (duplicate) throw new DuplicateSupplierException([request.SupplierName.Trim()]);
+
+        var supplier = new Supplier
+        {
+            Name = request.SupplierName.Trim(), SupplierType = string.IsNullOrWhiteSpace(request.SupplierType) ? "مورد" : request.SupplierType.Trim(),
+            Phone = request.Phone?.Trim(), TaxNumber = request.TaxNumber?.Trim(), Notes = request.SupplierNotes?.Trim()
+        };
+        db.Suppliers.Add(supplier);
+        await db.SaveChangesAsync(cancellationToken);
+        var invoice = string.IsNullOrWhiteSpace(request.InvoiceNumber)
+            ? GenerateInvoiceNumber(request.ProjectId, supplier.Id)
+            : request.InvoiceNumber.Trim();
+        var supply = new SupplierSupply
+        {
+            SupplierId = supplier.Id, ProjectId = request.ProjectId,
+            SupplyType = string.IsNullOrWhiteSpace(request.SupplyType) ? "خامات" : request.SupplyType.Trim(),
+            ItemName = request.ItemName.Trim(), Unit = request.Unit.Trim(), Quantity = request.Quantity,
+            UnitPrice = request.UnitPrice, TotalAmount = decimal.Round(request.Quantity * request.UnitPrice, 2),
+            SupplyDate = request.SupplyDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.SupplyDate.Value.Date, DateTimeKind.Utc),
+            InvoiceNumber = invoice, Notes = request.Notes?.Trim(), Status = "مرحّل", CreatedByUserId = userId
+        };
+        db.SupplierSupplies.Add(supply);
+        await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.Add(new WorkflowAction { EntityType = "supplier-supply", EntityId = supply.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "إنشاء مورد وتوريدة في معاملة واحدة" });
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        var saved = await db.SupplierSupplies.AsNoTracking().Where(item => item.Id == supply.Id).Select(ToSummary()).SingleAsync(cancellationToken);
+        return new InlineSupplierSupplySummary(new SupplierSummary(supplier.Id, supplier.Name, supplier.SupplierType,
+            supplier.Phone ?? string.Empty, supplier.TaxNumber ?? string.Empty, supplier.Notes ?? string.Empty, supplier.IsActive,
+            1, saved.TotalAmount, 0, saved.TotalAmount), saved);
     }
 
     private static string Normalize(string? value)
@@ -146,12 +196,12 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
         if (!globalAccess && request.ProjectId is null) return null;
         if (request.ProjectId is not null && (!await db.Projects.AnyAsync(item => item.Id == request.ProjectId, cancellationToken) ||
             !globalAccess && (!userId.HasValue || !await db.UserProjectAssignments.AnyAsync(a => a.ProjectId == request.ProjectId && a.UserId == userId && a.IsActive, cancellationToken)))) return null;
+        await using var paymentTransaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         if (request.SupplyId is not null)
         {
-            var supply = await db.SupplierSupplies.AsNoTracking().FirstOrDefaultAsync(item => item.Id == request.SupplyId && item.SupplierId == supplierId, cancellationToken);
+            var supply = await db.SupplierSupplies.FirstOrDefaultAsync(item => item.Id == request.SupplyId && item.SupplierId == supplierId, cancellationToken);
             if (supply is null || request.ProjectId is not null && supply.ProjectId != request.ProjectId) return null;
-            var settled = await db.SupplierPayments.AsNoTracking()
-                .Where(item => item.SupplyId == supply.Id && (item.Status == "معتمد" || item.Status == "مرحّل"))
+            var settled = await db.SupplierPayments.Where(item => item.SupplyId == supply.Id && (item.Status == "معتمد" || item.Status == "مرحّل"))
                 .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
             if (request.Amount > supply.TotalAmount - settled)
                 throw new DuplicateSupplierTransactionException("قيمة الدفع تتجاوز المتبقي على التوريدة بعد الدفعات المعتمدة.");
@@ -164,7 +214,6 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
             if (duplicateReference) throw new DuplicateSupplierTransactionException("مرجع الدفع مستخدم بالفعل لنفس المورد والقيمة والمشروع.");
         }
 
-        await using var paymentTransaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var payment = new SupplierPayment
         {
             SupplierId = supplierId, ProjectId = request.ProjectId, SupplyId = request.SupplyId, Amount = request.Amount,
@@ -178,6 +227,12 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
         await db.SaveChangesAsync(cancellationToken);
         await paymentTransaction.CommitAsync(cancellationToken);
         return await db.SupplierPayments.AsNoTracking().Where(item => item.Id == payment.Id).Select(ToPaymentSummary()).FirstAsync(cancellationToken);
+    }
+
+    private static string GenerateInvoiceNumber(int projectId, int supplierId)
+    {
+        var value = $"AUTO-{projectId}-{supplierId}-{Guid.NewGuid():N}";
+        return value[..Math.Min(120, value.Length)];
     }
 
     private static System.Linq.Expressions.Expression<Func<SupplierSupply, SupplySummary>> ToSummary() => item => new SupplySummary(
