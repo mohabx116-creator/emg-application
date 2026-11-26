@@ -37,6 +37,7 @@ public sealed record UniversalPreviewResponse(
     string? SourceProjectCode = null)
 {
     public UniversalProjectMetadata? ProjectMetadata { get; init; }
+    public string? SnapshotId { get; init; }
     public IReadOnlyList<UniversalImportIssue> Issues { get; init; } = [];
 }
 

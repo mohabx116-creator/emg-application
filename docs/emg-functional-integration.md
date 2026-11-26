@@ -9,7 +9,13 @@ Use multipart `POST /api/universal-import/preview` with field `file`. This requi
 - Show `sections`, `records`, `reconciliations` and `duplicateCandidates` alongside the issues. Summary and derived records retain their original types. Financial streams and currencies remain separate. `eligibleForPosting` describes source classification and does not grant mutation authority.
 - A malformed upload returns HTTP 400. Retain any existing user inputs while displaying the server message.
 
-The existing, project-scoped review API remains under `/api/universal-import/review`. Its preview, batch, mapping and settlement routes can be presented independently of the standalone Review Center. Applying user corrections to a new-project import and confirming that import as one atomic operation still need a server contract. Keep the legacy `/api/imports/commit-new-project` separate from the universal preview because its mapping behavior differs.
+The new-project flow uses the `snapshotId` from universal preview. Send it with the project metadata and optional `mappingEvidence` keyed by preview record ID to `POST /api/universal-import/revalidate`. The response lists the target, source coordinate, amount and eligibility or exclusion reason for each record. Only evidence-backed mapping confirmations are editable. Source amounts, relationships and currency come from the server snapshot.
+
+Send the same request to `POST /api/universal-import/commit` with explicit `confirmExcluded` when the user has reviewed the unresolved records. Commit revalidates the snapshot and writes the project, operational rows, retained records, audit and provenance in one serializable transaction. It returns `projectId`, `batchId`, counts and totals by operational target. Duplicate sources and project codes yield a conflict. Reports read the operational rows as soon as commit succeeds.
+
+Commit requires an administrator and uses the `UniversalImportQa` settings to allow only one approved workbook SHA-256 in a named disposable loopback PostgreSQL database on a non-5432 port. Posting stays disabled in Production. The project-scoped historical review under `/api/universal-import/review` remains the route for existing projects and settlements. The new-project screen uses only the universal endpoints.
+
+Q315 isolated acceptance persisted 410 site movements totaling EGP 2,923,313 and eight building records totaling EGP 155,385. Building matched the workbook control. Six potential duplicate site rows totaling EGP 26,100 account for the difference from the EGP 2,949,413 control. They remain held for review together with the unresolved financial streams and reference values. Report row totals matched persisted totals. An injected failure after the operational write rolled back the entire import. A repeated commit was rejected.
 
 ## Accounting
 
