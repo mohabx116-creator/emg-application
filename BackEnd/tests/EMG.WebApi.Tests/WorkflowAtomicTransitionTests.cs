@@ -194,7 +194,7 @@ public sealed class WorkflowAtomicTransitionTests
 
         private void MarkInitialReadCompleted(DbCommand command)
         {
-            if (!observedCommands.ContainsKey(command) || !completedCommands.TryAdd(command, 0)) return;
+            if (!completedCommands.TryAdd(command, 0)) return;
             var candidate = Interlocked.Increment(ref completedReads);
             if (candidate >= 2) readsReleased.TrySetResult();
         }
@@ -231,14 +231,14 @@ public sealed class WorkflowAtomicTransitionTests
 
         public override DbDataReader ReaderExecuted(DbCommand command, CommandExecutedEventData eventData, DbDataReader result)
         {
-            return observedCommands.ContainsKey(command)
+            return observedCommands.TryRemove(command, out _)
                 ? new TrackingDataReader(result, () => MarkInitialReadCompleted(command))
                 : result;
         }
 
         public override ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
         {
-            return new ValueTask<DbDataReader>(observedCommands.ContainsKey(command)
+            return new ValueTask<DbDataReader>(observedCommands.TryRemove(command, out _)
                 ? new TrackingDataReader(result, () => MarkInitialReadCompleted(command))
                 : result);
         }
