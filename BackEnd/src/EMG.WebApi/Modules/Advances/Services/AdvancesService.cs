@@ -137,7 +137,7 @@ public sealed class AdvancesService(EmgDbContext db) : IAdvancesService
     }
 
     private static Expression<Func<AdvancePayment, AdvanceSummary>> ToSummary() => item => new AdvanceSummary(
-        item.Id, item.ProjectId, item.Project.Name, item.ClientName, item.PayerName, item.Amount,
+        item.Id, item.ProjectId, item.Project.Name, item.ClientName, item.PayerName, item.Amount, item.Currency,
         item.Allocations.Sum(allocation => allocation.Amount), item.Amount - item.Allocations.Sum(allocation => allocation.Amount),
         item.Amount - item.Allocations.Sum(allocation => allocation.Amount) > 0 ? item.Amount - item.Allocations.Sum(allocation => allocation.Amount) : 0,
         item.Allocations.Sum(allocation => allocation.Amount) - item.Amount > 0 ? item.Allocations.Sum(allocation => allocation.Amount) - item.Amount : 0,

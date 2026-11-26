@@ -7,6 +7,7 @@ public sealed record AdvanceSummary(
     string ClientName,
     string PayerName,
     decimal Amount,
+    string Currency,
     decimal AllocatedAmount,
     decimal RemainingAmount,
     decimal UnallocatedAmount,

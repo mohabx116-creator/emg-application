@@ -25,7 +25,7 @@ public sealed class EfProjectsRepository(EmgDbContext db) : IProjectsRepository
             db.SiteMovements.Count(movement => movement.ProjectId == project.Id && movement.Status == "للمراجعة"),
             (db.SiteMovements.Where(movement => movement.ProjectId == project.Id && movement.MovementType == "مصروفات" && (movement.Status == "معتمد" || movement.Status == "مرحّل")).Sum(movement => (decimal?)movement.TotalAmount) ?? 0m)
                 + (db.SupplierPayments.Where(payment => payment.ProjectId == project.Id && (payment.Status == "معتمد" || payment.Status == "مرحّل")).Sum(payment => (decimal?)payment.Amount) ?? 0m),
-            db.AdvancePayments.Where(advance => advance.ProjectId == project.Id && (advance.Status == "معتمد" || advance.Status == "مرحّل")).Sum(advance => (decimal?)advance.Amount) ?? 0m)).ToListAsync(cancellationToken);
+            db.AdvancePayments.Where(advance => advance.ProjectId == project.Id && advance.Currency == "EGP" && (advance.Status == "معتمد" || advance.Status == "مرحّل")).Sum(advance => (decimal?)advance.Amount) ?? 0m)).ToListAsync(cancellationToken);
     }
 
     public async Task<ProjectSummary?> GetProjectAsync(int id, int? userId, bool isAdmin, CancellationToken cancellationToken)
@@ -44,7 +44,7 @@ public sealed class EfProjectsRepository(EmgDbContext db) : IProjectsRepository
             db.SiteMovements.Count(movement => movement.ProjectId == item.Id && movement.Status == "للمراجعة"),
             (db.SiteMovements.Where(movement => movement.ProjectId == item.Id && movement.MovementType == "مصروفات" && (movement.Status == "معتمد" || movement.Status == "مرحّل")).Sum(movement => (decimal?)movement.TotalAmount) ?? 0m)
                 + (db.SupplierPayments.Where(payment => payment.ProjectId == item.Id && (payment.Status == "معتمد" || payment.Status == "مرحّل")).Sum(payment => (decimal?)payment.Amount) ?? 0m),
-            db.AdvancePayments.Where(advance => advance.ProjectId == item.Id && (advance.Status == "معتمد" || advance.Status == "مرحّل")).Sum(advance => (decimal?)advance.Amount) ?? 0m)).FirstOrDefaultAsync(cancellationToken);
+            db.AdvancePayments.Where(advance => advance.ProjectId == item.Id && advance.Currency == "EGP" && (advance.Status == "معتمد" || advance.Status == "مرحّل")).Sum(advance => (decimal?)advance.Amount) ?? 0m)).FirstOrDefaultAsync(cancellationToken);
         return project;
     }
 

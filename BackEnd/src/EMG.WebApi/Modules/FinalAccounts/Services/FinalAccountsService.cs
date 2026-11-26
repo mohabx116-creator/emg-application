@@ -48,7 +48,7 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         // على البنود. قد تكون الدفعة موزعة جزئيًا أو يزيد مبلغها عن التوزيع
         // الحالي، وفي الحالتين يجب ألا نفقد قيمتها من كشف الحساب.
         var totalIncoming = await db.AdvancePayments
-            .Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل"))
+            .Where(item => item.ProjectId == projectId && item.Currency == "EGP" && (item.Status == "معتمد" || item.Status == "مرحّل"))
             .SumAsync(item => item.Amount, cancellationToken);
         totalIncoming += await postedSite.Where(item => item.MovementType == "وارد").SumAsync(item => item.TotalAmount, cancellationToken);
         totalIncoming += await db.SupplierPayments.Where(item => item.ProjectId == projectId && item.PaymentSource == "مالك مباشر" && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);

@@ -434,6 +434,7 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
             entity.Property(item => item.ClientName).HasMaxLength(250).IsRequired();
             entity.Property(item => item.PayerName).HasMaxLength(250).IsRequired();
             entity.Property(item => item.Amount).HasPrecision(18, 2);
+            entity.Property(item => item.Currency).HasMaxLength(10).IsRequired().HasDefaultValue("EGP");
             entity.Property(item => item.PaymentMethod).HasMaxLength(100).IsRequired();
             entity.Property(item => item.Reference).HasMaxLength(150);
             entity.Property(item => item.Status).HasMaxLength(80).IsRequired();
