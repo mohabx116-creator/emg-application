@@ -15,6 +15,7 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import HorizontalBar from './HorizontalBar';
 import MainContentStyled from './MainContentStyled';
+import Customization from '../Customization';
 import Loader from 'ui-component/Loader';
 import Breadcrumbs from 'ui-component/extended/Breadcrumbs';
 import AttendancePrompt from 'ui-component/extended/AttendancePrompt';
@@ -90,6 +91,7 @@ export default function MainLayout() {
 
         {/* Native-style mobile bottom navigation */}
         <MobileBottomNav />
+        <Customization />
       </Box>
     </ActiveProjectProvider>
   );

@@ -17,3 +17,4 @@ The only authorized development workspace is `E:\mohabx_116\EMG-application`.
 - Use one authorized backup root, `E:\mohabx_116\EMG-backups`, for verified recovery backups; do not store backups in the repository.
 - Remove task-created temporary directories, disposable containers, networks, databases and logs immediately after validation.
 - Preserve unique business data, original workbooks and verified recovery backups; never delete them as part of routine cleanup.
+- Permanent UI Requirement: Preserve the original Berry floating `Customization` gear component (`FrontEnd/src/layout/Customization`) wherever it is mounted (`MainLayout`, `MinimalLayout`, `Landing`), keeping all original functionality intact (light/dark modes, theme colors, layout customization, font customization, and existing options) across desktop, tablet, and mobile. Never remove, disable, or replace it during UI optimization or template cleanup.

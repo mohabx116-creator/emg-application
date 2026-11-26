@@ -92,9 +92,14 @@ public sealed class HistoricalBulkMigrationService(
             throw new InvalidOperationException("الترحيل التاريخي الداخلي غير مفعّل لهذه البيئة.");
         if (!db.Database.IsNpgsql()) throw new InvalidOperationException("يلزم PostgreSQL معزول للترحيل التاريخي.");
         var connection = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString());
-        if (connection.Port == 5432 || connection.Database is not { } database || !database.StartsWith("emg_historical_qa_", StringComparison.Ordinal))
+        if (connection.Port == 5432 || connection.Database is not { } database || !IsAuthorizedLocalTarget(connection, database))
             throw new InvalidOperationException("الترحيل التاريخي مسموح فقط على قاعدة QA معزولة.");
     }
+
+    private bool IsAuthorizedLocalTarget(NpgsqlConnectionStringBuilder connection, string database) =>
+        database.StartsWith("emg_historical_qa_", StringComparison.Ordinal) ||
+        (configuration.GetValue<bool>("HistoricalMigration:AllowAuthorizedLocalTarget") &&
+         database == "emg_restore" && (connection.Host is "127.0.0.1" or "localhost"));
 
     private string ResolveSourceRoot()
     {

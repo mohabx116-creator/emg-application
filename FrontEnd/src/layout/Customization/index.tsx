@@ -111,7 +111,7 @@ export default function Customization() {
           </AnimateButton>
         </Fab>
       </Tooltip>
-      <Drawer anchor="right" onClose={handleToggle} open={open} slotProps={{ paper: { sx: { width: 375 } } }}>
+      <Drawer anchor="right" onClose={handleToggle} open={open} slotProps={{ paper: { sx: { width: { xs: '100vw', sm: 375 }, maxWidth: 375 } } }}>
         <Activity mode={open ? 'visible' : 'hidden'}>
           <SimpleBar>
             <MainCard content={false} border={false}>

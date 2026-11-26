@@ -42,7 +42,7 @@ public sealed partial class ReviewedWorkbookImportService
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var (project, rows) = await PlanNewProjectAsync(request, preview, ct, historicalBaseline is not null);
         var accepted = rows.Where(row => row.Disposition.CanImport).ToArray();
-        if (accepted.Length == 0) throw new InvalidOperationException("لا توجد حركات مؤهلة للاستيراد.");
+        if (accepted.Length == 0 && historicalBaseline is null) throw new InvalidOperationException("لا توجد حركات مؤهلة للاستيراد.");
         if (!request.ConfirmExcluded && rows.Any(row => !row.Disposition.CanImport && !row.Record.IsSummary))
             throw new InvalidOperationException("أكد حفظ السجلات غير المؤهلة للمراجعة قبل الاستيراد.");
 
@@ -247,7 +247,7 @@ public sealed partial class ReviewedWorkbookImportService
     private bool IsNewProjectPostingAllowed(UniversalPreviewResponse preview)
     {
         if (configuration.GetValue<bool>("HistoricalMigration:Enabled") && environment.IsDevelopment() &&
-            db.Database.IsNpgsql() && IsIsolatedQaDatabase()) return true;
+            db.Database.IsNpgsql() && IsHistoricalMigrationTargetAllowed()) return true;
         // Set only after the owner authorizes production imports. The controller
         // independently requires active administrator authorization and both permissions.
         if (environment.IsProduction() && db.Database.IsNpgsql())
@@ -263,11 +263,14 @@ public sealed partial class ReviewedWorkbookImportService
             connection.Database == configuration["UniversalImportQa:Database"];
     }
 
-    private bool IsIsolatedQaDatabase()
+    private bool IsHistoricalMigrationTargetAllowed()
     {
         if (string.IsNullOrWhiteSpace(db.Database.GetConnectionString())) return false;
         var connection = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString());
-        return connection.Port != 5432 && connection.Database?.StartsWith("emg_historical_qa_", StringComparison.Ordinal) == true;
+        if (connection.Port == 5432) return false;
+        if (connection.Database?.StartsWith("emg_historical_qa_", StringComparison.Ordinal) == true) return true;
+        return configuration.GetValue<bool>("HistoricalMigration:AllowAuthorizedLocalTarget") &&
+            connection.Database == "emg_restore" && (connection.Host is "127.0.0.1" or "localhost");
     }
 
     private static bool FitsAmount(decimal? amount) => amount is >= -9999999999999999.99m and <= 9999999999999999.99m &&
