@@ -2,6 +2,7 @@ using EMG.Api.Modules.ConsolidatedStatements.Controllers;
 using EMG.Api.Modules.ConsolidatedStatements.Dtos;
 using EMG.Api.Modules.ConsolidatedStatements.Services;
 using EMG.Api.Modules.AccountingClassification.Services;
+using EMG.Api.Modules.FinalAccounts.Services;
 using EMG.Domain.Entities;
 using EMG.Domain.Security;
 using EMG.Infrastructure.Db;
@@ -54,6 +55,15 @@ public sealed class ConsolidatedStatementTests
         Assert.Equal(227000m, Column(row, "R").CurrentAmount);
         Assert.Equal(500m, row.Dimensions.SupplierSupplies.CurrentAmount);
         Assert.Equal(100m, row.Dimensions.SupplierPayments.CurrentAmount);
+        var final = await new FinalAccountsService(db).GetAsync(project.Id, user.Id, false, CancellationToken.None);
+        Assert.NotNull(final);
+        Assert.True(row.OfficeAccrual.IsOfficial);
+        Assert.Equal(6463998m, final.TotalOutgoing);
+        Assert.Equal(323199.90m, final.OfficeShareAmount);
+        Assert.Equal(96199.90m, final.OfficeNetDue);
+        Assert.Equal(final.TotalOutgoing, row.OfficeAccrual.BasisAmount);
+        Assert.Equal(final.OfficeShareAmount, row.OfficeAccrual.OfficeFee);
+        Assert.Equal(final.OfficeNetDue, row.OfficeAccrual.OfficeOutstanding);
         Assert.Null(Column(row, "T").CurrentAmount);
         Assert.Empty(row.UnresolvedRecords);
         Assert.Equal(before, await db.SiteMovements.CountAsync() + await db.ConcreteRecords.CountAsync() + await db.AdvancePayments.CountAsync());
@@ -83,6 +93,8 @@ public sealed class ConsolidatedStatementTests
         Assert.DoesNotContain(preview.Projects, item => item.ProjectCode == "001");
         Assert.Equal("INCOMPLETE_UNVERIFIED", row.CompletenessStatus);
         Assert.Equal(75m, row.Dimensions.UnresolvedFinancialRecords.CurrentAmount);
+        Assert.False(row.OfficeAccrual.IsOfficial);
+        Assert.Null(row.OfficeAccrual.OfficeFee);
         Assert.Null(Column(row, "T").CurrentAmount);
     }
 

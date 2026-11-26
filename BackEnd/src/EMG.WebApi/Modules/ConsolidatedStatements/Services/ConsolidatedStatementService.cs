@@ -1,6 +1,7 @@
 using EMG.Api.Modules.AccountingClassification.Dtos;
 using EMG.Api.Modules.AccountingClassification.Services;
 using EMG.Api.Modules.ConsolidatedStatements.Dtos;
+using EMG.Api.Modules.FinalAccounts.Services;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
 
@@ -78,9 +79,18 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
             Dimension(visible, item => item.Resolution == ClassificationResolution.Unresolved, "Financial rows requiring review; excluded from resolved category totals."));
 
         var officePercentage = source.OfficeSharePercentage;
-        var officeBasisStatus = unresolvedOperational > 0 ? "INCOMPLETE_UNVERIFIED" : "DIAGNOSTIC_ONLY";
-        var officeAccrual = new OfficeAccrualPreview(Math.Round(resolvedOperational * officePercentage / 100m, 2), officePercentage, resolvedOperational, false, officeBasisStatus,
-            "Derived diagnostic only; contractual office-fee base remains unapproved and unresolved operational rows are excluded from the basis.");
+        var hasUnresolvedBasis = visible.Any(item => item.Resolution == ClassificationResolution.Unresolved && IsOperationalSource(item.EntityType));
+        var officeBasis = hasUnresolvedBasis ? resolvedOperational : visible.Where(item => IsOperationalSource(item.EntityType)).Sum(item => item.Amount);
+        var office = OfficeFeeCalculation.Calculate(officeBasis, officePercentage, dimensions.OfficePayments.CurrentAmount);
+        var officeAccrual = new OfficeAccrualPreview(office.Fee, officePercentage, officeBasis, !hasUnresolvedBasis,
+            hasUnresolvedBasis ? "INCOMPLETE_UNVERIFIED" : "VERIFIED_PROJECTION",
+            hasUnresolvedBasis
+                ? "Unresolved operational rows remain outside the diagnostic basis."
+                : "Project outgoing multiplied by its office percentage. Office payments reduce the outstanding fee.")
+        {
+            OfficeFee = hasUnresolvedBasis ? null : office.Fee,
+            OfficeOutstanding = hasUnresolvedBasis ? null : office.Outstanding
+        };
         var netDiagnostics = new List<NetTransactionDiagnostic>
         {
             new("funding-minus-resolved-operational-costs", dimensions.OwnerFunding.CurrentAmount - resolvedOperational,

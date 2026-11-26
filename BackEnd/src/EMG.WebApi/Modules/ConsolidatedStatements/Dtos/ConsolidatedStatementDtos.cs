@@ -53,7 +53,11 @@ public sealed record OfficeAccrualPreview(
     decimal BasisAmount,
     bool IsOfficial,
     string Status,
-    string Diagnostic);
+    string Diagnostic)
+{
+    public decimal? OfficeFee { get; init; }
+    public decimal? OfficeOutstanding { get; init; }
+}
 
 public sealed record NetTransactionDiagnostic(
     string Scenario,

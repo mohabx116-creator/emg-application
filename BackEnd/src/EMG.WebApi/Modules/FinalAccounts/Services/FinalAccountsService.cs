@@ -49,8 +49,8 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             .SumAsync(item => item.Amount, cancellationToken);
         var totalOutgoing = outgoingByCategory.Values.Sum();
         var officePaid = incomingByCategory.GetValueOrDefault("المكتب");
-        var officeShareAmount = decimal.Round(totalOutgoing * project.OfficeSharePercentage / 100m, 2);
-        var officeNetDue = officeShareAmount - officePaid;
+        var office = OfficeFeeCalculation.Calculate(totalOutgoing, project.OfficeSharePercentage, officePaid);
+        var officeShareAmount = office.Fee;
         var netBeforeOfficeShare = totalOutgoing - totalExpenses;
         var netAfterOfficeShare = netBeforeOfficeShare - officeShareAmount;
         var payerBalance = totalOutgoing - totalIncoming;
@@ -65,7 +65,7 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             OwnerName = project.OwnerName ?? string.Empty,
             TotalOutgoing = totalOutgoing,
             OfficePaid = officePaid,
-            OfficeNetDue = officeNetDue,
+            OfficeNetDue = office.Outstanding,
             OutgoingByCategory = outgoingByCategory,
             IncomingByCategory = incomingByCategory
         };

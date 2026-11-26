@@ -13,7 +13,7 @@ The existing, project-scoped review API remains under `/api/universal-import/rev
 
 ## Accounting
 
-Final Accounts currently calculates the project office fee from its total outgoing and project percentage, and subtracts office payments to produce the office balance. The consolidated statement still has a diagnostic base. A shared accounting contract needs reconciliation of those bases before replacing either total.
+Final Accounts and the consolidated statement use a shared calculation for the office fee and outstanding fee. In the consolidated response, use `officeAccrual.officeFee` and `officeAccrual.officeOutstanding` when `isOfficial` is true. The base includes each recognized operational source row once. Owner funding, funding allocations, supplier liabilities and supplier payments are separate dimensions. With unresolved operational classification, the official values are null and only the diagnostic amount is available. The net-transaction calculation remains subject to source reconciliation.
 
 For supplier-linked invoices, the source link must identify the original site transaction. Supplier liabilities and payments are account dimensions. Adding either dimension to operating costs would count the same purchase twice. The cash, credit and partial-payment projections, invoice DTOs, inline supplier creation and finishing mappings are pending implementation.
 
