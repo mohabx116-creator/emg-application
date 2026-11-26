@@ -8,7 +8,7 @@ public sealed record WorkflowReviewItem(
     string Description,
     decimal Amount,
     string Status,
-    DateTime Date,
+    DateTime? Date,
     bool HasAttachment,
     bool CanApprove,
     bool CanPost,

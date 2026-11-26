@@ -132,7 +132,7 @@ export default function AdvanceDetails() {
       setUploading(false);
     }
   };
-  const openEdit = () => { if (!advance) return; setEditForm({ clientName: advance.clientName, payerName: advance.payerName, amount: String(advance.amount), paymentDate: advance.paymentDate.slice(0, 10), paymentMethod: advance.paymentMethod, reference: advance.reference || '', notes: advance.notes || '' }); setEditOpen(true); };
+  const openEdit = () => { if (!advance) return; setEditForm({ clientName: advance.clientName, payerName: advance.payerName, amount: String(advance.amount), paymentDate: advance.paymentDate?.slice(0, 10) ?? '', paymentMethod: advance.paymentMethod, reference: advance.reference || '', notes: advance.notes || '' }); setEditOpen(true); };
   const saveEdit = async (event: FormEvent) => { event.preventDefault(); try { await correctEmgTransaction('advance-payment', id, { ...editForm, amount: Number(editForm.amount) }, 'تصحيح مباشر'); setEditOpen(false); setMessage({ severity: 'success', text: 'تم حفظ تصحيح الدفعة.' }); await load(); } catch (error: any) { setMessage({ severity: 'error', text: error?.message || 'تعذر تصحيح الدفعة.' }); } };
   const remove = async () => { if (!window.confirm('سيتم حذف الدفعة نهائيًا. هل تريد المتابعة؟')) return; try { await deleteEmgTransaction('advance-payment', id); window.location.assign('/emg/advances'); } catch (error: any) { setMessage({ severity: 'error', text: error?.message || 'تعذر حذف الدفعة. قد توجد تخصيصات مرتبطة بها.' }); } };
   const submit = async (event: FormEvent) => {

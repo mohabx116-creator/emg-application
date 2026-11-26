@@ -18,6 +18,8 @@ public sealed record FinalAccountSummary(
 {
     public string ProjectCode { get; init; } = string.Empty;
     public string OwnerName { get; init; } = string.Empty;
+    public decimal HistoricalFundingAdjustments { get; init; }
+    public IReadOnlyList<SectionFinancialSummary> Sections { get; init; } = [];
     public decimal TotalOutgoing { get; init; }
     public decimal OfficePaid { get; init; }
     public decimal OfficeNetDue { get; init; }
@@ -29,3 +31,6 @@ public sealed record FinalAccountSummary(
     public IReadOnlyDictionary<string, decimal> OutgoingByCategory { get; init; } = new Dictionary<string, decimal>();
     public IReadOnlyDictionary<string, decimal> IncomingByCategory { get; init; } = new Dictionary<string, decimal>();
 }
+
+public sealed record SectionFinancialSummary(string Category, string Currency, decimal Works,
+    decimal AllocatedFunding, decimal FundingLessWorks);

@@ -43,7 +43,13 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             .Select(item => new { item.AccountCategory, item.TotalAmount, item.Notes }).ToListAsync(cancellationToken);
         foreach (var item in finishingRows)
             AddOutgoing(CanonicalCategory("التشطيبات", item.AccountCategory, item.Notes), item.TotalAmount);
-        var incomingByCategory = await db.AdvanceAllocations.Where(item => item.AdvancePayment.ProjectId == projectId && (item.AdvancePayment.Status == "معتمد" || item.AdvancePayment.Status == "مرحّل")).GroupBy(item => item.AccountCategory).Select(group => new { Category = group.Key, Amount = group.Sum(item => item.Amount) }).ToDictionaryAsync(item => item.Category, item => item.Amount, StringComparer.Ordinal, cancellationToken);
+        var incomingByCategory = await db.AdvanceAllocations.Where(item => item.AdvancePayment.ProjectId == projectId && item.AdvancePayment.Currency == "EGP" && (item.AdvancePayment.Status == "معتمد" || item.AdvancePayment.Status == "مرحّل")).GroupBy(item => item.AccountCategory).Select(group => new { Category = group.Key, Amount = group.Sum(item => item.Amount) }).ToDictionaryAsync(item => item.Category, item => item.Amount, StringComparer.Ordinal, cancellationToken);
+        var historicalAllocations = await db.HistoricalFundingLines.AsNoTracking()
+            .Where(line => line.Batch.ProjectId == projectId && line.Currency == "EGP" && line.Basis == "project_allocation")
+            .GroupBy(line => line.Category).Select(group => new { Category = group.Key, Amount = group.Sum(line => line.Amount) })
+            .ToListAsync(cancellationToken);
+        foreach (var line in historicalAllocations)
+            incomingByCategory[line.Category] = incomingByCategory.GetValueOrDefault(line.Category) + line.Amount;
         // إجمالي الدفعات تحت الحساب هو ما تم دفعه فعليًا، وليس مجموع التوزيعات
         // على البنود. قد تكون الدفعة موزعة جزئيًا أو يزيد مبلغها عن التوزيع
         // الحالي، وفي الحالتين يجب ألا نفقد قيمتها من كشف الحساب.
@@ -53,6 +59,10 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         totalIncoming += await postedSite.Where(item => item.MovementType == "وارد").SumAsync(item => item.TotalAmount, cancellationToken);
         totalIncoming += await db.SupplierPayments.Where(item => item.ProjectId == projectId && item.PaymentSource == "مالك مباشر" && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
         totalIncoming += await db.ContractorPayments.Where(item => item.ProjectId == projectId && item.PaymentSource == "مالك مباشر" && item.Currency == "EGP").SumAsync(item => item.Amount, cancellationToken);
+        var fundingAdjustments = await db.HistoricalFundingLines.AsNoTracking()
+            .Where(line => line.Batch.ProjectId == projectId && line.Currency == "EGP" && line.Basis == "signed_schedule_adjustment")
+            .SumAsync(line => line.Amount, cancellationToken);
+        totalIncoming += fundingAdjustments;
         var totalOutgoing = outgoingByCategory.Values.Sum();
         var officePaid = incomingByCategory.GetValueOrDefault("المكتب");
         var office = OfficeFeeCalculation.Calculate(totalOutgoing, project.OfficeSharePercentage, officePaid);
@@ -75,6 +85,11 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         {
             ProjectCode = project.Code,
             OwnerName = project.OwnerName ?? string.Empty,
+            HistoricalFundingAdjustments = fundingAdjustments,
+            Sections = outgoingByCategory.Keys.Union(incomingByCategory.Keys).Where(category => category != "المكتب")
+                .Select(category => new SectionFinancialSummary(category, "EGP", outgoingByCategory.GetValueOrDefault(category),
+                    incomingByCategory.GetValueOrDefault(category), incomingByCategory.GetValueOrDefault(category) - outgoingByCategory.GetValueOrDefault(category)))
+                .OrderBy(item => item.Category).ToList(),
             TotalOutgoing = totalOutgoing,
             TotalWorks = totalOutgoing,
             TotalPayments = totalIncoming,

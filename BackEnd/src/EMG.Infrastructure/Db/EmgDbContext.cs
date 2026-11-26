@@ -37,6 +37,7 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
     public DbSet<HistoricalImportAuditEvent> HistoricalImportAuditEvents => Set<HistoricalImportAuditEvent>();
     public DbSet<HistoricalPostedEntry> HistoricalPostedEntries => Set<HistoricalPostedEntry>();
     public DbSet<HistoricalOpeningBalance> HistoricalOpeningBalances => Set<HistoricalOpeningBalance>();
+    public DbSet<HistoricalFundingLine> HistoricalFundingLines => Set<HistoricalFundingLine>();
     public DbSet<ProjectWorkCategory> ProjectWorkCategories => Set<ProjectWorkCategory>();
     public DbSet<Contractor> Contractors => Set<Contractor>();
     public DbSet<ContractorContract> ContractorContracts => Set<ContractorContract>();
@@ -320,6 +321,14 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
             entity.HasOne(item => item.Supplier).WithMany().HasForeignKey(item => item.SupplierId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(item => item.Contractor).WithMany().HasForeignKey(item => item.ContractorId).OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(item => new { item.ProjectId, item.MovementDate, item.MovementType });
+        });
+
+        modelBuilder.Entity<HistoricalFundingLine>(entity =>
+        {
+            entity.ToTable("historical_funding_lines");
+            entity.HasIndex(item => new { item.BatchId, item.Sheet, item.Cell, item.Stream }).IsUnique();
+            entity.HasOne(item => item.Batch).WithMany().HasForeignKey(item => item.BatchId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(item => item.Amount).HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<HistoricalOpeningBalance>(entity =>

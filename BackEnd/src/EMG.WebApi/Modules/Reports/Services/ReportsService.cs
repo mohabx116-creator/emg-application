@@ -52,12 +52,12 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
                 item.TotalAmount, item.ExpenseCategory ?? string.Empty, item.Status, item.Reference ?? string.Empty, item.Currency,
                 item.Contractor == null ? string.Empty : item.Contractor.Name)).ToListAsync(cancellationToken);
         var advanceRows = await db.AdvancePayments.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
-            .Select(item => new { item.Id, item.PaymentDate, item.ClientName, item.PayerName, item.Amount, item.Status, Reference = item.Reference ?? string.Empty }).ToListAsync(cancellationToken);
+            .Select(item => new { item.Id, item.PaymentDate, item.ClientName, item.PayerName, item.Amount, item.Currency, item.Notes, item.Status, Reference = item.Reference ?? string.Empty }).ToListAsync(cancellationToken);
         var advanceIds = advanceRows.Select(item => item.Id).ToArray();
         var advanceAllocations = await db.AdvanceAllocations.AsNoTracking().Where(item => advanceIds.Contains(item.AdvancePaymentId))
             .Select(item => new { item.AdvancePaymentId, item.AccountCategory, item.Amount }).ToListAsync(cancellationToken);
         var allocationsByAdvance = advanceAllocations.GroupBy(item => item.AdvancePaymentId).ToDictionary(group => group.Key, group => (IReadOnlyDictionary<string, decimal>)group.GroupBy(item => item.AccountCategory).ToDictionary(items => items.Key, items => items.Sum(item => item.Amount)));
-        var advances = advanceRows.Select(item => { var byCategory = allocationsByAdvance.GetValueOrDefault(item.Id) ?? new Dictionary<string, decimal>(); var allocated = byCategory.Values.Sum(); return new ProjectAdvanceRow(item.Id, item.PaymentDate, item.ClientName, item.PayerName, item.Amount, allocated, item.Amount - allocated, item.Status, item.Reference, byCategory); }).ToList();
+        var advances = advanceRows.Select(item => { var byCategory = allocationsByAdvance.GetValueOrDefault(item.Id) ?? new Dictionary<string, decimal>(); var allocated = byCategory.Values.Sum(); return new ProjectAdvanceRow(item.Id, item.PaymentDate, item.ClientName, item.PayerName, item.Amount, allocated, item.Amount - allocated, item.Status, item.Reference, byCategory, item.Currency, item.Notes ?? string.Empty); }).ToList();
         var supplies = await db.SupplierSupplies.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
             .Select(item => new ProjectSupplierSupplyRow(item.Id, item.SupplyDate, item.Supplier.Name, item.SupplyType, item.ItemName, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.InvoiceNumber ?? string.Empty)).ToListAsync(cancellationToken);
         var payments = await db.SupplierPayments.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
@@ -72,7 +72,15 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
             .Select(item => new ProjectWorkRow(item.Id, item.OperationDate, item.Supplier == null ? string.Empty : item.Supplier.Name, item.AccountCategory, item.SteelType ?? item.OperationType, item.Description, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.BarDiameter ?? string.Empty, item.Grade ?? string.Empty, item.DeliveryNoteNumber ?? string.Empty, item.Status, item.Notes ?? string.Empty)).ToListAsync(cancellationToken);
         var finishings = await db.FinishingRecords.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
             .Select(item => new ProjectWorkRow(item.Id, item.WorkDate, item.Supplier == null ? string.Empty : item.Supplier.Name, item.AccountCategory, item.WorkType, item.Description, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.AreaName ?? string.Empty, string.Empty, string.Empty, item.Status, item.Notes ?? string.Empty)).ToListAsync(cancellationToken);
-        return new ProjectReportSummary(finalAccount, movements, advances, supplies, payments, excavations, concretes, steels, finishings) { ContractorPayments = contractorPayments };
+        return new ProjectReportSummary(finalAccount, movements, advances, supplies, payments, excavations, concretes, steels, finishings) {
+            ContractorPayments = contractorPayments,
+            HistoricalFunding = await db.HistoricalFundingLines.AsNoTracking()
+                .Where(item => item.Batch.ProjectId == projectId)
+                .OrderBy(item => item.SourceRow).ThenBy(item => item.Cell)
+                .Select(item => new ProjectFundingDetail(item.Sheet, item.Cell, item.Stream, item.Basis,
+                    item.Category, item.Currency, item.Amount, item.SourceDate, item.Narrative))
+                .ToListAsync(cancellationToken)
+        };
     }
 
     public async Task<string?> ExportProjectMovementsCsvAsync(int projectId, int? userId, bool isAdmin, CancellationToken cancellationToken)

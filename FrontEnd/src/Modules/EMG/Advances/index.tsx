@@ -352,7 +352,7 @@ export default function EmgAdvances() {
                       </Stack>
                     </Stack>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-                      {new Date(advance.paymentDate).toLocaleDateString('ar-EG')} · {advance.paymentMethod} · {advance.status}
+                      {advance.paymentDate ? new Date(advance.paymentDate).toLocaleDateString('ar-EG') : 'التاريخ غير مدون'} · {advance.paymentMethod} · {advance.status}
                     </Typography>
                   </CardContent>
                 </Card>

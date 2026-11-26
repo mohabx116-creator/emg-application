@@ -13,7 +13,7 @@ public sealed record AdvanceSummary(
     decimal UnallocatedAmount,
     decimal DueFromPayer,
     string BalanceStatus,
-    DateTime PaymentDate,
+    DateTime? PaymentDate,
     string PaymentMethod,
     string Reference,
     string Status,

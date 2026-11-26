@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace EMG.Infrastructure.Db.Migrations;
 
+[Microsoft.EntityFrameworkCore.Infrastructure.DbContext(typeof(EmgDbContext))]
+[Migration("20261127000500_AdvancePaymentCurrency")]
 public partial class AdvancePaymentCurrency : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder) => migrationBuilder.AddColumn<string>(

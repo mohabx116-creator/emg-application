@@ -300,7 +300,7 @@ public sealed partial class WorkbookImportService
         }
         foreach (var row in Rows<AdvancePayment>())
         {
-            Validate(("advance", row.PaymentDate, Name(row.PayerName), row.Amount), row.Amount, row.PaymentDate, row.Notes);
+            Validate(("advance", row.PaymentDate, Name(row.PayerName), row.Amount), row.Amount, row.PaymentDate ?? throw new InvalidOperationException("يلزم تاريخ الدفعة لهذا المسار."), row.Notes);
             foreach (var allocation in row.Allocations)
                 Validate(("allocation", row, allocation.AllocationDate, Name(allocation.AccountCategory), allocation.Amount),
                     allocation.Amount, allocation.AllocationDate, allocation.Notes);

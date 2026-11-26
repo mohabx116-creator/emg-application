@@ -12,7 +12,6 @@ internal static class XlsxBuilder
 
     public static byte[] Build(ProjectReportSummary report, OperationalAuditSummary? audit)
     {
-        EnsureCapacity(report);
         var templatePath = Path.Combine(AppContext.BaseDirectory, "Modules", "Reports", "Templates", "ProjectReportTemplate.xlsx");
         if (File.Exists(templatePath)) return BuildFromTemplate(templatePath, report, audit);
 
@@ -89,30 +88,45 @@ internal static class XlsxBuilder
         xml.Save(writer, SaveOptions.DisableFormatting);
     }
 
-    private static void EnsureCapacity(ProjectReportSummary report)
+    private static List<(string Name, XDocument Content)> DetailSheets(ProjectReportSummary report)
     {
-        Ensure(report.Excavations.Count, 37, "أعمال الحفر");
-        // The steel template reserves row 52 for the merged summary and row 54
-        // for the net amount; detail rows safely occupy rows 7-51 only.
-        Ensure(report.Steels.Count, 45, "أعمال الحديد");
-        // The concrete template reserves rows 30-31 for merged summary cells;
-        // detail rows safely occupy 10-29 only.
-        Ensure(report.Concretes.Count, 20, "أعمال الخرسانات");
-        Ensure(report.Finishings.Count(IsBuilding) + report.Finishings.Count(IsUnclassifiedFinishing), 36, "أعمال المباني والمصنّعيات غير المصنفة");
-        Ensure(report.Finishings.Count(IsPlaster), 36, "أعمال المحارة");
-        Ensure(report.Finishings.Count(IsInsulation), 36, "أعمال العزل");
-        Ensure(report.Finishings.Count(IsElectrical), 36, "أعمال الكهرباء");
-        Ensure(report.Finishings.Count(IsPlumbing), 36, "أعمال السباكة");
+        var sheets = new List<(string, XDocument)>
+        {
+            ("توريدات الموردين", SuppliesSheet(report.SupplierSupplies)),
+            ("مدفوعات الموردين", PaymentsSheet(report.SupplierPayments, report.ContractorPayments))
+        };
+        if (report.Movements.Count > SiteTemplateRows)
+            sheets.Add(("كل حركات الموقع", MovementsSheet(report.Movements)));
+        if (report.Advances.Count > 14 || report.Advances.Any(row => row.Currency != "EGP"))
+            sheets.Add(("كل الدفعات", AdvancesSheet(report.Advances)));
+        if (report.HistoricalFunding.Count > 0)
+            sheets.Add(("جداول التمويل الأصلية", FundingSheet(report.HistoricalFunding)));
+        if (report.Excavations.Count > 37) sheets.Add(("كل أعمال الحفر", WorkSheet(report.Excavations)));
+        if (report.Steels.Count > 45) sheets.Add(("كل توريدات الحديد", WorkSheet(report.Steels)));
+        if (report.Concretes.Count > 20) sheets.Add(("كل أعمال الخرسانات", WorkSheet(report.Concretes)));
+        if (report.Finishings.Count > 36) sheets.Add(("كل أعمال التشطيبات", WorkSheet(report.Finishings)));
+        return sheets;
     }
 
-    private static void Ensure(int actual, int capacity, string sheet)
+    private static XDocument WorkSheet(IReadOnlyList<ProjectWorkRow> items)
     {
-        if (actual > capacity) throw new XlsxExportCapacityException(sheet, actual, capacity);
+        var rows = new List<string[]> { new[] { "التاريخ", "نوع الأعمال", "البند", "البيان", "الطرف", "الوحدة", "الكمية", "السعر", "الإجمالي", "تفاصيل ١", "تفاصيل ٢", "تفاصيل ٣" } };
+        rows.AddRange(items.Select(x => new[] { x.Date.ToString("yyyy-MM-dd"), x.Category, x.Item, x.Description, x.SupplierName, x.Unit,
+            x.Quantity?.ToString(CultureInfo.InvariantCulture) ?? "", x.UnitPrice?.ToString(CultureInfo.InvariantCulture) ?? "", N(x.TotalAmount), x.Extra1, x.Extra2, x.Extra3 }));
+        return Sheet(rows, numericColumns: new HashSet<int> { 6, 7, 8 });
+    }
+
+    private static XDocument FundingSheet(IReadOnlyList<ProjectFundingDetail> items)
+    {
+        var rows = new List<string[]> { new[] { "الورقة", "الخلية", "الجدول", "أساس المعالجة", "الحساب", "العملة", "المبلغ", "التاريخ", "البيان الأصلي" } };
+        rows.AddRange(items.Select(x => new[] { x.Sheet, x.Cell, x.Stream, x.Basis, x.Category, x.Currency, N(x.Amount),
+            x.Date?.ToString("yyyy-MM-dd") ?? "", x.Narrative }));
+        return Sheet(rows, numericColumns: new HashSet<int> { 6 });
     }
 
     private static byte[] BuildFromTemplate(string templatePath, ProjectReportSummary report, OperationalAuditSummary? audit)
     {
-        var appendFullMovements = report.Movements.Count > SiteTemplateRows;
+        var details = DetailSheets(report);
         using var source = ZipFile.OpenRead(templatePath);
         using var output = new MemoryStream();
         using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
@@ -134,11 +148,9 @@ internal static class XlsxBuilder
                     contentTypes.Root?.Elements(contentTypesNs + "Override")
                         .Where(item => ((string?)item.Attribute("PartName"))?.Equals("/xl/calcChain.xml", StringComparison.OrdinalIgnoreCase) == true)
                         .Remove();
-                    contentTypes.Root?.Add(
-                        new XElement(contentTypesNs + "Override", new XAttribute("PartName", "/xl/worksheets/sheet12.xml"), new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")),
-                        new XElement(contentTypesNs + "Override", new XAttribute("PartName", "/xl/worksheets/sheet13.xml"), new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")));
-                    if (appendFullMovements)
-                        contentTypes.Root?.Add(new XElement(contentTypesNs + "Override", new XAttribute("PartName", "/xl/worksheets/sheet14.xml"),
+                    for (var i = 0; i < details.Count; i++)
+                        contentTypes.Root?.Add(new XElement(contentTypesNs + "Override",
+                            new XAttribute("PartName", $"/xl/worksheets/sheet{12 + i}.xml"),
                             new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")));
                     using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
                     contentTypes.Save(writer, SaveOptions.DisableFormatting);
@@ -150,13 +162,11 @@ internal static class XlsxBuilder
                     relationships.Root?.Elements(relationshipsNs + "Relationship")
                         .Where(item => ((string?)item.Attribute("Type"))?.EndsWith("/calcChain", StringComparison.OrdinalIgnoreCase) == true)
                         .Remove();
-                    relationships.Root?.Add(
-                        new XElement(relationshipsNs + "Relationship", new XAttribute("Id", "rId17"), new XAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"), new XAttribute("Target", "worksheets/sheet12.xml")),
-                        new XElement(relationshipsNs + "Relationship", new XAttribute("Id", "rId18"), new XAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"), new XAttribute("Target", "worksheets/sheet13.xml")));
-                    if (appendFullMovements)
-                        relationships.Root?.Add(new XElement(relationshipsNs + "Relationship", new XAttribute("Id", "rId19"),
+                    for (var i = 0; i < details.Count; i++)
+                        relationships.Root?.Add(new XElement(relationshipsNs + "Relationship",
+                            new XAttribute("Id", $"rId{17 + i}"),
                             new XAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"),
-                            new XAttribute("Target", "worksheets/sheet14.xml")));
+                            new XAttribute("Target", $"worksheets/sheet{12 + i}.xml")));
                     using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
                     relationships.Save(writer, SaveOptions.DisableFormatting);
                 }
@@ -165,12 +175,10 @@ internal static class XlsxBuilder
                     var workbook = XDocument.Load(input, LoadOptions.PreserveWhitespace);
                     XNamespace workbookNs = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
                     XNamespace relNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-                    workbook.Root?.Element(workbookNs + "sheets")?.Add(
-                        new XElement(workbookNs + "sheet", new XAttribute("name", "توريدات الموردين"), new XAttribute("sheetId", "17"), new XAttribute(relNs + "id", "rId17")),
-                        new XElement(workbookNs + "sheet", new XAttribute("name", "مدفوعات الموردين"), new XAttribute("sheetId", "18"), new XAttribute(relNs + "id", "rId18")));
-                    if (appendFullMovements)
+                    for (var i = 0; i < details.Count; i++)
                         workbook.Root?.Element(workbookNs + "sheets")?.Add(new XElement(workbookNs + "sheet",
-                            new XAttribute("name", "كل حركات الموقع"), new XAttribute("sheetId", "19"), new XAttribute(relNs + "id", "rId19")));
+                            new XAttribute("name", details[i].Name), new XAttribute("sheetId", 17 + i),
+                            new XAttribute(relNs + "id", $"rId{17 + i}")));
                     var calculation = workbook.Root?.Element(workbookNs + "calcPr");
                     if (calculation is null)
                     {
@@ -198,10 +206,8 @@ internal static class XlsxBuilder
                     input.CopyTo(stream);
                 }
             }
-            Add(archive, "xl/worksheets/sheet12.xml", SuppliesSheet(report.SupplierSupplies));
-            Add(archive, "xl/worksheets/sheet13.xml", PaymentsSheet(report.SupplierPayments, report.ContractorPayments));
-            if (appendFullMovements)
-                Add(archive, "xl/worksheets/sheet14.xml", MovementsSheet(report.Movements));
+            for (var i = 0; i < details.Count; i++)
+                Add(archive, $"xl/worksheets/sheet{12 + i}.xml", details[i].Content);
         }
         return CompactSharedStrings(output.ToArray());
     }
@@ -235,7 +241,7 @@ internal static class XlsxBuilder
 
     private static void PopulateAdvancesTemplate(XElement worksheet, ProjectReportSummary report, XNamespace ns)
     {
-        var advances = report.Advances;
+        var advances = report.Advances.Where(item => item.Currency == "EGP").ToList();
         var account = report.FinalAccount;
         SetText(worksheet, "A1", $"كشف حساب العميل بالدفعات الموزعه / النقديه / شيكات / تحويل -- بتاريخ : {DateTime.Now:yyyy/MM/dd}", ns);
         SetText(worksheet, "N1", $"الدفعات الرئسية : {account.PayerName}", ns);
@@ -248,16 +254,16 @@ internal static class XlsxBuilder
         {
             var item = advances[i];
             var row = i + 4;
-            SetNumber(worksheet, $"A{row}", ExcelDate(item.Date), ns);
+            if (item.Date.HasValue) SetNumber(worksheet, $"A{row}", ExcelDate(item.Date.Value), ns);
             for (var c = 0; c < categories.Length; c++) SetNumber(worksheet, $"{Column(c + 1)}{row}", Value(item.AllocationsByCategory, categories[c]), ns);
             SetText(worksheet, $"M{row}", item.PayerName, ns);
             SetNumber(worksheet, $"N{row}", item.Amount, ns);
-            SetText(worksheet, $"O{row}", item.Reference, ns);
+            SetText(worksheet, $"O{row}", string.IsNullOrWhiteSpace(item.Narrative) ? item.Date?.ToString("yyyy-MM-dd") ?? string.Empty : item.Narrative, ns);
         }
         var totalRow = 19;
         SetText(worksheet, $"A{totalRow}", "اجمالي دفعات", ns);
-        for (var c = 0; c < categories.Length; c++) SetNumber(worksheet, $"{Column(c + 1)}{totalRow}", advances.Sum(item => Value(item.AllocationsByCategory, categories[c])), ns);
-        SetNumber(worksheet, $"M{totalRow}", advances.Sum(item => item.Allocated), ns);
+        for (var c = 0; c < categories.Length; c++) SetNumber(worksheet, $"{Column(c + 1)}{totalRow}", Value(account.IncomingByCategory, categories[c]), ns);
+        SetNumber(worksheet, $"M{totalRow}", account.IncomingByCategory.Values.Sum(), ns);
         ClearCell(worksheet, $"N{totalRow}", ns); ClearCell(worksheet, $"O{totalRow}", ns);
 
         var workCategories = new[] { "الموقع", "العرب", "المقاول", "المحطة", "الحديد", "المباني", "المحارة", "العزل", "الكهرباء", "السباكة" };
@@ -265,21 +271,22 @@ internal static class XlsxBuilder
         {
             var category = workCategories[c];
             var work = Value(account.OutgoingByCategory, category);
-            var paid = advances.Sum(item => Value(item.AllocationsByCategory, category));
+            var paid = Value(account.IncomingByCategory, category);
             SetText(worksheet, $"{Column(c + 1)}20", $"ح/ {category}", ns);
             SetNumber(worksheet, $"{Column(c + 1)}21", work, ns);
             SetNumber(worksheet, $"{Column(c + 1)}22", work - paid, ns);
         }
-        var workTotal = workCategories.Sum(category => Value(account.OutgoingByCategory, category));
+        var workTotal = account.TotalOutgoing;
         SetText(worksheet, "L20", "اجمالي الاعمال", ns);
         SetNumber(worksheet, "L21", workTotal, ns);
         ClearCell(worksheet, "L22", ns);
         ClearCell(worksheet, "M20", ns);
         ClearCell(worksheet, "M21", ns);
         SetNumber(worksheet, "N22", account.TotalIncoming, ns);
-        SetNumber(worksheet, "O22", advances.Sum(item => item.Remaining), ns);
-        var officeAllocated = advances.Sum(item => Value(item.AllocationsByCategory, "المكتب"));
-        SetNumber(worksheet, "G24", workTotal - (advances.Sum(item => item.Allocated) - officeAllocated), ns);
+        SetText(worksheet, "O21", "دفعات غير موزعة", ns);
+        SetNumber(worksheet, "O22", account.TotalIncoming - account.IncomingByCategory.Values.Sum(), ns);
+        var officeAllocated = Value(account.IncomingByCategory, "المكتب");
+        SetNumber(worksheet, "G24", workTotal - (account.IncomingByCategory.Values.Sum() - officeAllocated), ns);
         SetNumber(worksheet, "L24", account.TotalIncoming - workTotal, ns);
     }
 
@@ -419,7 +426,7 @@ internal static class XlsxBuilder
             SetFormulaCache(worksheet, $"J{row}", i < items.Count ? items[i].TotalAmount : 0m, ns);
         }
         var total = items.Sum(item => item.TotalAmount);
-        var paid = report.Advances.Sum(item => Value(item.AllocationsByCategory, "العرب"));
+        var paid = Value(report.FinalAccount.IncomingByCategory, "العرب");
         SetNumber(worksheet, "J5", total - paid, ns);
         SetNumber(worksheet, "J7", total, ns);
         SetNumber(worksheet, "K7", paid, ns);
@@ -444,7 +451,7 @@ internal static class XlsxBuilder
             SetText(worksheet, $"D{row}", item.Extra1, ns); SetNumber(worksheet, $"E{row}", item.UnitPrice ?? 0m, ns); SetNumber(worksheet, $"F{row}", item.TotalAmount, ns); SetText(worksheet, $"G{row}", string.IsNullOrWhiteSpace(item.SupplierName) ? item.Item : $"{item.SupplierName} — {item.Item}", ns); SetText(worksheet, $"H{row}", item.Extra2 + " " + item.Extra3, ns);
         }
         var total = items.Sum(item => item.TotalAmount);
-        var paid = report.Advances.Sum(item => Value(item.AllocationsByCategory, "الحديد"));
+        var paid = Value(report.FinalAccount.IncomingByCategory, "الحديد");
         ClearCell(worksheet, "F5", ns);
         SetNumber(worksheet, "C52", items.Sum(item => item.Quantity ?? 0m), ns);
         SetNumber(worksheet, "F52", total, ns);
@@ -483,7 +490,7 @@ internal static class XlsxBuilder
             SetNumber(worksheet, $"M{row}", i + 1, ns); SetText(worksheet, $"N{row}", item.Item, ns); SetText(worksheet, $"O{row}", item.Unit, ns); SetNumber(worksheet, $"P{row}", 0m, ns); SetNumber(worksheet, $"Q{row}", item.Quantity ?? 0m, ns); SetNumber(worksheet, $"R{row}", item.Quantity ?? 0m, ns); SetText(worksheet, $"S{row}", item.Extra2, ns); SetText(worksheet, $"T{row}", "100%", ns); SetNumber(worksheet, $"U{row}", item.TotalAmount, ns); SetNumber(worksheet, $"V{row}", 0m, ns); SetText(worksheet, $"W{row}", item.Reference, ns);
         }
         var total = items.Sum(item => item.TotalAmount);
-        var paid = report.Advances.Sum(item => Value(item.AllocationsByCategory, "المقاول"));
+        var paid = Value(report.FinalAccount.IncomingByCategory, "المقاول");
         SetNumber(worksheet, "G31", Value(report.FinalAccount.OutgoingByCategory, "المحطة"), ns);
         SetNumber(worksheet, "U30", total, ns);
         SetNumber(worksheet, "V31", paid, ns);
@@ -515,9 +522,9 @@ internal static class XlsxBuilder
             SetFormulaCache(worksheet, $"J{row}", quantity * price, ns);
         }
         var category = sheetNumber switch { 7 => "المباني", 8 => "المحارة", 9 => "العزل", 10 => "الكهرباء", 11 => "السباكة", _ => string.Empty };
-        var paid = report.Advances.Sum(item => Value(item.AllocationsByCategory, category));
+        var paid = Value(report.FinalAccount.IncomingByCategory, category);
         if (sheetNumber == 7)
-            paid += report.Advances.Sum(item => Value(item.AllocationsByCategory, "باقي المصنعيات") + Value(item.AllocationsByCategory, "غير محدد"));
+            paid += Value(report.FinalAccount.IncomingByCategory, "باقي المصنعيات") + Value(report.FinalAccount.IncomingByCategory, "غير محدد");
         SetNumber(worksheet, "K6", paid, ns);
         SetNumber(worksheet, "K7", items.Sum(item => item.TotalAmount), ns);
         SetNumber(worksheet, "K8", items.Sum(item => item.TotalAmount) - paid, ns);
@@ -678,8 +685,8 @@ internal static class XlsxBuilder
     private static XDocument AdvancesSheet(IReadOnlyList<ProjectAdvanceRow> advances)
     {
         var categories = new[] { "الموقع", "العرب", "المقاول", "المحطة", "الحديد", "المباني", "المحارة", "العزل", "الكهرباء", "السباكة", "المكتب", "غير محدد", "باقي المصنعيات" };
-        var rows = new List<string[]> { new[] { "التاريخ", "العميل" }.Concat(categories).Concat(new[] { "إجمالي الدفعة", "الموزع", "المتبقي", "الدافع", "الحالة", "المرجع" }).ToArray() };
-        rows.AddRange(advances.Select(item => new[] { item.Date.ToString("yyyy-MM-dd"), item.ClientName }.Concat(categories.Select(category => category == "باقي المصنعيات" ? N(OtherAdvanceCategories(item.AllocationsByCategory)) : N(item.AllocationsByCategory.TryGetValue(category, out var value) ? value : 0m))).Concat(new[] { N(item.Amount), N(item.Allocated), N(item.Remaining), item.PayerName, item.Status, item.Reference }).ToArray()));
+        var rows = new List<string[]> { new[] { "التاريخ", "العميل" }.Concat(categories).Concat(new[] { "إجمالي الدفعة", "الموزع", "المتبقي", "الدافع", "الحالة", "العملة", "البيان" }).ToArray() };
+        rows.AddRange(advances.Select(item => new[] { item.Date?.ToString("yyyy-MM-dd") ?? string.Empty, item.ClientName }.Concat(categories.Select(category => category == "باقي المصنعيات" ? N(OtherAdvanceCategories(item.AllocationsByCategory)) : N(item.AllocationsByCategory.TryGetValue(category, out var value) ? value : 0m))).Concat(new[] { N(item.Amount), N(item.Allocated), N(item.Remaining), item.PayerName, item.Status, item.Currency, item.Narrative }).ToArray()));
         return Sheet(rows);
     }
 

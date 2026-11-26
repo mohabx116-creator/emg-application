@@ -47,6 +47,8 @@ export type EmgWorkbookMigrationPlan = {
 };
 
 export type EmgFinalAccount = {
+  sections?: Array<{ category: string; currency: string; works: number; allocatedFunding: number; fundingLessWorks: number }>;
+  historicalFundingAdjustments?: number;
   projectId: number;
   projectName: string;
   clientName: string;
@@ -495,7 +497,7 @@ export type EmgAdvance = {
   unallocatedAmount: number;
   dueFromPayer: number;
   balanceStatus: string;
-  paymentDate: string;
+  paymentDate: string | null;
   paymentMethod: string;
   reference: string;
   status: string;

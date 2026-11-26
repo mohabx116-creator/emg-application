@@ -85,17 +85,18 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("character varying(250)");
 
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasDefaultValue("EGP");
-
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("CreatedByUserId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("EGP");
 
                     b.Property<string>("Notes")
                         .HasMaxLength(2000)
@@ -106,7 +107,7 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasMaxLength(250)
                         .HasColumnType("character varying(250)");
 
-                    b.Property<DateTime>("PaymentDate")
+                    b.Property<DateTime?>("PaymentDate")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PaymentMethod")
@@ -766,6 +767,67 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.HasIndex("ProjectId", "WorkDate");
 
                     b.ToTable("finishing_records", (string)null);
+                });
+
+            modelBuilder.Entity("EMG.Domain.Entities.HistoricalFundingLine", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("Basis")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("BatchId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Cell")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Narrative")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Sheet")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("SourceDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("SourceRow")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Stream")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId", "Sheet", "Cell", "Stream")
+                        .IsUnique();
+
+                    b.ToTable("historical_funding_lines", (string)null);
                 });
 
             modelBuilder.Entity("EMG.Domain.Entities.HistoricalImportAuditEvent", b =>
@@ -2270,6 +2332,17 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.Navigation("Project");
 
                     b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("EMG.Domain.Entities.HistoricalFundingLine", b =>
+                {
+                    b.HasOne("EMG.Domain.Entities.HistoricalImportBatch", "Batch")
+                        .WithMany()
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Batch");
                 });
 
             modelBuilder.Entity("EMG.Domain.Entities.HistoricalImportAuditEvent", b =>

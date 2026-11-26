@@ -736,12 +736,12 @@ public sealed partial class WorkbookImportService : IWorkbookImportService
                     if (historical) throw HistoricalSourceError(row, "توزيع لا يرتبط بدفعة تحت الحساب.");
                     continue;
                 }
-                if (historical && row.Cell(dateColumn).IsEmpty()) date = lastAdvance.PaymentDate;
+                if (historical && row.Cell(dateColumn).IsEmpty()) date = lastAdvance.PaymentDate ?? throw HistoricalSourceError(row, "تاريخ الدفعة غير مدون.");
                 foreach (var item in allocationColumns)
                 {
                     var allocated = Decimal(row, item.Column);
                     if (allocated == 0) continue;
-                    lastAdvance.Allocations.Add(new AdvanceAllocation { AccountCategory = item.Category, Amount = allocated, AllocationDate = date == default ? lastAdvance.PaymentDate : date, Notes = $"استيراد توزيع تكميلي: {sheet.Name} صف {row.RowNumber()}" });
+                    lastAdvance.Allocations.Add(new AdvanceAllocation { AccountCategory = item.Category, Amount = allocated, AllocationDate = date == default ? lastAdvance.PaymentDate ?? throw HistoricalSourceError(row, "تاريخ الدفعة غير مدون.") : date, Notes = $"استيراد توزيع تكميلي: {sheet.Name} صف {row.RowNumber()}" });
                     allocations++;
                 }
                 continue;

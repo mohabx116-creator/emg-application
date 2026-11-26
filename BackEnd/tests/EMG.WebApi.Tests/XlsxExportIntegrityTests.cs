@@ -44,45 +44,28 @@ public sealed class XlsxExportIntegrityTests
             original, XlsxBuilder.Build(CreateReport(), null), XlsxBuilder.Build(CreateRepresentativeReport(), null));
     }
 
-    [Fact]
-    public void ExportFailsClosedWhenExcavationCapacityIsExceeded()
+    [Theory]
+    [InlineData("excavation", 38)]
+    [InlineData("concrete", 21)]
+    [InlineData("steel", 46)]
+    [InlineData("finishing", 40)]
+    public void OverflowKeepsEveryWorkRowInAFullDetailSheet(string family, int count)
     {
-        var report = CreateReport(excavations: Enumerable.Range(1, 38).Select(index => Item(index)).ToList());
-        var exception = Assert.Throws<XlsxExportCapacityException>(() => XlsxBuilder.Build(report, null));
-        Assert.Equal("أعمال الحفر", exception.Sheet);
-        Assert.Equal(37, exception.Capacity);
-        Assert.Equal(38, exception.Actual);
-    }
-
-    [Fact]
-    public void ExportFailsClosedWhenBuildingAndUnclassifiedFinishingShareCapacity()
-    {
-        var finishings = Enumerable.Range(1, 20).Select(index => Item(index, "أعمال مباني"))
-            .Concat(Enumerable.Range(1, 20).Select(index => Item(index, "مصنعية غير محددة"))).ToList();
-        var exception = Assert.Throws<XlsxExportCapacityException>(() => XlsxBuilder.Build(CreateReport(finishings: finishings), null));
-        Assert.Equal("أعمال المباني والمصنّعيات غير المصنفة", exception.Sheet);
-        Assert.Equal(36, exception.Capacity);
-        Assert.Equal(40, exception.Actual);
-    }
-
-    [Fact]
-    public void ExportFailsClosedWhenConcreteCapacityIsExceeded()
-    {
-        var report = CreateReport(concretes: Enumerable.Range(1, 21).Select(index => Item(index, "خرسانة مقاول")).ToList());
-        var exception = Assert.Throws<XlsxExportCapacityException>(() => XlsxBuilder.Build(report, null));
-        Assert.Equal("أعمال الخرسانات", exception.Sheet);
-        Assert.Equal(20, exception.Capacity);
-        Assert.Equal(21, exception.Actual);
-    }
-
-    [Fact]
-    public void ExportFailsClosedWhenSteelCapacityIsExceeded()
-    {
-        var report = CreateReport(steels: Enumerable.Range(1, 46).Select(index => Item(index, "حديد")).ToList());
-        var exception = Assert.Throws<XlsxExportCapacityException>(() => XlsxBuilder.Build(report, null));
-        Assert.Equal("أعمال الحديد", exception.Sheet);
-        Assert.Equal(45, exception.Capacity);
-        Assert.Equal(46, exception.Actual);
+        var rows = Enumerable.Range(1, count).Select(i => Item(i)).ToArray();
+        var report = family switch
+        {
+            "excavation" => CreateReport(excavations: rows),
+            "concrete" => CreateReport(concretes: rows),
+            "steel" => CreateReport(steels: rows),
+            _ => CreateReport(finishings: rows)
+        };
+        var bytes = XlsxBuilder.Build(report, null);
+        AssertOpenXmlValid(bytes);
+        using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+        XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        var sheet = XDocument.Load(archive.GetEntry("xl/worksheets/sheet14.xml")!.Open());
+        Assert.Equal(count + 1, sheet.Descendants(ns + "row").Count());
+        Assert.Contains($"item {count}", sheet.Descendants(ns + "t").Select(cell => cell.Value));
     }
 
     [Fact]

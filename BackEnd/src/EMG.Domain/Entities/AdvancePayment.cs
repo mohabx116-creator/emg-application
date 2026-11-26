@@ -9,7 +9,7 @@ public sealed class AdvancePayment
     public string PayerName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "EGP";
-    public DateTime PaymentDate { get; set; } = DateTime.UtcNow.Date;
+    public DateTime? PaymentDate { get; set; } = DateTime.UtcNow.Date;
     public string PaymentMethod { get; set; } = "تحويل";
     public string? Reference { get; set; }
     public string Status { get; set; } = "مسودة";

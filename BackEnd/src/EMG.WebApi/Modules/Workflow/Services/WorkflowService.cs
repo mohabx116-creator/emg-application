@@ -167,7 +167,7 @@ public sealed class WorkflowService(EmgDbContext db, INotificationService notifi
 
     public async Task<IReadOnlyList<WorkflowReviewItem>> GetReviewQueueAsync(int userId, bool isCanonicalAdmin, CancellationToken cancellationToken)
     {
-        var rows = new List<(string Type, int Id, int ProjectId, string ProjectName, string Description, decimal Amount, string Status, DateTime Date)>();
+        var rows = new List<(string Type, int Id, int ProjectId, string ProjectName, string Description, decimal Amount, string Status, DateTime? Date)>();
         var access = await LoadAccessAsync(userId, isCanonicalAdmin, cancellationToken);
         var assignedProjectIds = access.AssignedProjectIds;
         // This bounds the candidate query. Audit still checks the specific record's read grant.
@@ -180,7 +180,7 @@ public sealed class WorkflowService(EmgDbContext db, INotificationService notifi
             .Where(row => includeUnassignedProjects || assignedProjectIds.Contains(row.item.ProjectId))
             .Select(row => new { Type = "site-movement", row.item.Id, row.item.ProjectId, ProjectName = row.project.Name, Description = row.item.Description, Amount = row.item.TotalAmount, row.item.Status, Date = row.item.MovementDate })
             .ToListAsync(cancellationToken);
-        rows.AddRange(site.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, item.Date)));
+        rows.AddRange(site.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, (DateTime?)item.Date)));
 
         var advances = await db.AdvancePayments.AsNoTracking().Where(item => item.Status == "للمراجعة" || item.Status == "معتمد")
             .Join(projects, item => item.ProjectId, project => project.Id, (item, project) => new { item, project })
@@ -194,14 +194,14 @@ public sealed class WorkflowService(EmgDbContext db, INotificationService notifi
             .Where(row => includeUnassignedProjects || assignedProjectIds.Contains(row.item.ProjectId))
             .Select(row => new { Type = "supplier-supply", row.item.Id, row.item.ProjectId, ProjectName = row.project.Name, Description = $"توريد {row.item.ItemName} - {row.item.Supplier.Name}", Amount = row.item.TotalAmount, row.item.Status, Date = row.item.SupplyDate })
             .ToListAsync(cancellationToken);
-        rows.AddRange(supplies.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, item.Date)));
+        rows.AddRange(supplies.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, (DateTime?)item.Date)));
 
         var payments = await db.SupplierPayments.AsNoTracking().Where(item => item.ProjectId != null && (item.Status == "للمراجعة" || item.Status == "معتمد"))
             .Join(projects, item => item.ProjectId!.Value, project => project.Id, (item, project) => new { item, project })
             .Where(row => includeUnassignedProjects || assignedProjectIds.Contains(row.item.ProjectId!.Value))
             .Select(row => new { Type = "supplier-payment", row.item.Id, ProjectId = row.item.ProjectId!.Value, ProjectName = row.project.Name, Description = $"دفعة للمورد {row.item.Supplier.Name}", Amount = row.item.Amount, row.item.Status, Date = row.item.PaymentDate })
             .ToListAsync(cancellationToken);
-        rows.AddRange(payments.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, item.Date)));
+        rows.AddRange(payments.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, (DateTime?)item.Date)));
 
         await AddSpecializedRowsAsync(rows, assignedProjectIds, includeUnassignedProjects, cancellationToken);
 
@@ -221,17 +221,17 @@ public sealed class WorkflowService(EmgDbContext db, INotificationService notifi
         return result;
     }
 
-    private async Task AddSpecializedRowsAsync(List<(string Type, int Id, int ProjectId, string ProjectName, string Description, decimal Amount, string Status, DateTime Date)> rows, IReadOnlyList<int> assignedProjectIds, bool includeUnassignedProjects, CancellationToken cancellationToken)
+    private async Task AddSpecializedRowsAsync(List<(string Type, int Id, int ProjectId, string ProjectName, string Description, decimal Amount, string Status, DateTime? Date)> rows, IReadOnlyList<int> assignedProjectIds, bool includeUnassignedProjects, CancellationToken cancellationToken)
     {
         var projects = db.Projects.AsNoTracking();
         var excavation = await db.ExcavationRecords.AsNoTracking().Where(item => item.Status == "للمراجعة" || item.Status == "معتمد").Join(projects, item => item.ProjectId, project => project.Id, (item, project) => new { item, project }).Where(row => includeUnassignedProjects || assignedProjectIds.Contains(row.item.ProjectId)).Select(row => new { Type = "excavation", row.item.Id, row.item.ProjectId, ProjectName = row.project.Name, row.item.Description, Amount = row.item.TotalAmount, row.item.Status, Date = row.item.ExcavationDate }).ToListAsync(cancellationToken);
-        rows.AddRange(excavation.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, item.Date)));
+        rows.AddRange(excavation.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, (DateTime?)item.Date)));
         var concrete = await db.ConcreteRecords.AsNoTracking().Where(item => item.Status == "للمراجعة" || item.Status == "معتمد").Join(projects, item => item.ProjectId, project => project.Id, (item, project) => new { item, project }).Where(row => includeUnassignedProjects || assignedProjectIds.Contains(row.item.ProjectId)).Select(row => new { Type = "concrete", row.item.Id, row.item.ProjectId, ProjectName = row.project.Name, row.item.Description, Amount = row.item.TotalAmount, row.item.Status, Date = row.item.PourDate }).ToListAsync(cancellationToken);
-        rows.AddRange(concrete.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, item.Date)));
+        rows.AddRange(concrete.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, (DateTime?)item.Date)));
         var steel = await db.SteelRecords.AsNoTracking().Where(item => item.Status == "للمراجعة" || item.Status == "معتمد").Join(projects, item => item.ProjectId, project => project.Id, (item, project) => new { item, project }).Where(row => includeUnassignedProjects || assignedProjectIds.Contains(row.item.ProjectId)).Select(row => new { Type = "steel", row.item.Id, row.item.ProjectId, ProjectName = row.project.Name, row.item.Description, Amount = row.item.TotalAmount, row.item.Status, Date = row.item.OperationDate }).ToListAsync(cancellationToken);
-        rows.AddRange(steel.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, item.Date)));
+        rows.AddRange(steel.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, (DateTime?)item.Date)));
         var finishing = await db.FinishingRecords.AsNoTracking().Where(item => item.Status == "للمراجعة" || item.Status == "معتمد").Join(projects, item => item.ProjectId, project => project.Id, (item, project) => new { item, project }).Where(row => includeUnassignedProjects || assignedProjectIds.Contains(row.item.ProjectId)).Select(row => new { Type = "finishing", row.item.Id, row.item.ProjectId, ProjectName = row.project.Name, row.item.Description, Amount = row.item.TotalAmount, row.item.Status, Date = row.item.WorkDate }).ToListAsync(cancellationToken);
-        rows.AddRange(finishing.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, item.Date)));
+        rows.AddRange(finishing.Select(item => (item.Type, item.Id, item.ProjectId, item.ProjectName, item.Description, item.Amount, item.Status, (DateTime?)item.Date)));
     }
 
     public async Task<bool> CanViewHistoryAsync(string entityType, int entityId, int userId, bool isCanonicalAdmin, CancellationToken cancellationToken)
