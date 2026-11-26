@@ -44,8 +44,9 @@ import {
   IconX
 } from '@tabler/icons-react';
 import {
-  createEmgSiteMovement,
+  createEmgSiteMovementBatch,
   createEmgSupplierInvoice,
+  deleteEmgSupplierInvoice,
   createEmgSupplier,
   deleteEmgTransaction,
   EmgEntrySuggestion,
@@ -334,10 +335,9 @@ export default function EmgSiteMovements() {
           if (linked) createdMovements.push(linked);
         }
       } else {
-        for (let i = 0; i < validLines.length; i++) {
-          const line = validLines[i];
+        const created = await createEmgSiteMovementBatch({ movements: validLines.map((line, i) => {
           const refCode = validLines.length > 1 ? `${header.invoiceNumber}-${i + 1}` : header.invoiceNumber;
-          const created = await createEmgSiteMovement({
+          return {
             projectId: id, supplierId: null, movementType: header.movementType,
             description: line.description.trim(), unit: line.unit || null,
             quantity: line.quantity ? Number(line.quantity) : null, unitPrice: line.unitPrice ? Number(line.unitPrice) : null,
@@ -345,10 +345,10 @@ export default function EmgSiteMovements() {
             reference: refCode || null, details: combinedDetails,
             expenseCategory: header.movementType === 'مصروفات' ? header.expenseCategory : null,
             paidTo: header.paidTo || null, paymentMethod: header.paymentMethod || 'نقدي', isPaid: header.paymentMode !== 'credit'
-          });
-          createdMovements.push(created);
-          attachmentEntityId = created.id;
-        }
+          };
+        }) });
+        createdMovements.push(...created);
+        attachmentEntityId = created[0]?.id ?? null;
       }
 
       let uploadFailures = 0;
@@ -396,7 +396,8 @@ export default function EmgSiteMovements() {
     if (!window.confirm('هل تريد حذف هذه الحركة نهائيًا؟')) return;
     setMessage(null);
     try {
-      await deleteEmgTransaction('site-movement', movement.id);
+      if (movement.invoiceId) await deleteEmgSupplierInvoice(movement.invoiceId);
+      else await deleteEmgTransaction('site-movement', movement.id);
       setMessage({ severity: 'success', text: 'تم حذف الحركة نهائيًا.' });
       if (drawerMovement?.id === movement.id) setDrawerMovement(null);
       load();

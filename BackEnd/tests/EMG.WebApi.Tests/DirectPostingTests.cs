@@ -46,6 +46,29 @@ public sealed class DirectPostingTests
     }
 
     [Fact]
+    public async Task NonSupplierMultiLineSiteMovementIsCommittedAsOneAtomicBatch()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<EmgDbContext>().UseSqlite(connection).Options;
+        await using var db = new EmgDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var project = new Project { Name = "Batch movement QA", Code = "BATCH-MOVEMENT-QA" };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+
+        var result = await new SiteMovementsService(db).CreateBatchAsync(new CreateSiteMovementBatchRequest([
+            new CreateSiteMovementRequest(project.Id, null, "مصروفات", "بند أول", "مقطوعية", 1m, 100m, null, null, "BATCH-1", null, "موقع", null, "نقدي", true),
+            new CreateSiteMovementRequest(project.Id, null, "مصروفات", "بند ثان", "مقطوعية", 2m, 50m, null, null, "BATCH-2", null, "موقع", null, "نقدي", true)
+        ]), null, true, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.Count);
+        Assert.Equal(200m, await db.SiteMovements.Where(item => item.ProjectId == project.Id).SumAsync(item => item.TotalAmount));
+        Assert.Equal(2, await db.WorkflowActions.CountAsync(item => item.EntityType == "site-movement" && item.Action == "ترحيل مباشر"));
+    }
+
+    [Fact]
     public async Task InlineSupplierCreationGeneratesAnInvoiceAndPostsTheLineAtomically()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

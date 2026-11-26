@@ -20,4 +20,5 @@ public sealed record SiteMovementSummary(
     string ExpenseCategory,
     string PaidTo,
     string PaymentMethod,
-    bool IsPaid);
+    bool IsPaid,
+    int? InvoiceId);

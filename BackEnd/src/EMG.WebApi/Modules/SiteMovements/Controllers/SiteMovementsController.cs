@@ -41,6 +41,16 @@ public sealed class SiteMovementsController(ISiteMovementsService siteMovementsS
         return movement is null ? NotFound(new { message = "المشروع أو المورد غير موجود، أو لا تملك صلاحية المشروع." }) : Ok(movement);
     }
 
+    [HttpPost("batch")]
+    [PermissionAuthorize("site-movements.create")]
+    public async Task<ActionResult<IReadOnlyList<SiteMovementSummary>>> CreateBatch(CreateSiteMovementBatchRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Movements is null || request.Movements.Count == 0 || request.Movements.Any(item => item.ProjectId <= 0 || string.IsNullOrWhiteSpace(item.Description) || string.IsNullOrWhiteSpace(item.MovementType) || item.Amount < 0 || item.Quantity < 0 || item.UnitPrice < 0))
+            return BadRequest(new { message = "بيانات الحركات غير صحيحة." });
+        var movements = await siteMovementsService.CreateBatchAsync(request, CurrentUserId(), IsAdmin(), cancellationToken);
+        return movements is null ? BadRequest(new { message = "المشروع أو المورد غير موجود، أو لا تملك صلاحية المشروع." }) : Ok(movements);
+    }
+
     [HttpPut("{id:int}")]
     public async Task<ActionResult<SiteMovementSummary>> Update(int id, CreateSiteMovementRequest request, CancellationToken cancellationToken)
     {

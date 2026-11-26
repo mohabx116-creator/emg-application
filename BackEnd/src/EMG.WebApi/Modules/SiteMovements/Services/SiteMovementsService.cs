@@ -4,6 +4,7 @@ using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using System.Data;
 
 namespace EMG.Api.Modules.SiteMovements.Services;
 
@@ -65,8 +66,39 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
         return await db.SiteMovements.AsNoTracking().Where(item => item.Id == movement.Id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<SiteMovementSummary>?> CreateBatchAsync(CreateSiteMovementBatchRequest request, int? userId, bool isAdmin, CancellationToken cancellationToken)
+    {
+        if (request.Movements is null || request.Movements.Count == 0) return null;
+        var projectIds = request.Movements.Select(item => item.ProjectId).Distinct().ToArray();
+        if (projectIds.Length != 1 || !isAdmin && (userId is null || !await db.UserProjectAssignments.AnyAsync(item =>
+                item.ProjectId == projectIds[0] && item.UserId == userId && item.IsActive, cancellationToken))) return null;
+        if (!await db.Projects.AnyAsync(item => item.Id == projectIds[0], cancellationToken)) return null;
+        var supplierIds = request.Movements.Where(item => item.SupplierId is not null).Select(item => item.SupplierId!.Value).Distinct().ToArray();
+        if (supplierIds.Length > 0 && await db.Suppliers.CountAsync(item => supplierIds.Contains(item.Id) && item.IsActive, cancellationToken) != supplierIds.Length) return null;
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var entities = request.Movements.Select(item => new SiteMovement
+        {
+            ProjectId = item.ProjectId, SupplierId = item.SupplierId, MovementType = item.MovementType.Trim(),
+            Description = item.Description.Trim(), Unit = item.Unit?.Trim(), Quantity = item.Quantity, UnitPrice = item.UnitPrice,
+            TotalAmount = decimal.Round(item.Amount ?? (item.Quantity ?? 0) * (item.UnitPrice ?? 0), 2),
+            MovementDate = item.MovementDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(item.MovementDate.Value.Date, DateTimeKind.Utc),
+            Status = "مرحّل", Reference = item.Reference?.Trim(), Details = item.Details?.Trim(), CreatedByUserId = userId,
+            ExpenseCategory = item.ExpenseCategory?.Trim(), PaidTo = item.PaidTo?.Trim(), PaymentMethod = item.PaymentMethod?.Trim(), IsPaid = item.IsPaid ?? false
+        }).ToList();
+        if (entities.Any(item => item.TotalAmount < 0)) return null;
+        db.SiteMovements.AddRange(entities);
+        await db.SaveChangesAsync(cancellationToken);
+        db.WorkflowActions.AddRange(entities.Select(item => new WorkflowAction { EntityType = "site-movement", EntityId = item.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "تسجيل مجموعة حركات في معاملة واحدة" }));
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return await db.SiteMovements.AsNoTracking().Where(item => entities.Select(entity => entity.Id).Contains(item.Id))
+            .OrderBy(item => item.Id).Select(ToSummary()).ToListAsync(cancellationToken);
+    }
+
     public async Task<SiteMovementSummary?> UpdateAsync(int id, CreateSiteMovementRequest request, int? userId, bool isAdmin, CancellationToken cancellationToken, bool hasOverridePermission)
     {
+        if (await db.SupplierInvoices.AnyAsync(item => item.SiteMovementId == id, cancellationToken)) return null;
         var movement = await db.SiteMovements.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (movement is null || (!isAdmin && (userId is null || !await CanManageAsync(movement, userId.Value, hasOverridePermission, cancellationToken)))) return null;
         if (movement.Status == "محذوف" || request.ProjectId != movement.ProjectId) return null;
@@ -98,6 +130,7 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
 
     public async Task<bool> DeleteAsync(int id, int? userId, bool isAdmin, CancellationToken cancellationToken, bool hasOverridePermission)
     {
+        if (await db.SupplierInvoices.AnyAsync(item => item.SiteMovementId == id, cancellationToken)) return false;
         var movement = await db.SiteMovements.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (movement is null || (!isAdmin && (userId is null || !await CanManageAsync(movement, userId.Value, hasOverridePermission, cancellationToken)))) return false;
         if (await db.AdvanceAllocations.AnyAsync(item => item.SiteMovementId == id, cancellationToken) || await db.ContractorStatementLines.AnyAsync(item => item.SourceEntityType == "site-movement" && item.SourceEntityId == id, cancellationToken)) return false;
@@ -118,9 +151,10 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
         await HasProjectAccessAsync(movement.ProjectId, userId, cancellationToken) &&
         (hasOverridePermission || movement.CreatedByUserId == userId);
 
-    private static Expression<Func<SiteMovement, SiteMovementSummary>> ToSummary() => item => new SiteMovementSummary(
+    private Expression<Func<SiteMovement, SiteMovementSummary>> ToSummary() => item => new SiteMovementSummary(
         item.Id, item.ProjectId, item.Project.Name, item.SupplierId, item.Supplier == null ? string.Empty : item.Supplier.Name,
         item.MovementType, item.Description, item.Unit ?? string.Empty, item.Quantity, item.UnitPrice, item.TotalAmount,
         item.MovementDate, item.Status, item.Reference ?? string.Empty, item.Details ?? string.Empty, item.CreatedByUserId,
-        item.ExpenseCategory ?? string.Empty, item.PaidTo ?? string.Empty, item.PaymentMethod ?? string.Empty, item.IsPaid);
+        item.ExpenseCategory ?? string.Empty, item.PaidTo ?? string.Empty, item.PaymentMethod ?? string.Empty, item.IsPaid,
+        db.SupplierInvoices.Where(invoice => invoice.SiteMovementId == item.Id).Select(invoice => (int?)invoice.Id).FirstOrDefault());
 }

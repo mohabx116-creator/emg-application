@@ -264,6 +264,7 @@ export type EmgSiteMovement = {
   paidTo: string;
   paymentMethod: string;
   isPaid: boolean;
+  invoiceId?: number | null;
 };
 export type EmgEntrySuggestion = {
   suggestedMovementType: string;
@@ -777,9 +778,16 @@ export async function createEmgSiteMovement(payload: Record<string, unknown>): P
   const response = await axios.post<EmgSiteMovement>('/api/site-movements', payload);
   return response.data;
 }
+export async function createEmgSiteMovementBatch(payload: { movements: Record<string, unknown>[] }): Promise<EmgSiteMovement[]> {
+  const response = await axios.post<EmgSiteMovement[]>('/api/site-movements/batch', payload);
+  return response.data;
+}
 export async function createEmgSupplierInvoice(payload: Record<string, unknown>): Promise<EmgSupplierInvoice> {
   const response = await axios.post<EmgSupplierInvoice>('/api/suppliers/invoices', payload);
   return response.data;
+}
+export async function deleteEmgSupplierInvoice(id: number): Promise<void> {
+  await axios.delete(`/api/suppliers/invoices/${id}`);
 }
 export async function suggestEmgEntry(payload: Record<string, unknown>): Promise<EmgEntrySuggestion> {
   const response = await axios.post<EmgEntrySuggestion>('/api/intelligence/entry/suggest', payload);

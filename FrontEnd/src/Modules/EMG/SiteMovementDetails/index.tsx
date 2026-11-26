@@ -45,6 +45,7 @@ import {
   getEmgWorkflowHistory,
   getEmgWorkflowAudit,
   deleteEmgTransaction,
+  deleteEmgSupplierInvoice,
   updateEmgSiteMovement,
   uploadEmgAttachment
 } from 'api/emg';
@@ -98,7 +99,7 @@ export default function EmgSiteMovementDetails() {
         details: data.details
       });
       const [files, actions, auditResult] = await Promise.all([
-        getEmgAttachments('site-movement', id).catch(() => []),
+        getEmgAttachments(data.invoiceId ? 'supplier-invoice' : 'site-movement', data.invoiceId ?? id).catch(() => []),
         getEmgWorkflowHistory('site-movement', id).catch(() => []),
         getEmgWorkflowAudit('site-movement', id).catch(() => null)
       ]);
@@ -140,10 +141,12 @@ export default function EmgSiteMovementDetails() {
   const isPdf = previewFile?.contentType === 'application/pdf' || previewFile?.originalFileName.toLowerCase().endsWith('.pdf');
 
   const uploadAttachment = async (file: File) => {
+    const currentMovement = movement;
+    if (!currentMovement) return;
     setUploading(true);
     setMessage(null);
     try {
-      await uploadEmgAttachment('site-movement', id, file);
+      await uploadEmgAttachment(currentMovement.invoiceId ? 'supplier-invoice' : 'site-movement', currentMovement.invoiceId ?? id, file);
       setMessage({ severity: 'success', text: 'تم رفع المرفق بنجاح.' });
       await load();
     } catch (error: any) {
@@ -170,6 +173,11 @@ export default function EmgSiteMovementDetails() {
 
   const saveEdit = async () => {
     if (!movement) return;
+    if (movement.invoiceId) {
+      setMessage({ severity: 'error', text: 'هذه الحركة جزء من فاتورة مورد؛ عدّل بنود الفاتورة من المسار الموحّد حتى لا تتكرر التكلفة.' });
+      setEditOpen(false);
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
@@ -219,7 +227,8 @@ export default function EmgSiteMovementDetails() {
     setBusy(true);
     setMessage(null);
     try {
-      await deleteEmgTransaction('site-movement', movement.id);
+      if (movement.invoiceId) await deleteEmgSupplierInvoice(movement.invoiceId);
+      else await deleteEmgTransaction('site-movement', movement.id);
       navigate(`/emg/projects/${movement.projectId}/movements`);
     } catch (error: any) {
       setMessage({ severity: 'error', text: error?.response?.data?.message || error?.message || 'تعذر حذف الحركة.' });
