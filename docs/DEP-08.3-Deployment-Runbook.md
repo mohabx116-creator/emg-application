@@ -11,6 +11,9 @@ This runbook is prepared for review only. It is not an authorization to deploy.
 - `BACKUP_REQUIRED_FILES` must list the encrypted database dump, uploads archive, Data Protection keys and recovery configuration artifacts from that same set.
 - `PUBLIC_ACCOUNT_URL` must identify the unauthenticated account endpoint; deployment acceptance requires HTTP 401 there so a shallow health response cannot mask database authentication failure.
 - `AUTH_ACCEPTANCE_URL` and `AUTH_ACCEPTANCE_COOKIE_FILE` must provide an owner-authorized authenticated `/api/account/me` request; deployment and rollback cannot be marked successful from HTTP 401 alone.
+- `AUTH_ACCEPTANCE_SCRIPT` must perform a fresh CSRF → login → authenticated `/api/account/me` flow before mutation and after replacement; expired cookie jars are never accepted as the only proof.
+- `AUTH_ACCEPTANCE_PASSWORD_FILE` is mode `0600` and is read only by the local acceptance helper; credentials must not appear in command arguments or logs.
+- The helper requires `AUTH_ACCEPTANCE_LOGIN_URL`, `AUTH_ACCEPTANCE_CSRF_URL`, `AUTH_ACCEPTANCE_USERNAME`, `AUTH_ACCEPTANCE_PASSWORD_FILE`, and `AUTH_ACCEPTANCE_COOKIE_FILE`; it writes a fresh mode-`0600` cookie jar only after CSRF, login, and `/api/account/me` all return HTTP 200.
 - The deployment gate performs a password-authenticated TCP `select 1` against the existing PostgreSQL container using the protected production environment file before application mutation.
 - `BACKEND_IMAGE` and `FRONTEND_IMAGE` must be full immutable GHCR digest references from the same source SHA.
 - Confirm adequate disk and memory before execution.

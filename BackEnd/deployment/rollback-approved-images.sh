@@ -14,6 +14,7 @@ readonly PUBLIC_API_HEALTH_URL="${PUBLIC_API_HEALTH_URL:?PUBLIC_API_HEALTH_URL i
 readonly PUBLIC_ACCOUNT_URL="${PUBLIC_ACCOUNT_URL:?PUBLIC_ACCOUNT_URL is required}"
 readonly AUTH_ACCEPTANCE_COOKIE_FILE="${AUTH_ACCEPTANCE_COOKIE_FILE:?AUTH_ACCEPTANCE_COOKIE_FILE is required}"
 readonly AUTH_ACCEPTANCE_URL="${AUTH_ACCEPTANCE_URL:?AUTH_ACCEPTANCE_URL is required}"
+readonly AUTH_ACCEPTANCE_SCRIPT="${AUTH_ACCEPTANCE_SCRIPT:-$SCRIPT_DIR/authenticated-acceptance.sh}"
 readonly HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}"
 
 die() { echo "ROLLBACK BLOCKED: $*" >&2; exit 1; }
@@ -38,6 +39,10 @@ verify_authenticated_acceptance() {
   local status
   status="$(curl --connect-timeout 5 --max-time 15 --silent --output /dev/null --write-out '%{http_code}' --cookie "$AUTH_ACCEPTANCE_COOKIE_FILE" "$AUTH_ACCEPTANCE_URL")" || return 1
   [[ "$status" == 200 ]]
+}
+check_fresh_authenticated_acceptance() {
+  [[ -x "$AUTH_ACCEPTANCE_SCRIPT" ]] || die 'Fresh authentication acceptance script is missing or not executable.'
+  "$AUTH_ACCEPTANCE_SCRIPT" || die 'Fresh authenticated acceptance failed before rollback mutation.'
 }
 service_container() {
   local service="$1" id project name
@@ -70,6 +75,7 @@ compose=(docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$C
 "${compose[@]}" config >/dev/null || die 'Effective Compose configuration is invalid.'
 service_container api >/dev/null
 service_container frontend >/dev/null
+check_fresh_authenticated_acceptance
 
 export BACKEND_IMAGE="$previous_backend" FRONTEND_IMAGE="$previous_frontend"
 export DATABASE_APPLY_MIGRATIONS=false SECURITY_BOOTSTRAP_ADMIN_ENABLED=false
@@ -81,6 +87,7 @@ wait_http http://127.0.0.1:3100/ || die 'Frontend rollback health failed.'
 wait_http "$PUBLIC_API_HEALTH_URL" || die 'Public API rollback health failed.'
 wait_http "$PUBLIC_HEALTH_URL" || die 'Public frontend rollback health failed.'
 expect_http_status "$PUBLIC_ACCOUNT_URL" 401 || die 'Public account rollback readiness failed.'
+check_fresh_authenticated_acceptance
 verify_authenticated_acceptance || die 'Authenticated rollback acceptance failed.'
 
 api_id="$(service_container api)"

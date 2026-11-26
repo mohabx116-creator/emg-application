@@ -26,6 +26,7 @@ readonly PUBLIC_API_HEALTH_URL="${PUBLIC_API_HEALTH_URL:?PUBLIC_API_HEALTH_URL i
 readonly PUBLIC_ACCOUNT_URL="${PUBLIC_ACCOUNT_URL:?PUBLIC_ACCOUNT_URL is required}"
 readonly AUTH_ACCEPTANCE_COOKIE_FILE="${AUTH_ACCEPTANCE_COOKIE_FILE:?AUTH_ACCEPTANCE_COOKIE_FILE is required}"
 readonly AUTH_ACCEPTANCE_URL="${AUTH_ACCEPTANCE_URL:?AUTH_ACCEPTANCE_URL is required}"
+readonly AUTH_ACCEPTANCE_SCRIPT="${AUTH_ACCEPTANCE_SCRIPT:-$SCRIPT_DIR/authenticated-acceptance.sh}"
 readonly HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}"
 readonly BACKUP_MAX_AGE_SECONDS="${BACKUP_MAX_AGE_SECONDS:-86400}"
 readonly MIN_AVAILABLE_MEMORY_MB="${MIN_AVAILABLE_MEMORY_MB:-512}"
@@ -82,6 +83,60 @@ env_value() {
   local service="$1" key="$2"
   "${compose[@]}" config --format json | python3 -c 'import json,sys; d=json.load(sys.stdin); e=d["services"][sys.argv[1]].get("environment", {}); v=e.get(sys.argv[2], ""); print(v if v is not None else "")' "$service" "$key"
 }
+validate_npgsql_connection() {
+  # Npgsql keys are case-insensitive and values may be quoted or contain ';'.
+  # Send all values over stdin so the password never appears in argv.
+  printf '%s\0%s\0%s\0%s' "$1" "$2" "$3" "$4" | python3 -c '
+import sys
+
+raw, expected_db, expected_user, expected_password = sys.stdin.buffer.read().split(b"\0")
+s = raw.decode()
+items = {}
+i = 0
+while i < len(s):
+    while i < len(s) and s[i] in "; \t\r\n": i += 1
+    if i == len(s): break
+    start = i
+    while i < len(s) and s[i] not in "=;": i += 1
+    if i >= len(s) or s[i] != "=": raise SystemExit(1)
+    key = s[start:i].strip().lower()
+    if not key or key in items: raise SystemExit(1)
+    i += 1
+    while i < len(s) and s[i] in " \t": i += 1
+    if i < len(s) and s[i] in chr(34) + chr(39):
+        quote = s[i]; i += 1; value = []
+        while i < len(s):
+            if s[i] == quote:
+                if i + 1 < len(s) and s[i + 1] == quote: value.append(quote); i += 2; continue
+                i += 1; break
+            value.append(s[i]); i += 1
+        else: raise SystemExit(1)
+        if i < len(s) and s[i] not in "; \t\r\n": raise SystemExit(1)
+        value = "".join(value)
+    else:
+        start = i
+        while i < len(s) and s[i] != ";": i += 1
+        value = s[start:i].strip()
+    items[key] = value
+
+def get(*names):
+    values = [items.get(name) for name in names if name in items]
+    if len(values) != 1: raise SystemExit(1)
+    return values[0]
+
+if get("host", "server", "data source") != "postgres": raise SystemExit(1)
+if get("port") != "5432": raise SystemExit(1)
+if get("database", "initial catalog") != expected_db.decode(): raise SystemExit(1)
+if get("username", "user id", "user") != expected_user.decode(): raise SystemExit(1)
+if get("password", "pwd") != expected_password.decode(): raise SystemExit(1)
+' \
+    && return 0
+  return 1
+}
+check_fresh_authenticated_acceptance() {
+  [[ -x "$AUTH_ACCEPTANCE_SCRIPT" ]] || die 'Fresh authentication acceptance script is missing or not executable.'
+  "$AUTH_ACCEPTANCE_SCRIPT" || die 'Fresh authenticated acceptance failed before application mutation.'
+}
 verify_authenticated_acceptance() {
   [[ "$(stat -c '%a' "$AUTH_ACCEPTANCE_COOKIE_FILE" 2>/dev/null || true)" == 600 ]] || return 1
   local status
@@ -134,8 +189,10 @@ db_name="$(env_value postgres POSTGRES_DB)"
 db_password="$(env_value postgres POSTGRES_PASSWORD)"
 [[ -n "$db_user" && -n "$db_name" && -n "$db_password" ]] || die 'Database credential configuration is incomplete.'
 api_connection="$(env_value api ConnectionStrings__EmgDb)"
-[[ "$api_connection" == *"Host=postgres;"* && "$api_connection" == *"Database=$db_name;"* && "$api_connection" == *"Username=$db_user;"* && "$api_connection" == *"Password=$db_password"* ]] || die 'Effective API database configuration does not match PostgreSQL credentials.'
-docker exec -e "PGPASSWORD=$db_password" "$postgres_id" psql -h postgres -U "$db_user" -d "$db_name" -Atqc 'select 1' >/dev/null 2>&1 || die 'Password-authenticated PostgreSQL readiness check failed.'
+validate_npgsql_connection "$api_connection" "$db_name" "$db_user" "$db_password" || die 'Effective API database configuration does not match parsed Npgsql credentials.'
+printf '%s\n' "postgres:5432:$db_name:$db_user:$db_password" |
+  docker exec -i "$postgres_id" sh -ceu 'umask 077; cat > /tmp/emg-pgpass; trap "rm -f /tmp/emg-pgpass" EXIT; PGPASSFILE=/tmp/emg-pgpass psql -h postgres -U "$1" -d "$2" -Atqc "select 1" >/dev/null' sh "$db_user" "$db_name" || die 'Password-authenticated PostgreSQL readiness check failed.'
+check_fresh_authenticated_acceptance
 
 current_backend="$(docker inspect "$api_id" --format '{{.Config.Image}}')"
 current_frontend="$(docker inspect "$frontend_id" --format '{{.Config.Image}}')"
@@ -164,6 +221,7 @@ rollback_application() {
   wait_http "$PUBLIC_API_HEALTH_URL" || return 1
   wait_http "$PUBLIC_HEALTH_URL" || return 1
   expect_http_status "$PUBLIC_ACCOUNT_URL" 401 || return 1
+  check_fresh_authenticated_acceptance || return 1
   verify_authenticated_acceptance || return 1
   return 0
 }

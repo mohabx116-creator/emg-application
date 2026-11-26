@@ -19,6 +19,8 @@ readonly OLD_BACKEND="emg-dep03b-api:previous"
 readonly OLD_FRONTEND="emg-dep04-frontend:previous"
 readonly CANDIDATE_BACKEND="ghcr.io/mohabx116-creator/emg-application/backend@sha256:87ea9a65cdd6be02db5863c540c7d6ad9f91d71c28fbac65cbfd39b31e822e0e"
 readonly CANDIDATE_FRONTEND="ghcr.io/mohabx116-creator/emg-application/frontend@sha256:0d77ae306d690f0ec42c919b03d39fac327184884ad4a49ef89429c8ec3bbafa"
+REAL_PYTHON="$(command -v python3 || true)"
+[[ -n "$REAL_PYTHON" ]] || { echo 'deployment safety smoke requires python3.' >&2; exit 1; }
 
 cleanup() { rm -rf -- "$TEST_ROOT"; }
 trap cleanup EXIT
@@ -102,24 +104,36 @@ cat >"$MOCK_BIN/python3" <<'MOCK_PYTHON'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 if [[ "${1:-}" == -c ]]; then
+  if [[ "$#" -eq 2 ]]; then exec "$FAKE_REAL_PYTHON" "$@"; fi
   case "${3:-}:${4:-}" in
     postgres:POSTGRES_USER) printf 'emg\n' ;;
     postgres:POSTGRES_DB) printf 'emg\n' ;;
     postgres:POSTGRES_PASSWORD) printf 'synthetic\n' ;;
-    api:ConnectionStrings__EmgDb) printf 'Host=postgres;Port=5432;Database=emg;Username=emg;Password=synthetic\n' ;;
+    api:ConnectionStrings__EmgDb)
+      if [[ "${FAKE_BAD_CONNECTION:-0}" == 1 ]]; then printf 'Host=postgres;Port=5432;Database=emg;Username=emg;Password=synthetic-wrong\n'; else printf 'Host=postgres;Port=5432;Database=emg;Username=emg;Password=synthetic\n'; fi ;;
     *) printf '\n' ;;
   esac
 fi
 MOCK_PYTHON
 chmod 700 "$MOCK_BIN/python3"
+cat >"$MOCK_BIN/authenticated-acceptance.sh" <<'MOCK_AUTH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "${FAKE_AUTH_STATUS:-200}" == 200 ]] || exit 1
+umask 077
+printf '# fresh synthetic authenticated session\n' >"$AUTH_ACCEPTANCE_COOKIE_FILE"
+chmod 600 "$AUTH_ACCEPTANCE_COOKIE_FILE"
+MOCK_AUTH
+chmod 700 "$MOCK_BIN/authenticated-acceptance.sh"
 export PATH="$MOCK_BIN:$PATH"
-export FAKE_RUNTIME_DIR="$RUNTIME_DIR" FAKE_CANDIDATE_BACKEND="$CANDIDATE_BACKEND" COMPOSE_PROJECT_NAME=emg-test
+export FAKE_REAL_PYTHON="$REAL_PYTHON" FAKE_RUNTIME_DIR="$RUNTIME_DIR" FAKE_CANDIDATE_BACKEND="$CANDIDATE_BACKEND" COMPOSE_PROJECT_NAME=emg-test
 export COMPOSE_FILE="$TEST_ROOT/docker-compose.prod.yml" ENV_FILE="$TEST_ROOT/.env"
 export STATE_DIR BACKUP_MARKER="$ARTIFACTS/COMPLETE" BACKUP_MANIFEST="$ARTIFACTS/SHA256SUMS"
 export BACKUP_REQUIRED_FILES="$ARTIFACTS/database.enc,$ARTIFACTS/uploads.enc,$ARTIFACTS/keys.enc,$ARTIFACTS/config.enc"
 export EXPECTED_SOURCE_SHA EXPECTED_POSTGRES_VOLUME=emg_postgres_data EXPECTED_UPLOADS_VOLUME=emg_uploads EXPECTED_KEYS_VOLUME=data_protection_keys
 export PUBLIC_HEALTH_URL=https://emg.example.test/ PUBLIC_API_HEALTH_URL=https://emg.example.test/api/health PUBLIC_ACCOUNT_URL=https://emg.example.test/api/account/me
 export AUTH_ACCEPTANCE_URL=https://emg.example.test/authenticated/me AUTH_ACCEPTANCE_COOKIE_FILE="$TEST_ROOT/auth.cookies"
+export AUTH_ACCEPTANCE_SCRIPT="$MOCK_BIN/authenticated-acceptance.sh"
 export BACKUP_MAX_AGE_SECONDS=86400 HEALTH_TIMEOUT_SECONDS=2
 printf 'POSTGRES_USER=emg\nPOSTGRES_DB=emg\nPOSTGRES_PASSWORD=synthetic\n' >"$TEST_ROOT/.env"
 printf '# synthetic authenticated cookie\n' >"$TEST_ROOT/auth.cookies"
@@ -150,11 +164,21 @@ unset FAKE_DB_AUTH_FAIL
 printf '%s' "$OLD_BACKEND" >"$RUNTIME_DIR/backend"
 printf '%s' "$OLD_FRONTEND" >"$RUNTIME_DIR/frontend"
 rm -f "$STATE_DIR/release-state.env"
+export FAKE_BAD_CONNECTION=1
+set +e; "$DEPLOY_SCRIPT" >/dev/null 2>&1; code=$?; set -e
+[[ "$code" -eq 1 ]]
+[[ "$(cat "$RUNTIME_DIR/backend")" == "$OLD_BACKEND" ]]
+echo 'exact parsed connection mismatch blocks deployment: PASS'
+unset FAKE_BAD_CONNECTION
+
+printf '%s' "$OLD_BACKEND" >"$RUNTIME_DIR/backend"
+printf '%s' "$OLD_FRONTEND" >"$RUNTIME_DIR/frontend"
+rm -f "$STATE_DIR/release-state.env"
 export FAKE_AUTH_STATUS=401
 set +e; "$DEPLOY_SCRIPT" >/dev/null 2>&1; code=$?; set -e
-[[ "$code" -eq 90 ]]
-grep -q '^pending=true$' "$STATE_DIR/release-state.env"
-echo 'unauthenticated acceptance blocks success: PASS'
+[[ "$code" -eq 1 ]]
+[[ ! -f "$STATE_DIR/release-state.env" ]]
+echo 'fresh authenticated acceptance blocks before mutation: PASS'
 unset FAKE_AUTH_STATUS
 rm -f "$STATE_DIR/release-state.env"
 
