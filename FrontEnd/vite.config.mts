@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tsconfigPaths from 'vite-tsconfig-paths';
+import { readFileSync } from 'node:fs';
 
 export default defineConfig(({ mode }) => {
   // depending on your application, base can also be "/"
@@ -23,12 +24,9 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
-      // maplibre-gl is a single unavoidable dependency of about 991 KiB.
-      chunkSizeWarningLimit: 1100,
-      sourcemap: true,
-      // Vite-specific optimizations
+      chunkSizeWarningLimit: 900,
+      sourcemap: mode !== 'production',
       cssCodeSplit: true,
-      // esbuild options for production
       ...(mode === 'production' && {
         esbuild: {
           drop: ['console', 'debugger'],
@@ -37,16 +35,14 @@ export default defineConfig(({ mode }) => {
       }),
       rollupOptions: {
         output: {
-          // Split only the heaviest isolated libraries. Keeping React and the
-          // general dependency graph together avoids circular vendor chunks.
           manualChunks(id) {
-            if (id.includes('/node_modules/maplibre-gl/')) return 'vendor-maplibre';
-            if (id.includes('/node_modules/@mui/x-data-grid')) return 'vendor-data-grid';
             if (id.includes('/node_modules/@mui/material/')) return 'vendor-mui-material';
             if (id.includes('/node_modules/@mui/icons-material/')) return 'vendor-mui-icons';
-            if (id.includes('/node_modules/@fullcalendar/')) return 'vendor-calendar';
-            if (id.includes('/node_modules/apexcharts/') || id.includes('/node_modules/react-apexcharts/')) return 'vendor-charts';
-            if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/') || id.includes('/node_modules/react-router/')) return 'vendor-react';
+            if (id.includes('/node_modules/framer-motion/')) return 'vendor-motion';
+            if (id.includes('/node_modules/@tabler/icons-react/')) return 'vendor-tabler-icons';
+            if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/') || id.includes('/node_modules/react-router')) {
+              return 'vendor-react';
+            }
             return undefined;
           }
         }
@@ -78,7 +74,23 @@ export default defineConfig(({ mode }) => {
       }
     },
     base: API_URL,
-    plugins: [react(), tsconfigPaths()],
+    plugins: [
+      react(),
+      tsconfigPaths(),
+      {
+        name: 'emg-pwa-icons',
+        apply: 'build',
+        generateBundle() {
+          for (const fileName of ['emg-logo.png', 'emg-logo-3d.png']) {
+            this.emitFile({
+              type: 'asset',
+              fileName,
+              source: readFileSync(new URL(`./src/assets/images/${fileName}`, import.meta.url))
+            });
+          }
+        }
+      }
+    ],
     optimizeDeps: {
       include: ['@mui/material/Tooltip', 'react', 'react-dom', 'react-router-dom']
     }

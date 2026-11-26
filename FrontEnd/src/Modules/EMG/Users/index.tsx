@@ -36,6 +36,7 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
+  IconTrash,
   IconUserCheck,
   IconUserShield,
   IconUserX,
@@ -46,6 +47,7 @@ import useAuth from 'hooks/useAuth';
 import {
   assignEmgUserProject,
   createEmgUser,
+  deleteUnusedEmgUser,
   EmgUser,
   getEmgUsers,
   resetEmgUserPassword,
@@ -249,6 +251,19 @@ export default function EmgUsers() {
     }
   };
 
+  const canDelete = (item: EmgUser) => (user?.role === 'admin' || user?.roles?.includes('admin')) &&
+    !item.isActive && !item.roles.includes('admin');
+  const deleteUnused = async (item: EmgUser) => {
+    if (!window.confirm(`هل تريد حذف حساب «${item.displayName}» نهائيًا؟`)) return;
+    try {
+      await deleteUnusedEmgUser(item.id);
+      setMessage({ type: 'success', text: 'تم حذف الحساب غير المستخدم.' });
+      load();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error?.response?.data?.message || 'تعذر حذف الحساب.' });
+    }
+  };
+
   if (!canViewUsers) return <Alert severity="error">ليس لديك صلاحية عرض المستخدمين.</Alert>;
 
   return (
@@ -376,6 +391,7 @@ export default function EmgUsers() {
                       <Button size="small" variant="outlined" color={item.isActive ? 'error' : 'success'} onClick={() => void toggleActive(item)}>
                         {item.isActive ? 'تعطيل' : 'تفعيل'}
                       </Button>
+                      {canDelete(item) && <Button size="small" color="error" onClick={() => void deleteUnused(item)}>حذف</Button>}
                     </Stack>
                   </Stack>
                 </CardContent>
@@ -447,6 +463,13 @@ export default function EmgUsers() {
                             <IconKey size={18} />
                           </IconButton>
                         </Tooltip>
+                        {canDelete(item) && (
+                          <Tooltip title="حذف حساب غير مستخدم">
+                            <IconButton aria-label="حذف حساب غير مستخدم" size="small" color="error" onClick={() => void deleteUnused(item)}>
+                              <IconTrash size={18} />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         <Tooltip title={item.isActive ? 'تعطيل الحساب بأمان' : 'تفعيل الحساب'}>
                           <IconButton size="small" color={item.isActive ? 'error' : 'success'} onClick={() => void toggleActive(item)}>
                             {item.isActive ? <IconUserX size={18} /> : <IconUserCheck size={18} />}

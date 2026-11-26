@@ -15,18 +15,22 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import HorizontalBar from './HorizontalBar';
 import MainContentStyled from './MainContentStyled';
-import Customization from '../Customization';
 import Loader from 'ui-component/Loader';
 import Breadcrumbs from 'ui-component/extended/Breadcrumbs';
 import AttendancePrompt from 'ui-component/extended/AttendancePrompt';
+import PwaStatusBar from 'ui-component/emg/PwaStatusBar';
+import MobileBottomNav from 'ui-component/emg/MobileBottomNav';
 
 import { MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
+import { useDocumentTitle } from 'hooks/useDocumentTitle';
+import { ActiveProjectProvider } from 'contexts/ActiveProjectContext';
 import { handlerDrawerOpen, useGetMenuMaster } from 'api/menu';
 
 // ==============================|| MAIN LAYOUT ||============================== //
 
 export default function MainLayout() {
+  useDocumentTitle();
   const theme = useTheme();
   const downMD = useMediaQuery(theme.breakpoints.down('md'));
 
@@ -52,31 +56,41 @@ export default function MainLayout() {
   if (menuMasterLoading) return <Loader />;
 
   return (
-    <Box sx={{ display: 'flex' }}>
-      {/* header */}
-      <AppBar enableColorOnDark position="fixed" color="inherit" elevation={0} sx={{ bgcolor: 'background.default' }}>
-        <Toolbar sx={{ p: isHorizontal ? 1.25 : 2 }}>
-          <Header />
-        </Toolbar>
-      </AppBar>
+    <ActiveProjectProvider>
+      <Box sx={{ display: 'flex', maxWidth: '100vw', overflowX: 'clip' }}>
+        {/* header */}
+        <AppBar enableColorOnDark position="fixed" color="inherit" elevation={0} sx={{ bgcolor: 'background.default' }}>
+          <Toolbar sx={{ p: isHorizontal ? 1.25 : { xs: 1, sm: 1.5, md: 2 }, minHeight: { xs: 60, md: 72 } }}>
+            <Header />
+          </Toolbar>
+        </AppBar>
 
-      {/* menu / drawer */}
-      {menu}
+        {/* menu / drawer */}
+        {menu}
 
-      {/* main content */}
-      <MainContentStyled {...{ borderRadius, menuOrientation, open: drawerOpen }}>
-        <Container
-          maxWidth={container ? 'lg' : false}
-          sx={{ ...(!container && { px: { xs: 0 } }), minHeight: 'calc(100vh - 128px)', display: 'flex', flexDirection: 'column' }}
-        >
-          {/* breadcrumb */}
-          <Breadcrumbs />
-          <AttendancePrompt />
-          <Outlet />
-          <Footer />
-        </Container>
-      </MainContentStyled>
-      <Customization />
-    </Box>
+        {/* main content */}
+        <MainContentStyled {...{ borderRadius, menuOrientation, open: drawerOpen }}>
+          <Container
+            maxWidth={container ? 'lg' : false}
+            sx={{
+              ...(!container && { px: { xs: 0 } }),
+              minHeight: 'calc(100vh - 128px)',
+              display: 'flex',
+              flexDirection: 'column',
+              pb: { xs: 9, md: 0 }
+            }}
+          >
+            <PwaStatusBar />
+            <Breadcrumbs />
+            <AttendancePrompt />
+            <Outlet />
+            <Footer />
+          </Container>
+        </MainContentStyled>
+
+        {/* Native-style mobile bottom navigation */}
+        <MobileBottomNav />
+      </Box>
+    </ActiveProjectProvider>
   );
 }

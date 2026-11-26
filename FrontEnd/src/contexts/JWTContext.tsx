@@ -1,5 +1,4 @@
-import { createContext, ReactElement, useEffect, useReducer } from 'react';
-import { Chance } from 'chance';
+import { createContext, ReactElement, useCallback, useEffect, useMemo, useReducer } from 'react';
 import { LOGIN, LOGOUT } from 'store/actions';
 import accountReducer from 'store/accountReducer';
 import Loader from 'ui-component/Loader';
@@ -15,7 +14,6 @@ import {
   readSessionProfile
 } from 'auth/loginResponse';
 
-const chance = new Chance();
 const initialState: InitialLoginContextProps = { isLoggedIn: false, isInitialized: false, user: null };
 const JWTContext = createContext<JWTContextType | null>(null);
 
@@ -47,36 +45,57 @@ export function JWTProvider({ children }: { children: ReactElement }) {
     void init();
   }, []);
 
-  const login = async (email: string, password: string, remember = true) => {
+  const login = useCallback(async (email: string, password: string, remember = true) => {
     const { data } = await axios.post<unknown>(LOGIN_URL, { email, password, rememberMe: remember });
     readAccountUser(data);
     const user = await loadSessionProfile();
     await ensureCsrf();
     synchronizePasswordRotationState(user.mustChangePassword === true, false);
     dispatch({ type: LOGIN, payload: { isLoggedIn: true, user } });
-  };
+  }, []);
 
-  const logout = async () => {
-    try { await ensureCsrf(); await axios.post('/api/account/logout'); } catch { /* session may already be revoked after password change */ }
+  const logout = useCallback(async () => {
+    try {
+      await ensureCsrf();
+      await axios.post('/api/account/logout');
+    } catch {
+      /* session may already be revoked after password change */
+    }
     clearPasswordRotationRequired();
     dispatch({ type: LOGOUT });
-  };
+  }, []);
 
-  const register = async (email: string, password: string, firstName: string, lastName: string) => {
-    const response = await axios.post('/api/account/register', { id: chance.bb_pin(), email, password, firstName, lastName });
-    window.sessionStorage.setItem('users', JSON.stringify(response.data));
-  };
+  const register = useCallback(async (email: string, password: string, firstName: string, lastName: string) => {
+    await axios.post('/api/account/register', { email, password, firstName, lastName });
+  }, []);
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     const user = await loadSessionProfile();
     synchronizePasswordRotationState(user.mustChangePassword === true, false);
     dispatch({ type: LOGIN, payload: { isLoggedIn: true, user } });
-  };
+  }, []);
 
-  const resetPassword = async (email: string) => { await axios.post('/api/account/password-reset/request', { email: email.trim() }); };
+  const resetPassword = useCallback(async (email: string) => {
+    await axios.post('/api/account/password-reset/request', { email: email.trim() });
+  }, []);
+
+  const updateProfile = useCallback(() => undefined, []);
+
+  const value = useMemo<JWTContextType>(
+    () => ({
+      ...state,
+      login,
+      logout,
+      register,
+      resetPassword,
+      refreshUser,
+      updateProfile
+    }),
+    [state, login, logout, register, resetPassword, refreshUser, updateProfile]
+  );
 
   if (!state.isInitialized) return <Loader />;
-  return <JWTContext value={{ ...state, login, logout, register, resetPassword, refreshUser, updateProfile: () => undefined }}>{children}</JWTContext>;
+  return <JWTContext value={value}>{children}</JWTContext>;
 }
 
 export default JWTContext;

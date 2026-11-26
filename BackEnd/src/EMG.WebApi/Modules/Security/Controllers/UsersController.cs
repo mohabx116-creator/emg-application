@@ -25,6 +25,7 @@ public sealed class UsersController(IUsersService usersService, EmgDbContext db)
     {
         if (string.IsNullOrWhiteSpace(request.UserName) || string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.Password))
             return BadRequest(new { message = "اسم المستخدم والبريد والاسم الظاهر وكلمة المرور المؤقتة مطلوبة." });
+        if (!await CanManageRolesAsync(RoleNames(request.Role, request.Roles), cancellationToken)) return Forbid();
         return Ok(await usersService.CreateAsync(request, cancellationToken));
     }
 
@@ -37,16 +38,15 @@ public sealed class UsersController(IUsersService usersService, EmgDbContext db)
         if (int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var currentUserId) &&
             currentUserId == userId && !request.IsActive)
             return BadRequest(new { message = "لا يمكن تعطيل الحساب المستخدم حاليًا من داخله." });
-        if (!User.IsInRole("admin") && int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out currentUserId))
+        var requestedRoleNames = RoleNames(request.Role, request.Roles);
+        var existingRoleNames = await GetUserRoleNamesAsync(userId, cancellationToken);
+        if (currentUserId == userId)
         {
-            IEnumerable<string> requestedRoleSource = request.Roles is { Count: > 0 } ? request.Roles : new[] { request.Role ?? string.Empty };
-            var requestedRoleNames = requestedRoleSource
-                .Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name.Trim().ToLowerInvariant()).Distinct().ToArray();
-            var callerPermissionCodes = await db.UserRoles.Where(link => link.UserId == currentUserId)
-                .SelectMany(link => link.Role.RolePermissions.Select(grant => grant.Permission.Code)).Distinct().ToListAsync(cancellationToken);
-            var requestedPermissionCodes = await db.Roles.Where(role => requestedRoleNames.Contains(role.Name))
-                .SelectMany(role => role.RolePermissions.Select(grant => grant.Permission.Code)).Distinct().ToListAsync(cancellationToken);
-            if (requestedPermissionCodes.Any(permission => !callerPermissionCodes.Contains(permission))) return Forbid();
+            if (!existingRoleNames.ToHashSet(StringComparer.Ordinal).SetEquals(requestedRoleNames)) return Forbid();
+        }
+        else if (!await CanManageRolesAsync(existingRoleNames.Concat(requestedRoleNames).Distinct().ToArray(), cancellationToken))
+        {
+            return Forbid();
         }
 
         var user = await usersService.UpdateAsync(userId, request, cancellationToken);
@@ -65,10 +65,53 @@ public sealed class UsersController(IUsersService usersService, EmgDbContext db)
 
     [HttpPost("{userId:int}/reset-password")]
     [PermissionAuthorize("users.reset-password")]
-    public async Task<IActionResult> ResetPassword(int userId, ResetPasswordRequest request, CancellationToken cancellationToken) =>
-        string.IsNullOrWhiteSpace(request.Password)
-            ? BadRequest(new { message = "يجب توفير كلمة مرور مؤقتة عبر قناة آمنة." })
-            : await usersService.ResetPasswordAsync(userId, request.Password, cancellationToken)
-                ? Ok(new { message = "تم إعادة تعيين كلمة المرور، ويجب تغييرها عند أول دخول." })
-                : NotFound();
+    public async Task<IActionResult> ResetPassword(int userId, ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Password)) return BadRequest(new { message = "يجب توفير كلمة مرور مؤقتة عبر قناة آمنة." });
+        if (!await CanManageRolesAsync(await GetUserRoleNamesAsync(userId, cancellationToken), cancellationToken)) return Forbid();
+        return await usersService.ResetPasswordAsync(userId, request.Password, cancellationToken)
+            ? Ok(new { message = "تم إعادة تعيين كلمة المرور، ويجب تغييرها عند أول دخول." })
+            : NotFound();
+    }
+
+    [HttpDelete("{userId:int}")]
+    [Authorize(Roles = "admin")]
+    [PermissionAuthorize("users.update")]
+    public async Task<IActionResult> DeleteUnused(int userId, CancellationToken ct)
+    {
+        if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actor)) return Forbid();
+        return await usersService.DeleteUnusedAsync(userId, actor, ct) switch
+        {
+            true => NoContent(),
+            null => NotFound(),
+            false => Conflict(new { message = "يمكن حذف الحسابات غير النشطة التي لم تُستخدم فقط. احتفظ بالحسابات ذات السجل معطّلة." })
+        };
+    }
+
+    private Task<string[]> GetUserRoleNamesAsync(int userId, CancellationToken ct) =>
+        db.UserRoles.Where(link => link.UserId == userId).Select(link => link.Role.Name).ToArrayAsync(ct);
+
+    private async Task<bool> CanManageRolesAsync(string[] names, CancellationToken ct)
+    {
+        if (User.IsInRole("admin")) return true;
+        if (names.Contains("admin") || !int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var caller)) return false;
+        var roles = await db.Roles.Where(role => names.Contains(role.Name)).CountAsync(ct);
+        if (roles != names.Length) return false;
+        var callerGrants = await db.UserRoles.Where(link => link.UserId == caller && link.User.IsActive)
+            .SelectMany(link => link.Role.RolePermissions.Select(grant => new { grant.PermissionId, grant.Scope, grant.AmountLimit }))
+            .ToListAsync(ct);
+        var requestedGrants = await db.Roles.Where(role => names.Contains(role.Name))
+            .SelectMany(role => role.RolePermissions.Select(grant => new { grant.PermissionId, grant.Scope, grant.AmountLimit }))
+            .ToListAsync(ct);
+        return requestedGrants.All(requested => callerGrants.Any(grant => grant.PermissionId == requested.PermissionId &&
+            grant.Scope == requested.Scope && (grant.AmountLimit is null ||
+                requested.AmountLimit is not null && grant.AmountLimit >= requested.AmountLimit)));
+    }
+
+    private static string[] RoleNames(string? role, IReadOnlyList<string>? roles)
+    {
+        var values = (roles is { Count: > 0 } ? roles : [role ?? ""])
+            .Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name.Trim().ToLowerInvariant()).Distinct().ToArray();
+        return values.Length == 0 ? ["user"] : values;
+    }
 }

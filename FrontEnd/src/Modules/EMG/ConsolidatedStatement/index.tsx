@@ -757,7 +757,7 @@ export default function ConsolidatedStatement() {
                       <TableCell
                         sx={{
                           position: 'sticky',
-                          right: 0,
+                          insetInlineStart: 0,
                           zIndex: 5,
                           minWidth: 260,
                           bgcolor: headerBg,
@@ -842,7 +842,7 @@ export default function ConsolidatedStatement() {
                         <TableCell
                           sx={{
                             position: 'sticky',
-                            right: 0,
+                            insetInlineStart: 0,
                             zIndex: 2,
                             bgcolor: 'background.paper',
                             borderLeft: '1px solid',

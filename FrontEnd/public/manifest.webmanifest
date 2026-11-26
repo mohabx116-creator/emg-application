@@ -1,0 +1,27 @@
+{
+  "name": "EMG & JUZOR Construction ERP",
+  "short_name": "EMG ERP",
+  "description": "منظومة EMG لإدارة المشروعات الهندسية والمحاسبة الإنشائية",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#0d47a1",
+  "background_color": "#0b2042",
+  "icons": [
+    {
+      "src": "/emg-logo.png",
+      "sizes": "1447x1087",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/emg-logo-3d.png",
+      "sizes": "1446x1087",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
-import { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { ReactNode, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
   Avatar,
@@ -12,14 +12,19 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  FormControl,
   Grid,
   IconButton,
   InputAdornment,
+  MenuItem,
+  Select,
   Skeleton,
   Stack,
   TablePagination,
   TextField,
-  Typography
+  Typography,
+  useMediaQuery,
+  useTheme
 } from '@mui/material';
 import {
   IconArrowRight,
@@ -34,6 +39,9 @@ import {
 } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import { EmgProject } from 'api/emg';
+import { useActiveProject } from 'contexts/ActiveProjectContext';
+import useAuth from 'hooks/useAuth';
+import { hasPermission } from './roleAccess';
 
 const moneyFmt = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
 export const formatWorkMoney = (value: number) => `${moneyFmt.format(value || 0)} ج.م`;
@@ -137,12 +145,23 @@ export default function WorkSectionShell({
   onCloseCreateModal,
   createModalContent
 }: WorkSectionShellProps) {
+  const theme = useTheme();
+  const downSM = useMediaQuery(theme.breakpoints.down('sm'));
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { projects, setActiveProjectId } = useActiveProject();
+  const canAdvances = hasPermission(user, 'advances.view') || hasPermission(user, 'advances.manage');
+
+  useEffect(() => {
+    if (project?.id) setActiveProjectId(project.id);
+  }, [project?.id, setActiveProjectId]);
+
   return (
     <Box sx={{ pb: 5 }}>
       {/* Breadcrumbs */}
       <Breadcrumbs sx={{ mb: 1.5 }}>
         <Typography component={Link} to="/emg/projects" variant="body2" color="text.secondary" sx={{ textDecoration: 'none', fontWeight: 700 }}>
-          المشاريع
+          المشروعات
         </Typography>
         <Typography component={Link} to={`/emg/projects/${project.id}`} variant="body2" color="text.secondary" sx={{ textDecoration: 'none', fontWeight: 700 }}>
           {project.name}
@@ -152,11 +171,11 @@ export default function WorkSectionShell({
         </Typography>
       </Breadcrumbs>
 
-      {/* Executive Header */}
+      {/* Executive Header + Fast Project Switcher */}
       <Stack
         direction={{ xs: 'column', md: 'row' }}
         justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', md: 'center' }}
+        alignItems={{ xs: 'stretch', md: 'center' }}
         spacing={2}
         sx={{ mb: 2 }}
       >
@@ -172,14 +191,36 @@ export default function WorkSectionShell({
           </Typography>
         </Box>
 
-        <Stack direction="row" spacing={1.25} flexWrap="wrap" useFlexGap>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', sm: 'center' }}>
+          {projects.length > 1 && (
+            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 210 } }}>
+              <Select
+                value={String(project.id)}
+                aria-label="تبديل المشروع"
+                onChange={(e) => {
+                  const nextId = Number(e.target.value);
+                  if (nextId && nextId !== project.id) {
+                    setActiveProjectId(nextId);
+                    navigate(`/emg/projects/${nextId}/${activeSection}`);
+                  }
+                }}
+                sx={{ borderRadius: 2, bgcolor: 'background.paper', fontWeight: 700 }}
+              >
+                {projects.map((item) => (
+                  <MenuItem key={item.id} value={String(item.id)}>
+                    {item.name} ({item.code})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
           {canCreate && (
             <Button
               variant="contained"
               color="secondary"
               startIcon={<IconPlus size={18} />}
               onClick={onOpenCreate}
-              sx={{ borderRadius: 2, fontWeight: 700, px: 2.5, boxShadow: '0 8px 20px rgba(94, 53, 177, 0.28)' }}
+              sx={{ borderRadius: 2, fontWeight: 700, px: 2.5, minHeight: 42, boxShadow: '0 8px 20px rgba(94, 53, 177, 0.28)' }}
             >
               {addButtonLabel}
             </Button>
@@ -190,7 +231,7 @@ export default function WorkSectionShell({
             variant="outlined"
             color="inherit"
             endIcon={<IconArrowRight size={17} />}
-            sx={{ borderRadius: 2, fontWeight: 700 }}
+            sx={{ borderRadius: 2, fontWeight: 700, minHeight: 42 }}
           >
             تفاصيل المشروع
           </Button>
@@ -220,6 +261,18 @@ export default function WorkSectionShell({
             </Button>
           );
         })}
+        {canAdvances && (
+          <Button
+            component={Link}
+            to={`/emg/projects/${project.id}/advances`}
+            size="small"
+            variant="outlined"
+            color="inherit"
+            sx={{ borderRadius: 2, fontWeight: 700, borderColor: 'divider', bgcolor: 'background.paper' }}
+          >
+            الدفعات تحت الحساب
+          </Button>
+        )}
       </Stack>
 
       {message && (
@@ -426,8 +479,9 @@ export default function WorkSectionShell({
         open={createModalOpen}
         onClose={onCloseCreateModal}
         fullWidth
+        fullScreen={downSM}
         maxWidth="md"
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        PaperProps={{ sx: { borderRadius: downSM ? 0 : 3 } }}
       >
         <DialogTitle sx={{ px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Box>

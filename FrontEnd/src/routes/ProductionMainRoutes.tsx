@@ -9,6 +9,7 @@ import NotFound from './NotFound';
 const Dashboard = Loadable(lazy(() => import('views/dashboard/EMG')));
 const Projects = Loadable(lazy(() => import('Modules/EMG/Projects')));
 const ProjectDetails = Loadable(lazy(() => import('Modules/EMG/ProjectDetails')));
+const ActiveProjectRedirect = Loadable(lazy(() => import('Modules/EMG/ActiveProjectRedirect')));
 const SiteMovements = Loadable(lazy(() => import('Modules/EMG/SiteMovements')));
 const SiteMovementDetails = Loadable(lazy(() => import('Modules/EMG/SiteMovementDetails')));
 const Excavation = Loadable(lazy(() => import('Modules/EMG/Excavation')));
@@ -49,9 +50,11 @@ const ProductionMainRoutes = {
     { path: '/emg', element: guard(['projects.view', 'attendance.view', 'notifications.view', 'reports.view', 'suppliers.view', 'advances.view'], <Dashboard />) },
     { path: '/emg/dashboard', element: guard(['projects.view', 'attendance.view', 'notifications.view', 'reports.view', 'suppliers.view', 'advances.view'], <Dashboard />) },
     { path: '/emg/projects', element: guard(['projects.view'], <Projects />) },
+    { path: '/emg/site-movements', element: guard(['site-movements.view', 'site-movements.manage', 'projects.view'], <ActiveProjectRedirect />) },
     { path: '/emg/projects/:projectId', element: guard(['projects.view'], <ProjectDetails />) },
-    { path: '/emg/projects/:projectId/movements', element: guard(['projects.view'], <SiteMovements />) },
-    { path: '/emg/site-movements/:movementId', element: guard(['projects.view'], <SiteMovementDetails />) },
+    { path: '/emg/projects/:projectId/movements', element: guard(['projects.view', 'site-movements.view'], <SiteMovements />) },
+    { path: '/emg/projects/:projectId/advances', element: guard(['advances.manage', 'advances.view'], <Advances />) },
+    { path: '/emg/site-movements/:movementId', element: guard(['projects.view', 'site-movements.view'], <SiteMovementDetails />) },
     { path: '/emg/projects/:projectId/excavation', element: guard(['projects.view'], <Excavation />) },
     { path: '/emg/projects/:projectId/concrete', element: guard(['projects.view'], <Concrete />) },
     { path: '/emg/projects/:projectId/steel', element: guard(['projects.view'], <Steel />) },

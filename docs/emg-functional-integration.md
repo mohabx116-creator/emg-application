@@ -34,4 +34,6 @@ Non-supplier multi-line site entries use `POST /api/site-movements/batch`, which
 
 ## Integration boundary
 
-The existing contractor draft, account management and password APIs retain their current contracts. Use existing endpoints until revised contracts are verified. The frontend integration will follow the Antigravity handoff.
+The contractor draft and password APIs retain their contracts. Account creation persists user and role assignments together. When an account is disabled, its sessions are revoked. Reactivation requires fresh login. Delegated account management checks the target roles and rejects changes that require wider permission scopes or higher amount limits. Administrators can use `DELETE /api/users/{id}` for inactive, never-used accounts. Accounts with administrative roles, profile images, access, audit or business history are retained. A blocked deletion returns HTTP 409 and a successful deletion is audited.
+
+The integrated frontend carries the active project through supported routes and provides mobile navigation. On incomplete universal imports, the project page and detailed report display unverified office and balance values as قيد المطابقة. The production service worker caches only the manifest and branding assets and removes only old EMG shell caches.

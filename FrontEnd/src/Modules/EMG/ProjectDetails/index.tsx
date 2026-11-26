@@ -55,14 +55,16 @@ import {
 } from 'api/emg';
 import useAuth from 'hooks/useAuth';
 import useConfig from 'hooks/useConfig';
+import { useActiveProject } from 'contexts/ActiveProjectContext';
+import { formatEmgMoney } from 'utils/emgFormatting';
 import { hasPermission } from '../roleAccess';
 
-const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
-const formatMoney = (value: number) => `${money.format(value || 0)} ج.م`;
+const formatMoney = (value: number | null | undefined) => formatEmgMoney(value);
 const formatDate = (value: string) => new Intl.DateTimeFormat('ar-EG', { dateStyle: 'medium' }).format(new Date(value));
 
 const workSections = [
   { path: 'movements', permission: 'site-movements.view', ar: 'حركة الموقع اليومية', en: 'Site Movements' },
+  { path: 'advances', permission: 'advances.view', ar: 'الدفعات تحت الحساب', en: 'Advances' },
   { path: 'excavation', permission: 'excavation.view', ar: 'أعمال الحفر', en: 'Excavation' },
   { path: 'concrete', permission: 'concrete.view', ar: 'الخرسانات', en: 'Concrete' },
   { path: 'steel', permission: 'steel.view', ar: 'الحديد', en: 'Steel' },
@@ -176,6 +178,7 @@ export default function EmgProjectDetails() {
 
 function ProjectDetails({ id }: { id: number }) {
   const { user } = useAuth();
+  const { setActiveProjectId } = useActiveProject();
   const {
     state: { i18n, themeDirection }
   } = useConfig();
@@ -197,6 +200,7 @@ function ProjectDetails({ id }: { id: number }) {
 
   useEffect(() => {
     if (invalidId) return;
+    setActiveProjectId(id);
     let active = true;
     getEmgProject(id)
       .then((data) => {
@@ -474,6 +478,7 @@ function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic:
   }, [projectId]);
 
   const account = report && report !== 'failed' ? report.finalAccount : null;
+  const verifiedBalance = (amount: number) => account?.hasUnresolvedImportRecords ? 'قيد المطابقة' : formatMoney(amount);
   const filteredMovements = useMemo(() => {
     if (!report || report === 'failed') return [];
     const q = movementSearch.trim().toLowerCase();
@@ -495,20 +500,49 @@ function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic:
         </Grid>
       ) : (
         account && (
-          <Grid container spacing={2} sx={{ mt: 1.5 }}>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <GradientKpiCard label="إجمالي الداخل" value={formatMoney(account.totalIncoming)} icon={<IconReceipt size={22} />} variant="blue" />
+          <Stack spacing={1.5} sx={{ mt: 1.5 }}>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <SolidMetricCard label="إجمالي الصادر" value={formatMoney(account.totalOutgoing ?? 0)} tone="error" icon={<IconTool size={22} />} />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <GradientKpiCard label="إجمالي الدفعات" value={formatMoney(account.totalIncoming)} icon={<IconReceipt size={22} />} variant="blue" />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <SolidMetricCard
+                  label={`أتعاب المكتب (${account.officeSharePercentage}%)`}
+                  value={verifiedBalance(account.officeShareAmount)}
+                  tone="warning"
+                  icon={<IconFileAnalytics size={22} />}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <GradientKpiCard label="صافي المشروع بعد أتعاب المكتب" value={verifiedBalance(account.netAfterOfficeShare)} icon={<IconCircleCheck size={22} />} variant="purple" />
+              </Grid>
             </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <GradientKpiCard label="صافي المشروع" value={formatMoney(account.netAfterOfficeShare)} icon={<IconCircleCheck size={22} />} variant="purple" />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <SolidMetricCard label="إجمالي الصادر" value={formatMoney(account.totalOutgoing ?? 0)} tone="error" icon={<IconTool size={22} />} />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <SolidMetricCard label="نصيب المكتب" value={formatMoney(account.officeShareAmount)} tone="warning" icon={<IconFileAnalytics size={22} />} />
-            </Grid>
-          </Grid>
+
+            <MainCard sx={{ borderRadius: 3 }} content={false}>
+              <Grid container sx={{ p: 1.5 }} spacing={1.5}>
+                {[
+                  { label: 'نسبة المكتب', value: `${account.officeSharePercentage}%` },
+                  { label: 'أتعاب المكتب', value: verifiedBalance(account.officeShareAmount) },
+                  { label: 'المدفوع للمكتب', value: formatMoney(account.officePaid ?? 0) },
+                  { label: 'المستحق للمكتب', value: verifiedBalance(account.officeNetDue ?? 0) }
+                ].map((metric) => (
+                  <Grid key={metric.label} size={{ xs: 6, md: 3 }}>
+                    <Box sx={{ px: 1.25, py: 0.75, borderRadius: 2, bgcolor: 'background.default' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block' }}>
+                        {metric.label}
+                      </Typography>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums', mt: 0.25 }}>
+                        {metric.value}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                ))}
+              </Grid>
+            </MainCard>
+          </Stack>
         )
       )}
 
@@ -568,7 +602,22 @@ function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic:
                         <TableCell>
                           <Chip size="small" variant="outlined" label={movement.type} sx={{ fontWeight: 600 }} />
                         </TableCell>
-                        <TableCell>{movement.description || '—'}</TableCell>
+                        <TableCell>
+                          <Typography
+                            component={Link}
+                            to={`/emg/site-movements/${movement.id}`}
+                            variant="body2"
+                            color="primary.main"
+                            sx={{ fontWeight: 700, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                          >
+                            {movement.description || '—'}
+                          </Typography>
+                          {movement.reference && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              فاتورة / مرجع: {movement.reference}
+                            </Typography>
+                          )}
+                        </TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                           {formatMoney(movement.amount)}
                         </TableCell>

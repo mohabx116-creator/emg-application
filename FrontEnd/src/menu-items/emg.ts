@@ -1,27 +1,22 @@
 import {
-  IconBell,
   IconBuilding,
-  IconCash,
   IconChartBar,
-  IconChecklist,
+  IconClipboardCheck,
   IconClock,
   IconDashboard,
   IconFileAnalytics,
+  IconFileDescription,
   IconFileUpload,
-  IconTable,
+  IconSettings,
   IconTruckDelivery,
-  IconUser,
   IconUserShield,
-  IconUsers,
-  IconClipboardCheck,
-  IconFileDescription
+  IconUsers
 } from '@tabler/icons-react';
 import { NavItemType } from 'types';
 
 export const emgOverviewGroup: NavItemType = {
   id: 'emg-overview',
   title: 'نظرة عامة',
-  caption: 'لوحة التحكم والمشروعات',
   type: 'group',
   children: [
     {
@@ -35,66 +30,38 @@ export const emgOverviewGroup: NavItemType = {
     },
     {
       id: 'emg-projects',
-      title: 'المشاريع',
+      title: 'المشروعات',
       type: 'item',
       url: '/emg/projects',
       icon: IconBuilding,
       breadcrumbs: false,
       requiredPermission: 'projects.view'
-    }
-  ]
-};
-
-export const emgSiteOperationsGroup: NavItemType = {
-  id: 'emg-site-operations',
-  title: 'عمليات الموقع',
-  caption: 'حركة الموقع اليومية والحضور',
-  type: 'group',
-  children: [
-    {
-      id: 'emg-site-movements',
-      title: 'حركة الموقع اليومية',
-      type: 'item',
-      url: '/emg/projects',
-      icon: IconClipboardCheck,
-      breadcrumbs: false,
-      requiredPermissions: ['site-movements.view', 'site-movements.manage']
     },
     {
-      id: 'emg-attendance',
-      title: 'الحضور والانصراف',
+      id: 'emg-site-movements',
+      title: 'حركات الموقع اليومية',
       type: 'item',
-      url: '/emg/attendance',
-      icon: IconClock,
+      url: '/emg/site-movements',
+      icon: IconClipboardCheck,
       breadcrumbs: false,
-      requiredPermissions: ['attendance.manage', 'attendance.view']
+      requiredPermissions: ['site-movements.view', 'site-movements.manage', 'projects.view']
     }
   ]
 };
 
-export const emgProcurementGroup: NavItemType = {
-  id: 'emg-procurement',
-  title: 'المشتريات والموردين',
-  caption: 'توريدات ودفعات الموردين',
+export const emgAccountsGroup: NavItemType = {
+  id: 'emg-accounts',
+  title: 'الحسابات',
   type: 'group',
   children: [
     {
       id: 'emg-suppliers',
-      title: 'الموردين',
+      title: 'الموردون',
       type: 'item',
       url: '/emg/suppliers',
       icon: IconTruckDelivery,
       breadcrumbs: false,
-      requiredPermissions: ['suppliers.manage', 'suppliers.view']
-    },
-    {
-      id: 'emg-advances',
-      title: 'دفعات تحت الحساب',
-      type: 'item',
-      url: '/emg/advances',
-      icon: IconCash,
-      breadcrumbs: false,
-      requiredPermissions: ['advances.manage', 'advances.view']
+      requiredPermissions: ['suppliers.view', 'suppliers.manage']
     },
     {
       id: 'emg-contractor-statements',
@@ -103,56 +70,14 @@ export const emgProcurementGroup: NavItemType = {
       url: '/emg/contractor-statements',
       icon: IconFileDescription,
       breadcrumbs: false,
-      requiredPermission: 'suppliers.view'
-    }
-  ]
-};
-
-export const emgApprovalsGroup: NavItemType = {
-  id: 'emg-approvals',
-  title: 'المراجعة والاعتمادات',
-  caption: 'الاعتمادات الفنية والمالية',
-  type: 'group',
-  children: [
-    {
-      id: 'emg-review-center',
-      title: 'مركز المراجعة',
-      type: 'item',
-      url: '/emg/review-center',
-      icon: IconChecklist,
-      breadcrumbs: false,
-      requiredPermissions: [
-        'project-imports.approve',
-        'project-imports.reject',
-        'workflow.execute',
-        'suppliers.supplies-accept-technical',
-        'suppliers.supplies-approve-financial'
-      ]
-    }
-  ]
-};
-
-export const emgReportsGroup: NavItemType = {
-  id: 'emg-reports-group',
-  title: 'التقارير والأرشيف',
-  caption: 'التقارير المالية والأرشيف التاريخي',
-  type: 'group',
-  children: [
+      requiredPermissions: ['suppliers.view', 'reports.view']
+    },
     {
       id: 'emg-reports',
-      title: 'التقارير',
+      title: 'التقارير المالية',
       type: 'item',
       url: '/emg/reports',
       icon: IconChartBar,
-      breadcrumbs: false,
-      requiredPermission: 'reports.view'
-    },
-    {
-      id: 'emg-report-builder',
-      title: 'مركز التقارير المالي',
-      type: 'item',
-      url: '/emg/reports/builder',
-      icon: IconTable,
       breadcrumbs: false,
       requiredPermission: 'reports.view'
     },
@@ -164,37 +89,52 @@ export const emgReportsGroup: NavItemType = {
       icon: IconFileAnalytics,
       breadcrumbs: false,
       requiredPermission: 'reports.view'
-    },
+    }
+  ]
+};
+
+export const emgEmployeesGroup: NavItemType = {
+  id: 'emg-employees',
+  title: 'الموظفون',
+  type: 'group',
+  children: [
     {
-      id: 'emg-approved-history',
-      title: 'استيراد أرشيف معتمد',
+      id: 'emg-attendance',
+      title: 'الحضور والانصراف',
       type: 'item',
-      url: '/emg/imports/approved-history',
-      icon: IconFileUpload,
+      url: '/emg/attendance',
+      icon: IconClock,
       breadcrumbs: false,
-      requiredPermission: 'project-imports.import-approved-history'
-    },
+      requiredPermissions: ['attendance.view', 'attendance.manage']
+    }
+  ]
+};
+
+export const emgDataGroup: NavItemType = {
+  id: 'emg-data',
+  title: 'البيانات',
+  type: 'group',
+  children: [
     {
       id: 'emg-imports',
-      title: 'ترحيل البيانات',
+      title: 'استيراد البيانات',
       type: 'item',
       url: '/emg/imports',
       icon: IconFileUpload,
       breadcrumbs: false,
-      requiredPermission: 'data.migrate'
+      requiredPermissions: ['data.migrate', 'project-imports.import-approved-history']
     }
   ]
 };
 
 export const emgAdministrationGroup: NavItemType = {
   id: 'emg-administration',
-  title: 'الإدارة والأمان',
-  caption: 'المستخدمون والأدوار والإعدادات',
+  title: 'الإدارة',
   type: 'group',
   children: [
     {
       id: 'emg-users',
-      title: 'إدارة المستخدمين',
+      title: 'المستخدمون',
       type: 'item',
       url: '/emg/users',
       icon: IconUsers,
@@ -211,20 +151,11 @@ export const emgAdministrationGroup: NavItemType = {
       requiredPermissions: ['roles.view', 'roles.manage']
     },
     {
-      id: 'emg-notifications',
-      title: 'الإشعارات',
-      type: 'item',
-      url: '/emg/notifications',
-      icon: IconBell,
-      breadcrumbs: false,
-      requiredPermission: 'notifications.view'
-    },
-    {
       id: 'emg-profile',
-      title: 'البروفايل',
+      title: 'الإعدادات',
       type: 'item',
       url: '/emg/profile',
-      icon: IconUser,
+      icon: IconSettings,
       breadcrumbs: false
     }
   ]
@@ -232,9 +163,9 @@ export const emgAdministrationGroup: NavItemType = {
 
 export const emgGroups: NavItemType[] = [
   emgOverviewGroup,
-  emgSiteOperationsGroup,
-  emgProcurementGroup,
-  emgReportsGroup,
+  emgAccountsGroup,
+  emgEmployeesGroup,
+  emgDataGroup,
   emgAdministrationGroup
 ];
 

@@ -3,6 +3,7 @@ using EMG.Domain.Security;
 using EMG.Infrastructure.Db;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace EMG.Api.Modules.Security.Services;
 
@@ -27,6 +28,7 @@ public sealed class UsersService(
     {
         if (string.IsNullOrWhiteSpace(request.Password))
             throw new ArgumentException("An explicit temporary password is required.", nameof(request));
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var roleNames = NormalizeRoleNames(request.Role, request.Roles);
         var roles = await EnsureRolesAsync(roleNames, cancellationToken);
 
@@ -41,6 +43,7 @@ public sealed class UsersService(
 
         db.UserRoles.AddRange(roles.Select(role => new UserRole { UserId = user.Id, RoleId = role.Id }));
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return new UserSummary(user.Id, user.UserName, user.Email, user.DisplayName, user.IsActive, user.MustChangePassword, roles.Select(role => role.Name).ToArray(), []);
     }
 
@@ -51,6 +54,7 @@ public sealed class UsersService(
             .FirstOrDefaultAsync(item => item.Id == userId, cancellationToken);
         if (user is null) return null;
 
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var roleNames = NormalizeRoleNames(request.Role, request.Roles);
         var roles = await EnsureRolesAsync(roleNames, cancellationToken);
 
@@ -61,6 +65,8 @@ public sealed class UsersService(
         foreach (var role in roles)
             user.UserRoles.Add(new UserRole { UserId = user.Id, RoleId = role.Id });
         await db.SaveChangesAsync(cancellationToken);
+        if (!user.IsActive) await sessions.RevokeAllAsync(userId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return await db.Users.AsNoTracking()
             .Include(item => item.UserRoles).ThenInclude(item => item.Role)
@@ -133,4 +139,50 @@ public sealed class UsersService(
         await transaction.CommitAsync(cancellationToken);
         return true;
     }
+
+    public async Task<bool?> DeleteUnusedAsync(int userId, int actorId, CancellationToken ct)
+    {
+        if (userId == actorId) return false;
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        var user = await db.Users.Include(item => item.UserRoles).ThenInclude(item => item.Role)
+            .SingleOrDefaultAsync(item => item.Id == userId, ct);
+        if (user is null) return null;
+        if (user.IsActive || user.LastLoginAtUtc.HasValue || user.ProfileImagePath is not null ||
+            user.UserRoles.Any(link => link.Role.Name == "admin") || await HasAccountHistoryAsync(userId, ct))
+            return false;
+
+        db.Users.Remove(user);
+        db.SecurityAuditLogs.Add(new SecurityAuditLog
+        {
+            UserId = actorId, Action = "user.deleted", EntityType = "user", EntityId = userId,
+            Details = "حذف حساب غير نشط لم يسبق استخدامه."
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return true;
+    }
+
+    private async Task<bool> HasAccountHistoryAsync(int id, CancellationToken ct) =>
+        await db.UserProjectAssignments.AnyAsync(item => item.UserId == id, ct) ||
+        await db.AuthSessions.AnyAsync(item => item.UserId == id, ct) ||
+        await db.PasswordResetTokens.AnyAsync(item => item.UserId == id, ct) ||
+        await db.Notifications.AnyAsync(item => item.UserId == id, ct) ||
+        await db.SecurityAuditLogs.AnyAsync(item => item.UserId == id || item.EntityType == "user" && item.EntityId == id, ct) ||
+        await db.AttendanceRecords.AnyAsync(item => item.UserId == id, ct) ||
+        await db.WorkflowActions.AnyAsync(item => item.UserId == id, ct) ||
+        await db.Attachments.AnyAsync(item => item.UploadedByUserId == id, ct) ||
+        await db.SiteMovements.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.ExcavationRecords.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.ConcreteRecords.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.SteelRecords.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.FinishingRecords.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.AdvancePayments.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.SupplierSupplies.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.SupplierPayments.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.SupplierInvoices.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.ContractorContracts.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.ContractorStatements.AnyAsync(item => item.CreatedByUserId == id, ct) ||
+        await db.HistoricalImportBatches.AnyAsync(item => item.CreatedByUserId == id || item.ApprovedByUserId == id, ct) ||
+        await db.HistoricalImportAuditEvents.AnyAsync(item => item.ActorUserId == id, ct) ||
+        await db.HistoricalPostedEntries.AnyAsync(item => item.PostedByUserId == id, ct);
 }

@@ -10,4 +10,5 @@ public interface IUsersService
     Task<bool> AssignProjectAsync(int userId, int projectId, CancellationToken cancellationToken);
     Task<bool> UnassignProjectAsync(int userId, int projectId, CancellationToken cancellationToken);
     Task<bool> ResetPasswordAsync(int userId, string? password, CancellationToken cancellationToken);
+    Task<bool?> DeleteUnusedAsync(int userId, int actorId, CancellationToken cancellationToken);
 }

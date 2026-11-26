@@ -928,6 +928,9 @@ export async function uploadEmgProfileImage(file: File): Promise<EmgProfile> {
 export async function getEmgUsers(): Promise<EmgUser[]> {
   return (await axios.get<EmgUser[]>('/api/users')).data;
 }
+export async function deleteUnusedEmgUser(userId: number): Promise<void> {
+  await axios.delete(`/api/users/${userId}`);
+}
 export async function createEmgUser(payload: Record<string, unknown>): Promise<EmgUser> {
   return (await axios.post<EmgUser>('/api/users', payload)).data;
 }

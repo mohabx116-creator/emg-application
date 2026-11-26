@@ -499,10 +499,10 @@ function EmgHeroIsometric3D({
               </Box>
               <Box>
                 <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 800, lineHeight: 1.2 }}>
-                  {isAr ? 'اعتماد فني ومالي' : '2-Stage Approval'}
+                  {isAr ? 'ترحيل فوري ومباشر' : 'Direct Posting'}
                 </Typography>
                 <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.92)', fontWeight: 600 }}>
-                  {isAr ? 'توريدات · دفعات · كشوف' : 'Supplies · Advances'}
+                  {isAr ? 'حركات · توريدات · كشوف' : 'Movements · Supplies'}
                 </Typography>
               </Box>
             </Stack>
@@ -533,7 +533,7 @@ export default function HeaderSection() {
     }
     let active = true;
     axios
-      .get('/api/emg/projects')
+      .get('/api/projects')
       .then((res) => {
         if (!active) return;
         const rows = Array.isArray(res.data) ? res.data : Array.isArray(res.data?.items) ? res.data.items : null;
@@ -551,12 +551,12 @@ export default function HeaderSection() {
     ? [
         { icon: <IconBuildingSkyscraper size={16} />, label: 'إدارة المواقع' },
         { icon: <IconTruckDelivery size={16} />, label: 'الموردين والتوريدات' },
-        { icon: <IconShieldCheck size={16} />, label: 'التقارير والاعتمادات' }
+        { icon: <IconShieldCheck size={16} />, label: 'التقارير والرقابة المالية' }
       ]
     : [
         { icon: <IconBuildingSkyscraper size={16} />, label: 'Site Operations' },
         { icon: <IconTruckDelivery size={16} />, label: 'Suppliers & Delivery' },
-        { icon: <IconShieldCheck size={16} />, label: 'Reports & Approvals' }
+        { icon: <IconShieldCheck size={16} />, label: 'Reports & Financial Control' }
       ];
 
   return (

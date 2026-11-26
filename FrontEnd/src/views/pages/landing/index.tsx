@@ -9,7 +9,6 @@ import Box from '@mui/material/Box';
 
 // project imports
 import HeaderSection from './HeaderSection';
-import Customization from 'layout/Customization';
 import AppBar from 'ui-component/extended/AppBar';
 import useConfig from 'hooks/useConfig';
 
@@ -27,6 +26,7 @@ export default function Landing() {
   const isAr = i18n === 'ar';
 
   useEffect(() => {
+    document.title = 'EMG & JUZOR APPLICATION';
     prefetchRoutes();
   }, []);
 
@@ -76,8 +76,6 @@ export default function Landing() {
           </Stack>
         </Container>
       </Box>
-
-      <Customization />
     </Box>
   );
 }

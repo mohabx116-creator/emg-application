@@ -13,7 +13,7 @@ import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 
 // icons
-import { IconBuildingSkyscraper, IconChecklist, IconLanguage, IconShieldCheck } from '@tabler/icons-react';
+import { IconLanguage } from '@tabler/icons-react';
 
 // project imports
 import AuthCardWrapper from '../AuthCardWrapper';
@@ -37,7 +37,7 @@ const kenBurnsZoom = keyframes`
   }
 `;
 
-// ================================|| EMG V1 - FULL-BLEED LIQUID GLASS LOGIN ||================================ //
+// ================================|| EMG — PREMIUM DIRECT LOGIN ||================================ //
 
 export default function Login() {
   const downMD = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'));
@@ -49,62 +49,22 @@ export default function Login() {
   const isAr = i18n === 'ar';
   const [activeSlide, setActiveSlide] = useState(0);
 
+  useEffect(() => {
+    document.title = 'EMG – تسجيل الدخول';
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % 2);
+    }, 6500);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const toggleLanguage = () => {
     const nextLang = isAr ? 'en' : 'ar';
     setField('i18n', nextLang);
     setField('themeDirection', nextLang === 'ar' ? ThemeDirection.RTL : ThemeDirection.LTR);
   };
-
-  const slides = isAr
-    ? [
-      { headline: 'إدارة المشروعات بوضوح ودقة' },
-      { headline: 'متابعة مالية وميدانية متكاملة' },
-      { headline: 'بيئة عمل موحدة لفرق التنفيذ' }
-    ]
-    : [
-      { headline: 'Clear, Unified Project Control' },
-      { headline: 'Integrated Site & Financial Tracking' },
-      { headline: 'One Workspace for Every Team' }
-    ];
-
-  const features = isAr
-    ? [
-      {
-        icon: <IconBuildingSkyscraper size={20} stroke={1.75} />,
-        title: 'المشاريع وحركة الموقع'
-      },
-      {
-        icon: <IconChecklist size={20} stroke={1.75} />,
-        title: 'الموردين والاعتمادات المالية'
-      },
-      {
-        icon: <IconShieldCheck size={20} stroke={1.75} />,
-        title: 'التقارير الختامية والصلاحيات'
-      }
-    ]
-    : [
-      {
-        icon: <IconBuildingSkyscraper size={20} stroke={1.75} />,
-        title: 'Projects & Site Operations'
-      },
-      {
-        icon: <IconChecklist size={20} stroke={1.75} />,
-        title: 'Suppliers & Approvals'
-      },
-      {
-        icon: <IconShieldCheck size={20} stroke={1.75} />,
-        title: 'Reports & Role Access'
-      }
-    ];
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setActiveSlide((prev) => (prev + 1) % 3);
-    }, 5500);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const currentSlide = slides[activeSlide];
 
   return (
     <Box
@@ -118,7 +78,7 @@ export default function Login() {
         color: 'common.white'
       }}
     >
-      {/* Full-Viewport Dynamic Crossfading Construction Background */}
+      {/* Full-Viewport Branded Construction Background */}
       {[emgLoginBg1, emgLoginBg2].map((bgSrc, idx) => {
         const isVisible = idx === activeSlide % 2;
         return (
@@ -133,7 +93,7 @@ export default function Login() {
               backgroundPosition: 'center',
               opacity: isVisible ? 1 : 0,
               transition: 'opacity 1.2s ease-in-out',
-              animation: `${kenBurnsZoom} 22s ease-in-out infinite`,
+              animation: `${kenBurnsZoom} 24s ease-in-out infinite`,
               '@media (prefers-reduced-motion: reduce)': {
                 animation: 'none'
               },
@@ -149,64 +109,27 @@ export default function Login() {
         sx={{
           position: 'absolute',
           inset: 0,
-          background: 'linear-gradient(155deg, rgba(10, 29, 60, 0.56) 0%, rgba(16, 48, 96, 0.44) 48%, rgba(20, 18, 64, 0.74) 100%)',
+          background: 'linear-gradient(155deg, rgba(10, 29, 60, 0.62) 0%, rgba(16, 48, 96, 0.48) 48%, rgba(20, 18, 64, 0.78) 100%)',
           pointerEvents: 'none'
         }}
       />
 
-      {/* Top Navigation Bar */}
-      <Container maxWidth="xl" sx={{ position: 'relative', zIndex: 1, pt: { xs: 2, sm: 3 }, maxWidth: { xl: 1480 } }}>
-        <Stack
-          direction="row"
-          justifyContent={{ xs: 'space-between', lg: 'flex-end' }}
-          alignItems="center"
-        >
-          <Stack
+      {/* Top Bar */}
+      <Container maxWidth="xl" sx={{ position: 'relative', zIndex: 1, pt: { xs: 2, sm: 3 }, maxWidth: { xl: 1440 } }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Button
             component={Link}
-            to="/login"
-            direction="row"
-            spacing={1.5}
-            alignItems="center"
-            aria-label="EMG Construction"
-            sx={{ textDecoration: 'none', display: { xs: 'flex', lg: 'none' } }}
+            to="/"
+            size="small"
+            variant="text"
+            sx={{
+              color: 'rgba(255,255,255,0.88)',
+              fontWeight: 700,
+              '&:hover': { color: '#ffffff', bgcolor: 'rgba(255,255,255,0.1)' }
+            }}
           >
-            <Box
-              component="img"
-              src={emgLogo3d}
-              alt="EMG Construction"
-              sx={{
-                width: { xs: 42, sm: 52 },
-                height: { xs: 42, sm: 52 },
-                objectFit: 'contain',
-                filter: 'drop-shadow(0 6px 12px rgba(0,0,0,0.4))'
-              }}
-            />
-            <Box sx={{ direction: 'ltr', textAlign: 'left' }}>
-              <Typography
-                sx={{
-                  fontSize: { xs: '1.35rem', sm: '1.65rem' },
-                  lineHeight: 1,
-                  fontWeight: 900,
-                  color: '#ffffff',
-                  letterSpacing: '-0.03em'
-                }}
-              >
-                EMG
-              </Typography>
-              <Typography
-                sx={{
-                  fontSize: { xs: '0.62rem', sm: '0.72rem' },
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  textTransform: 'uppercase',
-                  color: 'rgba(255,255,255,0.86)',
-                  mt: 0.25
-                }}
-              >
-                Construction ERP
-              </Typography>
-            </Box>
-          </Stack>
+            {isAr ? '← الصفحة الرئيسية' : '← Home'}
+          </Button>
 
           <Button
             size="small"
@@ -233,7 +156,7 @@ export default function Login() {
         </Stack>
       </Container>
 
-      {/* Main Content */}
+      {/* Main Content: Logo on LEFT (enlarged), Login Form on RIGHT */}
       <Container
         maxWidth="xl"
         sx={{
@@ -242,23 +165,26 @@ export default function Login() {
           flexGrow: 1,
           display: 'flex',
           alignItems: 'center',
-          py: { xs: 3, md: 4 },
-          maxWidth: { xl: 1480 }
+          py: { xs: 3, md: 5 },
+          maxWidth: { xl: 1360 }
         }}
       >
         <Grid
           container
-          columns={{ xs: 12, md: 12, lg: 24 }}
-          spacing={{ xs: 3, md: 5, lg: 3.5, xl: 4.5 }}
+          spacing={{ xs: 4, md: 6 }}
           alignItems="center"
-          justifyContent="center"
-          sx={{ width: '100%' }}
+          justifyContent="space-between"
+          sx={{
+            width: '100%',
+            // Explicit LTR track order so Logo is visually on the LEFT and Login Form is on the RIGHT
+            direction: 'ltr'
+          }}
         >
-          {/* Desktop Side Brand Lockup Column */}
+          {/* LEFT COLUMN: Enlarged Company Logo occupying the previous card area */}
           <Grid
-            size={{ lg: 6 }}
+            size={{ xs: 12, md: 6 }}
             sx={{
-              display: { xs: 'none', lg: 'flex' },
+              display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center'
@@ -266,16 +192,11 @@ export default function Login() {
           >
             <Stack
               component={Link}
-              to="/login"
-              spacing={2}
+              to="/"
+              spacing={{ xs: 1.75, md: 2.75 }}
               alignItems="center"
-              aria-label="EMG Construction"
-              sx={{
-                textDecoration: 'none',
-                textAlign: 'center',
-                px: 1.5,
-                py: 2
-              }}
+              aria-label="EMG Construction ERP"
+              sx={{ textDecoration: 'none', textAlign: 'center', px: 2, py: { xs: 1, md: 3 } }}
             >
               <Box
                 sx={{
@@ -285,9 +206,9 @@ export default function Login() {
                   '&::before': {
                     content: '""',
                     position: 'absolute',
-                    inset: -18,
+                    inset: { xs: -16, md: -34 },
                     borderRadius: '50%',
-                    background: 'radial-gradient(circle, rgba(144, 202, 249, 0.28) 0%, rgba(144, 202, 249, 0) 70%)',
+                    background: 'radial-gradient(circle, rgba(144, 202, 249, 0.34) 0%, rgba(144, 202, 249, 0) 70%)',
                     pointerEvents: 'none'
                   }
                 }}
@@ -298,34 +219,34 @@ export default function Login() {
                   alt="EMG Construction"
                   sx={{
                     position: 'relative',
-                    width: { lg: 112, xl: 128 },
-                    height: { lg: 112, xl: 128 },
+                    width: { xs: 112, sm: 148, md: 220, lg: 256 },
+                    height: { xs: 112, sm: 148, md: 220, lg: 256 },
                     objectFit: 'contain',
-                    filter: 'drop-shadow(0 12px 24px rgba(4, 14, 34, 0.55))'
+                    filter: 'drop-shadow(0 18px 36px rgba(4, 14, 34, 0.62))'
                   }}
                 />
               </Box>
               <Box sx={{ direction: 'ltr', textAlign: 'center' }}>
                 <Typography
                   sx={{
-                    fontSize: { lg: '2.75rem', xl: '3.2rem' },
-                    lineHeight: 1,
+                    fontSize: { xs: '2.15rem', sm: '2.8rem', md: '3.75rem', lg: '4.25rem' },
+                    lineHeight: 0.98,
                     fontWeight: 900,
                     color: '#ffffff',
                     letterSpacing: '-0.02em',
-                    textShadow: '0 6px 20px rgba(4, 14, 34, 0.55)'
+                    textShadow: '0 8px 24px rgba(4, 14, 34, 0.58)'
                   }}
                 >
                   EMG
                 </Typography>
                 <Typography
                   sx={{
-                    fontSize: { lg: '0.82rem', xl: '0.92rem' },
+                    fontSize: { xs: '0.78rem', sm: '0.92rem', md: '1.1rem' },
                     fontWeight: 700,
-                    letterSpacing: '0.24em',
+                    letterSpacing: '0.26em',
                     textTransform: 'uppercase',
-                    color: 'rgba(255,255,255,0.9)',
-                    mt: 0.9,
+                    color: 'rgba(255,255,255,0.92)',
+                    mt: 1,
                     textShadow: '0 2px 10px rgba(4, 14, 34, 0.45)'
                   }}
                 >
@@ -334,32 +255,40 @@ export default function Login() {
               </Box>
               <Box
                 sx={{
-                  width: 56,
-                  height: 3,
+                  width: { xs: 56, md: 88 },
+                  height: 3.5,
                   borderRadius: 999,
-                  background: 'linear-gradient(90deg, rgba(144,202,249,0.2) 0%, rgba(255,255,255,0.85) 50%, rgba(144,202,249,0.2) 100%)'
+                  background: 'linear-gradient(90deg, rgba(144,202,249,0.2) 0%, rgba(255,255,255,0.9) 50%, rgba(144,202,249,0.2) 100%)'
                 }}
               />
             </Stack>
           </Grid>
 
-          {/* Liquid Glass Login Card Column */}
-          <Grid size={{ xs: 12, md: 6, lg: 10 }} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {/* RIGHT COLUMN: Login Form */}
+          <Grid
+            size={{ xs: 12, md: 6 }}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: { xs: 'center', md: 'flex-end' },
+              direction: isAr ? 'rtl' : 'ltr'
+            }}
+          >
             <AuthCardWrapper
               border
               sx={{
                 width: '100%',
-                maxWidth: 460,
+                maxWidth: 468,
                 borderRadius: 4,
                 boxShadow:
-                  '0 24px 56px rgba(4, 14, 34, 0.48), inset 0 1px 1px rgba(255, 255, 255, 0.52), inset 0 -1px 1px rgba(255, 255, 255, 0.14)',
-                background: 'linear-gradient(145deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%)',
+                  '0 28px 64px rgba(4, 14, 34, 0.54), inset 0 1px 1px rgba(255, 255, 255, 0.52), inset 0 -1px 1px rgba(255, 255, 255, 0.14)',
+                background: 'linear-gradient(145deg, rgba(15, 32, 66, 0.68) 0%, rgba(12, 24, 52, 0.56) 100%)',
                 bgcolor: 'transparent',
-                backdropFilter: 'blur(16px) saturate(165%)',
-                WebkitBackdropFilter: 'blur(16px) saturate(165%)',
-                borderColor: 'rgba(255, 255, 255, 0.34)',
+                backdropFilter: 'blur(18px) saturate(165%)',
+                WebkitBackdropFilter: 'blur(18px) saturate(165%)',
+                borderColor: 'rgba(255, 255, 255, 0.3)',
                 '& .MuiOutlinedInput-root': {
-                  bgcolor: 'rgba(10, 26, 54, 0.26)',
+                  bgcolor: 'rgba(8, 20, 44, 0.52)',
                   backdropFilter: 'blur(8px)',
                   color: '#ffffff',
                   borderRadius: 2.5,
@@ -368,10 +297,11 @@ export default function Login() {
                     backgroundColor: 'transparent !important',
                     color: '#ffffff !important',
                     WebkitTextFillColor: '#ffffff !important',
-                    caretColor: '#ffffff'
+                    caretColor: '#ffffff',
+                    fontSize: '0.98rem'
                   },
                   '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus, & input:-webkit-autofill:active': {
-                    WebkitBoxShadow: '0 0 0 1000px rgba(14, 34, 68, 0.58) inset !important',
+                    WebkitBoxShadow: '0 0 0 1000px rgba(14, 34, 68, 0.72) inset !important',
                     WebkitTextFillColor: '#ffffff !important',
                     caretColor: '#ffffff',
                     transition: 'background-color 5000s ease-in-out 0s'
@@ -380,26 +310,26 @@ export default function Login() {
                     borderColor: 'rgba(255, 255, 255, 0.34)'
                   },
                   '&:hover .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'rgba(255, 255, 255, 0.62)'
+                    borderColor: 'rgba(255, 255, 255, 0.65)'
                   },
                   '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'rgba(255, 255, 255, 0.90)'
+                    borderColor: '#90caf9'
                   }
                 },
                 '& .MuiInputLabel-root': {
-                  color: 'rgba(255, 255, 255, 0.84)',
+                  color: 'rgba(255, 255, 255, 0.88)',
                   '&.Mui-focused': {
                     color: '#ffffff'
                   }
                 },
                 '& .MuiInputAdornment-root .MuiIconButton-root': {
-                  color: 'rgba(255, 255, 255, 0.88)'
+                  color: 'rgba(255, 255, 255, 0.9)'
                 },
                 '& .MuiFormControlLabel-label': {
-                  color: 'rgba(255, 255, 255, 0.92)'
+                  color: 'rgba(255, 255, 255, 0.94)'
                 },
                 '& .MuiCheckbox-root': {
-                  color: 'rgba(255, 255, 255, 0.82)',
+                  color: 'rgba(255, 255, 255, 0.85)',
                   '&.Mui-checked': {
                     color: '#90caf9'
                   }
@@ -411,28 +341,35 @@ export default function Login() {
                   borderColor: 'rgba(255, 255, 255, 0.22)'
                 },
                 '& button[type="submit"]': {
+                  minHeight: 48,
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  borderRadius: 2.5,
                   boxShadow: '0 10px 24px rgba(13, 71, 161, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.38)'
                 }
               }}
             >
-              <Stack spacing={2.5}>
-                <Stack spacing={1} sx={{ alignItems: 'center', textAlign: 'center' }}>
+              <Stack spacing={3}>
+                <Stack spacing={1.25} sx={{ alignItems: 'center', textAlign: 'center' }}>
                   <Chip
-                    label={isAr ? 'منظومة إدارة المشروعات' : 'Project Management System'}
+                    label={isAr ? 'منظومة إدارة المشروعات الهندسية' : 'Construction Management ERP'}
                     size="small"
                     variant="outlined"
                     sx={{
-                      fontWeight: 600,
+                      fontWeight: 700,
                       color: '#ffffff',
-                      bgcolor: 'rgba(255, 255, 255, 0.15)',
-                      borderColor: 'rgba(255, 255, 255, 0.36)'
+                      bgcolor: 'rgba(255, 255, 255, 0.14)',
+                      borderColor: 'rgba(255, 255, 255, 0.34)'
                     }}
                   />
                   <Typography
                     variant={downMD ? 'h3' : 'h2'}
-                    sx={{ color: '#ffffff', fontWeight: 700, textShadow: '0 2px 10px rgba(0,0,0,0.28)' }}
+                    sx={{ color: '#ffffff', fontWeight: 800, textShadow: '0 2px 10px rgba(0,0,0,0.28)' }}
                   >
                     {isAr ? 'تسجيل الدخول' : 'Sign In'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.78)' }}>
+                    {isAr ? 'أدخل بيانات حسابك للوصول المباشر إلى مشروعاتك' : 'Sign in to access your assigned projects'}
                   </Typography>
                 </Stack>
 
@@ -441,130 +378,6 @@ export default function Login() {
                 </Box>
               </Stack>
             </AuthCardWrapper>
-
-            {/* Mobile Carousel Indicator Dots */}
-            <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ display: { xs: 'flex', md: 'none' }, mt: 2.5 }}>
-              {slides.map((_, index) => (
-                <Box
-                  key={`mobile-dot-${index}`}
-                  component="button"
-                  type="button"
-                  aria-label={isAr ? `الشريحة ${index + 1}` : `Slide ${index + 1}`}
-                  onClick={() => setActiveSlide(index)}
-                  sx={{
-                    width: activeSlide === index ? 24 : 8,
-                    height: 8,
-                    borderRadius: 999,
-                    border: 'none',
-                    p: 0,
-                    cursor: 'pointer',
-                    bgcolor: activeSlide === index ? 'common.white' : 'rgba(255,255,255,0.42)',
-                    transition: 'all 250ms ease'
-                  }}
-                />
-              ))}
-            </Stack>
-          </Grid>
-
-          {/* Desktop Brand Showcase Column (Minimal Frosted Glass Highlights) */}
-          <Grid size={{ xs: 12, md: 6, lg: 8 }} sx={{ display: { xs: 'none', md: 'block' } }}>
-            <Stack spacing={2.5} sx={{ maxWidth: 380, mx: 'auto' }}>
-              <Typography
-                variant="h1"
-                sx={{
-                  color: '#ffffff',
-                  fontWeight: 800,
-                  fontSize: { md: '1.85rem', lg: '2.1rem' },
-                  lineHeight: 1.35,
-                  textShadow: '0 4px 16px rgba(0,0,0,0.35)'
-                }}
-              >
-                {currentSlide.headline}
-              </Typography>
-
-              <Stack spacing={1.25}>
-                {features.map((item, index) => {
-                  const isActive = index === activeSlide;
-                  return (
-                    <Stack
-                      key={item.title}
-                      direction="row"
-                      spacing={1.5}
-                      alignItems="center"
-                      onClick={() => setActiveSlide(index)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setActiveSlide(index);
-                        }
-                      }}
-                      sx={{
-                        px: 2,
-                        py: 1.5,
-                        borderRadius: 3,
-                        cursor: 'pointer',
-                        backdropFilter: 'blur(14px) saturate(150%)',
-                        WebkitBackdropFilter: 'blur(14px) saturate(150%)',
-                        bgcolor: isActive ? 'rgba(255, 255, 255, 0.16)' : 'rgba(10, 25, 50, 0.34)',
-                        border: '1px solid',
-                        borderColor: isActive ? 'rgba(255, 255, 255, 0.44)' : 'rgba(255, 255, 255, 0.18)',
-                        boxShadow: isActive ? '0 10px 24px rgba(4, 14, 34, 0.28), inset 0 1px 0 rgba(255,255,255,0.35)' : 'none',
-                        transform: isActive ? 'translateY(-1px)' : 'none',
-                        transition: 'all 250ms ease',
-                        '&:hover': {
-                          bgcolor: 'rgba(255, 255, 255, 0.18)',
-                          borderColor: 'rgba(255, 255, 255, 0.4)'
-                        }
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 2,
-                          display: 'grid',
-                          placeItems: 'center',
-                          flexShrink: 0,
-                          bgcolor: isActive ? 'primary.main' : 'rgba(255, 255, 255, 0.16)',
-                          color: 'common.white',
-                          transition: 'background-color 250ms ease'
-                        }}
-                      >
-                        {item.icon}
-                      </Box>
-                      <Typography variant="subtitle1" sx={{ color: '#ffffff', fontWeight: 700 }}>
-                        {item.title}
-                      </Typography>
-                    </Stack>
-                  );
-                })}
-              </Stack>
-
-              {/* Desktop Carousel Indicator Dots */}
-              <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-start" sx={{ pt: 0.25 }}>
-                {slides.map((_, index) => (
-                  <Box
-                    key={`desktop-dot-${index}`}
-                    component="button"
-                    type="button"
-                    aria-label={isAr ? `الشريحة ${index + 1}` : `Slide ${index + 1}`}
-                    onClick={() => setActiveSlide(index)}
-                    sx={{
-                      width: activeSlide === index ? 28 : 9,
-                      height: 9,
-                      borderRadius: 999,
-                      border: 'none',
-                      p: 0,
-                      cursor: 'pointer',
-                      bgcolor: activeSlide === index ? 'common.white' : 'rgba(255,255,255,0.38)',
-                      transition: 'all 250ms ease'
-                    }}
-                  />
-                ))}
-              </Stack>
-            </Stack>
           </Grid>
         </Grid>
       </Container>
@@ -576,7 +389,7 @@ export default function Login() {
           position: 'relative',
           zIndex: 1,
           pb: 2.5,
-          maxWidth: { xl: 1480 },
+          maxWidth: { xl: 1360 },
           '& .MuiTypography-root': {
             color: 'rgba(255,255,255,0.82)'
           }

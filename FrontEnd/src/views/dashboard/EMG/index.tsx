@@ -34,6 +34,8 @@ import {
 } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import useAuth from 'hooks/useAuth';
+import { useEmgAdvancesCache, useEmgProjectsCache, useEmgSuppliersCache, useTodayAttendanceCache } from 'hooks/useEmgData';
+import EngineerMobileDashboard from './EngineerMobileDashboard';
 import { withAlpha } from 'utils/colorUtils';
 import {
   hasAnyPermission,
@@ -42,18 +44,7 @@ import {
   roleSubtitle,
   roleTitle
 } from 'Modules/EMG/roleAccess';
-import {
-  EmgAdvance,
-  EmgAttendance,
-  EmgNotification,
-  EmgProject,
-  EmgSupplier,
-  getEmgAdvances,
-  getEmgNotifications,
-  getEmgProjects,
-  getEmgSuppliers,
-  getTodayAttendance
-} from 'api/emg';
+import { EmgNotification, getEmgNotifications } from 'api/emg';
 
 const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
 const fmt = (value: number) => `${money.format(value || 0)} ج.م`;
@@ -403,36 +394,35 @@ export default function EmgDashboard() {
   const canSteel = hasAnyPermission(user, ['steel.view', 'steel.create']);
   const canFinishing = hasAnyPermission(user, ['finishing.view', 'finishing.create']);
 
-  const [projects, setProjects] = useState<EmgProject[]>([]);
-  const [suppliers, setSuppliers] = useState<EmgSupplier[]>([]);
-  const [advances, setAdvances] = useState<EmgAdvance[]>([]);
+  const { data: projects = [], isLoading: projectsLoading, error: projectsError } = useEmgProjectsCache(canReadProjects);
+  const { data: suppliers = [], isLoading: suppliersLoading, error: suppliersError } = useEmgSuppliersCache(canReadSuppliers && !engineerView);
+  const { data: advances = [], isLoading: advancesLoading, error: advancesError } = useEmgAdvancesCache(undefined, canReadAdvances && !engineerView);
+  const { data: attendance = null } = useTodayAttendanceCache(canReadAttendance);
+
   const [notifications, setNotifications] = useState<EmgNotification[]>([]);
-  const [attendance, setAttendance] = useState<EmgAttendance | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.allSettled([
-      canReadProjects ? getEmgProjects() : Promise.resolve([] as EmgProject[]),
-      canReadSuppliers ? getEmgSuppliers() : Promise.resolve([] as EmgSupplier[]),
-      canReadAdvances ? getEmgAdvances() : Promise.resolve([] as EmgAdvance[]),
-      canReadNotifications ? getEmgNotifications(true) : Promise.resolve([] as EmgNotification[]),
-      canReadAttendance ? getTodayAttendance() : Promise.resolve(null as EmgAttendance | null)
-    ])
-      .then(([projectsResult, suppliersResult, advancesResult, notificationsResult, attendanceResult]) => {
-        const requiredFailed =
-          (canReadProjects && projectsResult.status === 'rejected') ||
-          (canReadSuppliers && suppliersResult.status === 'rejected') ||
-          (canReadAdvances && advancesResult.status === 'rejected');
-        if (projectsResult.status === 'fulfilled') setProjects(projectsResult.value);
-        if (suppliersResult.status === 'fulfilled') setSuppliers(suppliersResult.value);
-        if (advancesResult.status === 'fulfilled') setAdvances(advancesResult.value);
-        if (notificationsResult.status === 'fulfilled') setNotifications(notificationsResult.value);
-        if (attendanceResult.status === 'fulfilled') setAttendance(attendanceResult.value);
-        if (requiredFailed) setError('تعذر تحميل بعض المؤشرات المالية. راجع صلاحيات الحساب أو افتح المشاريع مباشرة.');
+    if (!canReadNotifications || engineerView) return;
+    let active = true;
+    getEmgNotifications(true)
+      .then((rows) => {
+        if (active) setNotifications(rows);
       })
-      .finally(() => setLoading(false));
-  }, [canReadAdvances, canReadAttendance, canReadNotifications, canReadProjects, canReadSuppliers]);
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [canReadNotifications, engineerView]);
+
+  const loading = projectsLoading || (!engineerView && (suppliersLoading || advancesLoading));
+  const error =
+    projectsError || suppliersError || advancesError
+      ? 'تعذر تحميل بعض المؤشرات المالية. راجع صلاحيات الحساب أو افتح المشاريع مباشرة.'
+      : null;
+
+  if (engineerView) {
+    return <EngineerMobileDashboard />;
+  }
 
   const totals = useMemo(
     () => ({
@@ -468,33 +458,20 @@ export default function EmgDashboard() {
         break;
 
       case 'director':
-        add(canReadProjects, { label: 'محفظة المشاريع', to: '/emg/projects', icon: <IconBuilding size={22} />, tone: 'primary' });
-        add(false, {
-          label: 'مركز الاعتمادات',
-          to: '/emg/review-center',
-          icon: <IconChecklist size={22} />,
-          tone: 'warning',
-          badge: totals.openMovements
-        });
+        add(canReadProjects, { label: 'محفظة المشروعات', to: '/emg/projects', icon: <IconBuilding size={22} />, tone: 'primary' });
         add(canReadReports, { label: 'كشف الحساب المجمع', to: '/emg/reports/consolidated', icon: <IconFileAnalytics size={22} />, tone: 'secondary' });
-        add(canReadReports, { label: 'التقارير', to: '/emg/reports', icon: <IconTable size={22} />, tone: 'primary' });
-        add(canReadAdvances, { label: 'دفعات تحت الحساب', to: '/emg/advances', icon: <IconCash size={22} />, tone: 'success' });
+        add(canReadReports, { label: 'التقارير المالية', to: '/emg/reports', icon: <IconTable size={22} />, tone: 'primary' });
+        add(canReadSuppliers, { label: 'كشوف المقاولين', to: '/emg/contractor-statements', icon: <IconClipboardCheck size={22} />, tone: 'success' });
         add(canReadSuppliers, { label: 'حسابات الموردين', to: '/emg/suppliers', icon: <IconTruckDelivery size={22} />, tone: 'warning' });
         break;
 
       case 'accountant':
-        add(canReadAdvances, { label: 'دفعات تحت الحساب', to: '/emg/advances', icon: <IconCash size={22} />, tone: 'success' });
+        add(canReadProjects, { label: 'المشروعات والدفعات', to: '/emg/projects', icon: <IconBuilding size={22} />, tone: 'success' });
         add(canReadSuppliers, { label: 'حسابات الموردين', to: '/emg/suppliers', icon: <IconTruckDelivery size={22} />, tone: 'warning' });
-        add(false, {
-          label: 'المراجعة المالية',
-          to: '/emg/review-center',
-          icon: <IconChecklist size={22} />,
-          tone: 'error',
-          badge: totals.openMovements
-        });
+        add(canReadSuppliers, { label: 'كشوف المقاولين', to: '/emg/contractor-statements', icon: <IconClipboardCheck size={22} />, tone: 'primary' });
         add(canReadReports, { label: 'مركز التقارير المالي', to: '/emg/reports/builder', icon: <IconTable size={22} />, tone: 'primary' });
         add(canReadReports, { label: 'كشف الحساب المجمع', to: '/emg/reports/consolidated', icon: <IconFileAnalytics size={22} />, tone: 'secondary' });
-        add(canImportApprovedHistory, { label: 'أرشيف معتمد', to: '/emg/imports/approved-history', icon: <IconFileUpload size={22} />, tone: 'primary' });
+        add(canMigrateData || canImportApprovedHistory, { label: 'استيراد البيانات', to: '/emg/imports', icon: <IconFileUpload size={22} />, tone: 'primary' });
         break;
 
       case 'project_manager':
