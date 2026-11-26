@@ -270,7 +270,7 @@ public sealed partial class ReviewedWorkbookImportService
         if (connection.Port == 5432) return false;
         if (connection.Database?.StartsWith("emg_historical_qa_", StringComparison.Ordinal) == true) return true;
         return configuration.GetValue<bool>("HistoricalMigration:AllowAuthorizedLocalTarget") &&
-            connection.Database == "emg_restore" && (connection.Host is "127.0.0.1" or "localhost");
+            connection.Database == "emg_restore" && connection.Port == 55464 && (connection.Host is "127.0.0.1" or "localhost");
     }
 
     private static bool FitsAmount(decimal? amount) => amount is >= -9999999999999999.99m and <= 9999999999999999.99m &&

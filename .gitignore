@@ -64,6 +64,7 @@ BackEnd/tools/WorkbookCatalog/audit-output*.txt
 **/~$*
 
 # Private business evidence and local review material; never publish
+docs/historical-data-audit/
 docs/اعمال المواقع/
 docs/اعمال المواقع.rar
 BackEnd/tools/ImportPlanAudit/audit-output*.txt

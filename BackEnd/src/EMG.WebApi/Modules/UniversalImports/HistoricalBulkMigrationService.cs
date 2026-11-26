@@ -99,7 +99,7 @@ public sealed class HistoricalBulkMigrationService(
     private bool IsAuthorizedLocalTarget(NpgsqlConnectionStringBuilder connection, string database) =>
         database.StartsWith("emg_historical_qa_", StringComparison.Ordinal) ||
         (configuration.GetValue<bool>("HistoricalMigration:AllowAuthorizedLocalTarget") &&
-         database == "emg_restore" && (connection.Host is "127.0.0.1" or "localhost"));
+         database == "emg_restore" && connection.Port == 55464 && (connection.Host is "127.0.0.1" or "localhost"));
 
     private string ResolveSourceRoot()
     {
