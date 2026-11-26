@@ -7,6 +7,8 @@ public sealed class SupplierSupply
     public Supplier Supplier { get; set; } = null!;
     public int ProjectId { get; set; }
     public Project Project { get; set; } = null!;
+    public int? InvoiceId { get; set; }
+    public SupplierInvoice? Invoice { get; set; }
     public string SupplyType { get; set; } = "خامات";
     public string ItemName { get; set; } = string.Empty;
     public string Unit { get; set; } = string.Empty;

@@ -16,6 +16,8 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<SupplierSupply> SupplierSupplies => Set<SupplierSupply>();
     public DbSet<SupplierPayment> SupplierPayments => Set<SupplierPayment>();
+    public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
+    public DbSet<SupplierInvoiceLine> SupplierInvoiceLines => Set<SupplierInvoiceLine>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<SiteMovement> SiteMovements => Set<SiteMovement>();
     public DbSet<ExcavationRecord> ExcavationRecords => Set<ExcavationRecord>();
@@ -150,6 +152,7 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
             entity.Property(item => item.Status).HasMaxLength(80).IsRequired().HasDefaultValue("مسودة");
             entity.HasOne(item => item.Supplier).WithMany(supplier => supplier.Supplies).HasForeignKey(item => item.SupplierId);
             entity.HasOne(item => item.Project).WithMany().HasForeignKey(item => item.ProjectId);
+            entity.HasOne(item => item.Invoice).WithMany(invoice => invoice.Supplies).HasForeignKey(item => item.InvoiceId).OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(item => new { item.SupplierId, item.ProjectId, item.SupplyDate });
         });
 
@@ -165,7 +168,31 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
             entity.HasOne(item => item.Supplier).WithMany(supplier => supplier.Payments).HasForeignKey(item => item.SupplierId);
             entity.HasOne(item => item.Project).WithMany(project => project.SupplierPayments).HasForeignKey(item => item.ProjectId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(item => item.Supply).WithMany(supply => supply.Payments).HasForeignKey(item => item.SupplyId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.Invoice).WithMany(invoice => invoice.Payments).HasForeignKey(item => item.InvoiceId).OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(item => new { item.SupplierId, item.ProjectId, item.PaymentDate });
+        });
+
+        modelBuilder.Entity<SupplierInvoice>(entity =>
+        {
+            entity.ToTable("supplier_invoices");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.InvoiceNumber).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.Currency).HasMaxLength(10).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(80).IsRequired();
+            entity.HasOne(item => item.Project).WithMany().HasForeignKey(item => item.ProjectId);
+            entity.HasOne(item => item.Supplier).WithMany().HasForeignKey(item => item.SupplierId);
+            entity.HasOne(item => item.SiteMovement).WithMany().HasForeignKey(item => item.SiteMovementId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(item => new { item.ProjectId, item.InvoiceNumber }).IsUnique();
+            entity.HasIndex(item => new { item.SupplierId, item.ProjectId, item.InvoiceDate });
+        });
+
+        modelBuilder.Entity<SupplierInvoiceLine>(entity =>
+        {
+            entity.ToTable("supplier_invoice_lines");
+            entity.HasKey(item => item.Id);
+            entity.HasOne(item => item.Invoice).WithMany(invoice => invoice.Lines).HasForeignKey(item => item.InvoiceId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.SupplierSupply).WithMany().HasForeignKey(item => item.SupplierSupplyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(item => item.SupplierSupplyId).IsUnique();
         });
 
         modelBuilder.Entity<Contractor>(entity =>

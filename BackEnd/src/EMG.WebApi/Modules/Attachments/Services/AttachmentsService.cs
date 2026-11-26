@@ -87,6 +87,8 @@ public sealed class AttachmentsService(EmgDbContext db, IWebHostEnvironment envi
             "supplier-payment" => await db.SupplierPayments.Where(item => item.Id == entityId)
                 .Select(item => item.ProjectId ?? (item.Supply != null ? (int?)item.Supply.ProjectId : null))
                 .FirstOrDefaultAsync(cancellationToken),
+            "supplier-invoice" => await db.SupplierInvoices.Where(item => item.Id == entityId)
+                .Select(item => (int?)item.ProjectId).FirstOrDefaultAsync(cancellationToken),
             "site-movement" => await db.SiteMovements.Where(item => item.Id == entityId).Select(item => (int?)item.ProjectId).FirstOrDefaultAsync(cancellationToken),
             "excavation" => await db.ExcavationRecords.Where(item => item.Id == entityId).Select(item => (int?)item.ProjectId).FirstOrDefaultAsync(cancellationToken),
             "concrete" => await db.ConcreteRecords.Where(item => item.Id == entityId).Select(item => (int?)item.ProjectId).FirstOrDefaultAsync(cancellationToken),

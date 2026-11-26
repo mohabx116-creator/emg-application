@@ -197,10 +197,12 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
         if (request.ProjectId is not null && (!await db.Projects.AnyAsync(item => item.Id == request.ProjectId, cancellationToken) ||
             !globalAccess && (!userId.HasValue || !await db.UserProjectAssignments.AnyAsync(a => a.ProjectId == request.ProjectId && a.UserId == userId && a.IsActive, cancellationToken)))) return null;
         await using var paymentTransaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        int? invoiceId = null;
         if (request.SupplyId is not null)
         {
             var supply = await db.SupplierSupplies.FirstOrDefaultAsync(item => item.Id == request.SupplyId && item.SupplierId == supplierId, cancellationToken);
             if (supply is null || request.ProjectId is not null && supply.ProjectId != request.ProjectId) return null;
+            invoiceId = supply.InvoiceId;
             var settled = await db.SupplierPayments.Where(item => item.SupplyId == supply.Id && (item.Status == "معتمد" || item.Status == "مرحّل"))
                 .SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
             if (request.Amount > supply.TotalAmount - settled)
@@ -216,7 +218,7 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
 
         var payment = new SupplierPayment
         {
-            SupplierId = supplierId, ProjectId = request.ProjectId, SupplyId = request.SupplyId, Amount = request.Amount,
+            SupplierId = supplierId, ProjectId = request.ProjectId, SupplyId = request.SupplyId, InvoiceId = invoiceId, Amount = request.Amount,
             PaymentDate = request.PaymentDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.PaymentDate.Value.Date, DateTimeKind.Utc),
             PaymentMethod = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "نقدي" : request.PaymentMethod.Trim(),
             Reference = request.Reference?.Trim(), Notes = request.Notes?.Trim(), Status = "مرحّل", CreatedByUserId = userId

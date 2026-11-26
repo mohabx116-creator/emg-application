@@ -9,6 +9,8 @@ public sealed class SupplierPayment
     public Project? Project { get; set; }
     public int? SupplyId { get; set; }
     public SupplierSupply? Supply { get; set; }
+    public int? InvoiceId { get; set; }
+    public SupplierInvoice? Invoice { get; set; }
     public decimal Amount { get; set; }
     public DateTime PaymentDate { get; set; } = DateTime.UtcNow.Date;
     public string PaymentMethod { get; set; } = "نقدي";

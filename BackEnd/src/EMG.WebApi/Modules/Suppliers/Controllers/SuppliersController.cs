@@ -10,7 +10,7 @@ namespace EMG.Api.Modules.Suppliers.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/suppliers")]
-public sealed class SuppliersController(ISuppliersService suppliersService) : ControllerBase
+public sealed class SuppliersController(ISuppliersService suppliersService, ISupplierInvoiceService invoiceService) : ControllerBase
 {
     [HttpGet]
     [PermissionAuthorize("suppliers.view")]
@@ -84,6 +84,51 @@ public sealed class SuppliersController(ISuppliersService suppliersService) : Co
         {
             return Conflict(new { message = exception.Message });
         }
+    }
+
+    [HttpPost("invoices")]
+    [PermissionAuthorize("suppliers.supplies-create")]
+    public async Task<ActionResult<SupplierInvoiceSummary>> CreateInvoice(CreateSupplierInvoiceRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var invoice = await invoiceService.CreateAsync(request, CurrentUserId(), HasGlobalProjectAccess(), cancellationToken);
+            return invoice is null ? BadRequest(new { message = "بيانات الفاتورة أو صلاحية المشروع غير صحيحة." }) : Ok(invoice);
+        }
+        catch (InvalidOperationException exception) { return BadRequest(new { message = exception.Message }); }
+        catch (DuplicateSupplierTransactionException exception) { return Conflict(new { message = exception.Message }); }
+    }
+
+    [HttpGet("invoices/{invoiceId:int}")]
+    [PermissionAuthorize("suppliers.view")]
+    public async Task<ActionResult<SupplierInvoiceSummary>> GetInvoice(int invoiceId, CancellationToken cancellationToken)
+    {
+        var invoice = await invoiceService.GetAsync(invoiceId, CurrentUserId(), HasGlobalProjectAccess(), cancellationToken);
+        return invoice is null ? NotFound() : Ok(invoice);
+    }
+
+    [HttpPut("invoices/{invoiceId:int}")]
+    [Authorize]
+    public async Task<ActionResult<SupplierInvoiceSummary>> UpdateInvoice(int invoiceId, UpdateSupplierInvoiceRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var invoice = await invoiceService.UpdateAsync(invoiceId, request, CurrentUserId(), HasGlobalProjectAccess(), cancellationToken);
+            return invoice is null ? Forbid() : Ok(invoice);
+        }
+        catch (InvalidOperationException exception) { return Conflict(new { message = exception.Message }); }
+    }
+
+    [HttpDelete("invoices/{invoiceId:int}")]
+    [Authorize]
+    public async Task<IActionResult> DeleteInvoice(int invoiceId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var deleted = await invoiceService.DeleteAsync(invoiceId, CurrentUserId(), HasGlobalProjectAccess(), cancellationToken);
+            return deleted ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException exception) { return Conflict(new { message = exception.Message }); }
     }
 
     [HttpGet("{supplierId:int}/payments")]

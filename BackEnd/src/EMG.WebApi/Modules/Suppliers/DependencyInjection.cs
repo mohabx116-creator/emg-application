@@ -8,6 +8,7 @@ public static class DependencyInjection
     public static IServiceCollection AddSuppliersModule(this IServiceCollection services)
     {
         services.AddScoped<ISuppliersService, SuppliersService>();
+        services.AddScoped<ISupplierInvoiceService, SupplierInvoiceService>();
         return services;
     }
 }

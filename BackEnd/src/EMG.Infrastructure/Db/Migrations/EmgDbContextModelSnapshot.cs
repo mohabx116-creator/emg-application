@@ -1245,6 +1245,86 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.ToTable("suppliers", (string)null);
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.SupplierInvoice", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTime>("InvoiceDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("SiteMovementId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SiteMovementId");
+
+                    b.HasIndex("ProjectId", "InvoiceNumber")
+                        .IsUnique();
+
+                    b.HasIndex("SupplierId", "ProjectId", "InvoiceDate");
+
+                    b.ToTable("supplier_invoices", (string)null);
+                });
+
+            modelBuilder.Entity("EMG.Domain.Entities.SupplierInvoiceLine", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("InvoiceId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SupplierSupplyId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
+
+                    b.HasIndex("SupplierSupplyId")
+                        .IsUnique();
+
+                    b.ToTable("supplier_invoice_lines", (string)null);
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.SupplierPayment", b =>
                 {
                     b.Property<int>("Id")
@@ -1261,6 +1341,9 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("InvoiceId")
                         .HasColumnType("integer");
 
                     b.Property<string>("Notes")
@@ -1297,6 +1380,8 @@ namespace EMG.Infrastructure.Db.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("InvoiceId");
+
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("SupplyId");
@@ -1318,6 +1403,9 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("InvoiceId")
                         .HasColumnType("integer");
 
                     b.Property<string>("InvoiceNumber")
@@ -1372,6 +1460,8 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasColumnType("numeric(18,2)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("InvoiceId");
 
                     b.HasIndex("ProjectId");
 
@@ -2058,8 +2148,58 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.Navigation("Supplier");
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.SupplierInvoice", b =>
+                {
+                    b.HasOne("EMG.Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("EMG.Domain.Entities.SiteMovement", "SiteMovement")
+                        .WithMany()
+                        .HasForeignKey("SiteMovementId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("EMG.Domain.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("SiteMovement");
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("EMG.Domain.Entities.SupplierInvoiceLine", b =>
+                {
+                    b.HasOne("EMG.Domain.Entities.SupplierInvoice", "Invoice")
+                        .WithMany("Lines")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("EMG.Domain.Entities.SupplierSupply", "SupplierSupply")
+                        .WithMany()
+                        .HasForeignKey("SupplierSupplyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Invoice");
+
+                    b.Navigation("SupplierSupply");
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.SupplierPayment", b =>
                 {
+                    b.HasOne("EMG.Domain.Entities.SupplierInvoice", "Invoice")
+                        .WithMany("Payments")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("EMG.Domain.Entities.Project", "Project")
                         .WithMany("SupplierPayments")
                         .HasForeignKey("ProjectId")
@@ -2076,6 +2216,8 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasForeignKey("SupplyId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.Navigation("Invoice");
+
                     b.Navigation("Project");
 
                     b.Navigation("Supplier");
@@ -2085,6 +2227,11 @@ namespace EMG.Infrastructure.Db.Migrations
 
             modelBuilder.Entity("EMG.Domain.Entities.SupplierSupply", b =>
                 {
+                    b.HasOne("EMG.Domain.Entities.SupplierInvoice", "Invoice")
+                        .WithMany("Supplies")
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("EMG.Domain.Entities.Project", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
@@ -2096,6 +2243,8 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasForeignKey("SupplierId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Invoice");
 
                     b.Navigation("Project");
 
@@ -2241,6 +2390,15 @@ namespace EMG.Infrastructure.Db.Migrations
 
             modelBuilder.Entity("EMG.Domain.Entities.Supplier", b =>
                 {
+                    b.Navigation("Payments");
+
+                    b.Navigation("Supplies");
+                });
+
+            modelBuilder.Entity("EMG.Domain.Entities.SupplierInvoice", b =>
+                {
+                    b.Navigation("Lines");
+
                     b.Navigation("Payments");
 
                     b.Navigation("Supplies");
