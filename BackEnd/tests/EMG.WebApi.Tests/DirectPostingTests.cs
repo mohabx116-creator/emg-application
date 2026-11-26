@@ -30,7 +30,7 @@ public sealed class DirectPostingTests
         await db.SaveChangesAsync();
 
         var movement = await new SiteMovementsService(db).CreateAsync(
-            new CreateSiteMovementRequest(project.Id, supplier.Id, "مصروفات", "Direct expense", "مقطوعية", null, null, 125m,
+            new CreateSiteMovementRequest(project.Id, supplier.Id, null, null, null, null, null, null, "مصروفات", "Direct expense", "مقطوعية", null, null, 125m,
                 null, "DP-1", null, "موقع", null, "نقدي", true), null, true, CancellationToken.None);
         var supply = await new SuppliersService(db).AddSupplyAsync(
             supplier.Id, new CreateSupplyRequest(project.Id, "خامات", "أسمنت", "طن", 2m, 300m, null, "DP-2", null), null, true, CancellationToken.None);
@@ -58,8 +58,8 @@ public sealed class DirectPostingTests
         await db.SaveChangesAsync();
 
         var result = await new SiteMovementsService(db).CreateBatchAsync(new CreateSiteMovementBatchRequest([
-            new CreateSiteMovementRequest(project.Id, null, "مصروفات", "بند أول", "مقطوعية", 1m, 100m, null, null, "BATCH-1", null, "موقع", null, "نقدي", true),
-            new CreateSiteMovementRequest(project.Id, null, "مصروفات", "بند ثان", "مقطوعية", 2m, 50m, null, null, "BATCH-2", null, "موقع", null, "نقدي", true)
+            new CreateSiteMovementRequest(project.Id, null, null, null, null, null, null, null, "مصروفات", "بند أول", "مقطوعية", 1m, 100m, null, null, "BATCH-1", null, "موقع", null, "نقدي", true),
+            new CreateSiteMovementRequest(project.Id, null, null, null, null, null, null, null, "مصروفات", "بند ثان", "مقطوعية", 2m, 50m, null, null, "BATCH-2", null, "موقع", null, "نقدي", true)
         ]), null, true, CancellationToken.None);
 
         Assert.NotNull(result);
@@ -110,7 +110,7 @@ public sealed class DirectPostingTests
         db.UserProjectAssignments.Add(new UserProjectAssignment { UserId = 7, ProjectId = project.Id, IsActive = true });
         await db.SaveChangesAsync();
         var movement = await new SiteMovementsService(db).CreateAsync(
-            new CreateSiteMovementRequest(project.Id, null, "مصروفات", "قابل للتصحيح", "مقطوعية", null, null, 100m,
+            new CreateSiteMovementRequest(project.Id, null, null, null, null, null, null, null, "مصروفات", "قابل للتصحيح", "مقطوعية", null, null, 100m,
                 null, "COR-1", null, "موقع", null, "نقدي", false), 7, true, CancellationToken.None);
         var service = new TransactionCorrectionService(db);
         using var document = JsonDocument.Parse("{\"Description\":\"تم التصحيح\",\"TotalAmount\":125}");
@@ -137,7 +137,7 @@ public sealed class DirectPostingTests
         db.Projects.Add(project);
         await db.SaveChangesAsync();
         var movement = await new SiteMovementsService(db).CreateAsync(
-            new CreateSiteMovementRequest(project.Id, null, "مصروفات", "نطاق", "مقطوعية", null, null, 20m,
+            new CreateSiteMovementRequest(project.Id, null, null, null, null, null, null, null, "مصروفات", "نطاق", "مقطوعية", null, null, 20m,
                 null, "SCOPE-1", null, "موقع", null, "نقدي", false), 7, true, CancellationToken.None);
         var service = new TransactionCorrectionService(db);
         using var document = JsonDocument.Parse("{\"Description\":\"غير مصرح\"}");
@@ -160,7 +160,7 @@ public sealed class DirectPostingTests
         db.Projects.Add(project);
         await db.SaveChangesAsync();
         var movement = await new SiteMovementsService(db).CreateAsync(
-            new CreateSiteMovementRequest(project.Id, null, "مصروفات", "مرتبط بسلفة", "مقطوعية", null, null, 20m,
+            new CreateSiteMovementRequest(project.Id, null, null, null, null, null, null, null, "مصروفات", "مرتبط بسلفة", "مقطوعية", null, null, 20m,
                 null, "DEP-1", null, "موقع", null, "نقدي", false), 7, true, CancellationToken.None);
         db.AdvancePayments.Add(new AdvancePayment { ProjectId = project.Id, ClientName = "عميل", PayerName = "دافع", Amount = 10m, PaymentMethod = "نقدي", Status = "مرحّل" });
         await db.SaveChangesAsync();

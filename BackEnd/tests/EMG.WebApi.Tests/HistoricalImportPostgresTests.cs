@@ -21,6 +21,14 @@ public sealed class HistoricalImportPostgresTests
         Assert.Equal("emg_qa_stg01c", settings.Database);
 
         await using var db = new EmgDbContext(new DbContextOptionsBuilder<EmgDbContext>().UseNpgsql(settings.ConnectionString).Options);
+        var project = new EMG.Domain.Entities.Project
+        {
+            Name = "QA historical rollback project",
+            Code = $"QA-HIST-{Guid.NewGuid():N}",
+            OfficeSharePercentage = 10
+        };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
         var sha = Guid.NewGuid().ToString("N").PadRight(64, 'a')[..64];
         var section = new UniversalSectionPreview("pg-atomic-sec", "Synthetic QA", "A1:B3", "payment_ledger", "F06_ADVANCE_PARALLEL", UniversalImportMappingRegistry.Version, "HIGH", false, true, 2, 2, []);
         var records = new[]
@@ -29,7 +37,7 @@ public sealed class HistoricalImportPostgresTests
             new UniversalRecordPreview("pg-atomic-2-" + Guid.NewGuid().ToString("N"), "pg-atomic-sec", "Synthetic QA", "A2", ["A2"], UniversalRecordType.Payment, "payment_ledger", "EGP", 202m, false, false, true, "HIGH", "pg-atomic-fp-2")
         };
         var preview = new UniversalPreviewResponse("pg-atomic.xlsx", 100, sha, UniversalImportMappingRegistry.Version, false, [section], records, [], [], [], []);
-        var request = new HistoricalImportStageRequest(3, "QA PostgreSQL atomic rollback", preview);
+        var request = new HistoricalImportStageRequest(project.Id, "QA PostgreSQL atomic rollback", preview);
         var normal = new HistoricalImportPostingService(db);
         var staged = await normal.StageAsync(request, 2, CancellationToken.None);
         await normal.ApproveAsync(staged.BatchId, 3, CancellationToken.None);
