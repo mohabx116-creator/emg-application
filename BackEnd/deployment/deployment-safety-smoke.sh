@@ -50,6 +50,11 @@ if [[ "${1:-}" == compose ]]; then
   exit 0
 fi
 if [[ "${1:-}" == pull ]]; then exit 0; fi
+if [[ "${1:-}" == exec ]]; then
+  [[ "${FAKE_DB_AUTH_FAIL:-0}" != 1 ]] || exit 1
+  printf '1\n'
+  exit 0
+fi
 if [[ "${1:-}" == image && "${2:-}" == inspect ]]; then
   ref="$3"; fmt="$5"
   if [[ "$fmt" == *'.Config.Labels'* ]]; then printf '%s\n' "$EXPECTED_SOURCE_SHA"; elif [[ "$fmt" == *'.Os'* ]]; then printf 'linux\n'; elif [[ "$fmt" == *'.Architecture'* ]]; then printf 'amd64\n'; fi
@@ -82,6 +87,7 @@ count=$((count + 1)); printf '%s' "$count" >"$count_file"
 if [[ "${FAKE_CURL_MODE:-pass}" == always-fail ]]; then exit 22; fi
 if [[ "${FAKE_CURL_MODE:-pass}" == fail-candidate && -f "$FAKE_RUNTIME_DIR/backend" && "$(cat "$FAKE_RUNTIME_DIR/backend")" == "$FAKE_CANDIDATE_BACKEND" ]]; then exit 22; fi
 if [[ "${FAKE_CURL_MODE:-pass}" == fail-first && "$count" -eq 1 ]]; then exit 22; fi
+if [[ " $* " == *'https://emg.example.test/api/account/me'* ]]; then printf '401'; else printf '200'; fi
 exit 0
 MOCK_CURL
 
@@ -92,8 +98,9 @@ export COMPOSE_FILE="$TEST_ROOT/docker-compose.prod.yml" ENV_FILE="$TEST_ROOT/.e
 export STATE_DIR BACKUP_MARKER="$ARTIFACTS/COMPLETE" BACKUP_MANIFEST="$ARTIFACTS/SHA256SUMS"
 export BACKUP_REQUIRED_FILES="$ARTIFACTS/database.enc,$ARTIFACTS/uploads.enc,$ARTIFACTS/keys.enc,$ARTIFACTS/config.enc"
 export EXPECTED_SOURCE_SHA EXPECTED_POSTGRES_VOLUME=emg_postgres_data EXPECTED_UPLOADS_VOLUME=emg_uploads EXPECTED_KEYS_VOLUME=data_protection_keys
-export PUBLIC_HEALTH_URL=https://emg.example.test/ PUBLIC_API_HEALTH_URL=https://emg.example.test/api/health
+export PUBLIC_HEALTH_URL=https://emg.example.test/ PUBLIC_API_HEALTH_URL=https://emg.example.test/api/health PUBLIC_ACCOUNT_URL=https://emg.example.test/api/account/me
 export BACKUP_MAX_AGE_SECONDS=86400 HEALTH_TIMEOUT_SECONDS=2
+printf 'POSTGRES_USER=emg\nPOSTGRES_DB=emg\nPOSTGRES_PASSWORD=synthetic\n' >"$TEST_ROOT/.env"
 
 export BACKEND_IMAGE="$CANDIDATE_BACKEND" FRONTEND_IMAGE="$CANDIDATE_FRONTEND"
 printf '%s' "$OLD_BACKEND" >"$RUNTIME_DIR/backend"
@@ -106,6 +113,16 @@ echo 'successful deployment: PASS'
 
 "$DEPLOY_SCRIPT" >/dev/null
 echo 'repeated deployment: PASS'
+
+printf '%s' "$OLD_BACKEND" >"$RUNTIME_DIR/backend"
+printf '%s' "$OLD_FRONTEND" >"$RUNTIME_DIR/frontend"
+rm -f "$STATE_DIR/release-state.env"
+export FAKE_DB_AUTH_FAIL=1
+set +e; "$DEPLOY_SCRIPT" >/dev/null 2>&1; code=$?; set -e
+[[ "$code" -eq 1 ]]
+[[ "$(cat "$RUNTIME_DIR/backend")" == "$OLD_BACKEND" ]]
+echo 'invalid database credential blocks deployment: PASS'
+unset FAKE_DB_AUTH_FAIL
 
 printf '%s' "$OLD_BACKEND" >"$RUNTIME_DIR/backend"
 printf '%s' "$OLD_FRONTEND" >"$RUNTIME_DIR/frontend"

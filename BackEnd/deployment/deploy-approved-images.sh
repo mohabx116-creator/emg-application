@@ -23,6 +23,7 @@ readonly EXPECTED_UPLOADS_VOLUME="${EXPECTED_UPLOADS_VOLUME:?EXPECTED_UPLOADS_VO
 readonly EXPECTED_KEYS_VOLUME="${EXPECTED_KEYS_VOLUME:?EXPECTED_KEYS_VOLUME is required}"
 readonly PUBLIC_HEALTH_URL="${PUBLIC_HEALTH_URL:?PUBLIC_HEALTH_URL is required}"
 readonly PUBLIC_API_HEALTH_URL="${PUBLIC_API_HEALTH_URL:?PUBLIC_API_HEALTH_URL is required}"
+readonly PUBLIC_ACCOUNT_URL="${PUBLIC_ACCOUNT_URL:?PUBLIC_ACCOUNT_URL is required}"
 readonly HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}"
 readonly BACKUP_MAX_AGE_SECONDS="${BACKUP_MAX_AGE_SECONDS:-86400}"
 readonly MIN_AVAILABLE_MEMORY_MB="${MIN_AVAILABLE_MEMORY_MB:-512}"
@@ -70,6 +71,15 @@ wait_http() {
     sleep 3
   done
 }
+expect_http_status() {
+  local url="$1" expected="$2" actual
+  actual="$(curl --connect-timeout 5 --max-time 15 --silent --output /dev/null --write-out '%{http_code}' "$url")" || return 1
+  [[ "$actual" == "$expected" ]]
+}
+env_value() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$ENV_FILE"
+}
 
 exec 9>"$LOCK_FILE"
 flock -n 9 || die 'Another EMG deployment is already running.'
@@ -110,6 +120,12 @@ postgres_id="$(service_container postgres)"
 [[ "$(mount_volume "$postgres_id" /var/lib/postgresql/data)" == "$EXPECTED_POSTGRES_VOLUME" ]] || die 'PostgreSQL volume mismatch.'
 [[ "$(mount_volume "$api_id" /app/uploads)" == "$EXPECTED_UPLOADS_VOLUME" ]] || die 'Uploads volume mismatch.'
 [[ "$(mount_volume "$api_id" /app/data-protection-keys)" == "$EXPECTED_KEYS_VOLUME" ]] || die 'Data Protection volume mismatch.'
+
+db_user="$(env_value POSTGRES_USER)"
+db_name="$(env_value POSTGRES_DB)"
+db_password="$(env_value POSTGRES_PASSWORD)"
+[[ -n "$db_user" && -n "$db_name" && -n "$db_password" ]] || die 'Database credential configuration is incomplete.'
+docker exec -e "PGPASSWORD=$db_password" "$postgres_id" psql -h 127.0.0.1 -U "$db_user" -d "$db_name" -Atqc 'select 1' >/dev/null 2>&1 || die 'Password-authenticated PostgreSQL readiness check failed.'
 
 current_backend="$(docker inspect "$api_id" --format '{{.Config.Image}}')"
 current_frontend="$(docker inspect "$frontend_id" --format '{{.Config.Image}}')"
@@ -162,11 +178,12 @@ trap 'exit 130' INT TERM
 
 export BACKEND_IMAGE FRONTEND_IMAGE DATABASE_APPLY_MIGRATIONS=false SECURITY_BOOTSTRAP_ADMIN_ENABLED=false
 deployment_mutated=true
-"${compose[@]}" up -d --no-build --no-deps api frontend
+"${compose[@]}" up -d --pull never --no-build --no-deps api frontend
 wait_http http://127.0.0.1:5121/api/health || die 'Backend health timeout.'
 wait_http http://127.0.0.1:3100/ || die 'Frontend health timeout.'
 wait_http "$PUBLIC_API_HEALTH_URL" || die 'Public API routing health check failed.'
 wait_http "$PUBLIC_HEALTH_URL" || die 'Public frontend routing health check failed.'
+expect_http_status "$PUBLIC_ACCOUNT_URL" 401 || die 'Authenticated database readiness check failed.'
 
 api_id="$(service_container api)"
 frontend_id="$(service_container frontend)"

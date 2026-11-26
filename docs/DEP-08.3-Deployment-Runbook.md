@@ -9,6 +9,8 @@ This runbook is prepared for review only. It is not an authorization to deploy.
 - `DATABASE_APPLY_MIGRATIONS=false` and `SECURITY_BOOTSTRAP_ADMIN_ENABLED=false` are mandatory.
 - `BACKUP_MARKER` and `BACKUP_MANIFEST` must identify a fresh, verified encrypted backup.
 - `BACKUP_REQUIRED_FILES` must list the encrypted database dump, uploads archive, Data Protection keys and recovery configuration artifacts from that same set.
+- `PUBLIC_ACCOUNT_URL` must identify the unauthenticated account endpoint; deployment acceptance requires HTTP 401 there so a shallow health response cannot mask database authentication failure.
+- The deployment gate performs a password-authenticated TCP `select 1` against the existing PostgreSQL container using the protected production environment file before application mutation.
 - `BACKEND_IMAGE` and `FRONTEND_IMAGE` must be full immutable GHCR digest references from the same source SHA.
 - Confirm adequate disk and memory before execution.
 
@@ -21,6 +23,9 @@ export FRONTEND_IMAGE='ghcr.io/mohabx116-creator/emg-application/frontend@sha256
 export BACKUP_MARKER='/opt/emg/backups/manual/<verified-set>/COMPLETE'
 export BACKUP_MANIFEST='/opt/emg/backups/manual/<verified-set>/SHA256SUMS'
 export BACKUP_REQUIRED_FILES='/opt/emg/backups/manual/<verified-set>/<database-dump.enc>,/opt/emg/backups/manual/<verified-set>/<uploads.enc>,/opt/emg/backups/manual/<verified-set>/<keys.enc>,/opt/emg/backups/manual/<verified-set>/<config.enc>'
+export PUBLIC_HEALTH_URL='https://emg.example.test/'
+export PUBLIC_API_HEALTH_URL='https://emg.example.test/api/health'
+export PUBLIC_ACCOUNT_URL='https://emg.example.test/api/account/me'
 export COMPOSE_FILE='/opt/emg/deployment/docker-compose.prod.yml'
 export ENV_FILE='/opt/emg/deployment/.env'
 sudo -u emg-deploy /opt/emg/deployment/deploy-approved-images.sh
