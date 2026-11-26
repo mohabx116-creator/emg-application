@@ -179,49 +179,73 @@ public sealed class WorkflowAtomicTransitionTests
 
     private sealed class StatusReadGate(string entityType) : DbCommandInterceptor
     {
-        private int reads;
-        private readonly TaskCompletionSource released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int completedReads;
+        private readonly TaskCompletionSource readsReleased = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly ConcurrentDictionary<DbCommand, byte> observedCommands = new();
-        private readonly ConcurrentDictionary<DbCommand, byte> gatedCommands = new();
 
-        private int MarkInitial(DbCommand command)
+        private bool IsInitialRead(DbCommand command)
         {
-            if (command.Connection is not null &&
-                command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase))
-            {
-                // EF may invoke both sync and async interception hooks for the same
-                // command. Count each command once so the barrier cannot release
-                // after one request's duplicate callback while the other request
-                // has not observed the original row yet.
-                if (!observedCommands.TryAdd(command, 0)) return 0;
-                var candidate = Interlocked.Increment(ref reads);
-                if (candidate <= 2) gatedCommands.TryAdd(command, 0);
-                return candidate;
-            }
-            return 0;
+            return command.CommandText.Contains("SELECT", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase)
+                && observedCommands.TryAdd(command, 0);
+        }
+
+        private void MarkInitialReadCompleted(DbCommand command)
+        {
+            if (!observedCommands.ContainsKey(command)) return;
+            var candidate = Interlocked.Increment(ref completedReads);
+            if (candidate >= 2) readsReleased.TrySetResult();
+        }
+
+        private async ValueTask WaitForInitialReadsAsync(DbCommand command, CancellationToken cancellationToken)
+        {
+            if (command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase))
+                await readsReleased.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+        }
+
+        private void WaitForInitialReads(DbCommand command)
+        {
+            if (command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase)
+                && !readsReleased.Task.Wait(TimeSpan.FromSeconds(15)))
+                throw new TimeoutException($"Timed out waiting for both {entityType} initial reads.");
         }
 
         public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
         {
-            MarkInitial(command);
+            IsInitialRead(command);
             return base.ReaderExecuting(command, eventData, result);
         }
 
-        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
         {
-            var candidate = MarkInitial(command);
-            if (candidate is > 0 and <= 2)
-            {
-                if (candidate == 2) released.TrySetResult();
-                await released.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
-            }
-            return await base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+            IsInitialRead(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }
 
-        public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
+        public override DbDataReader ReaderExecuted(DbCommand command, CommandExecutedEventData eventData, DbDataReader result)
         {
-            gatedCommands.TryRemove(command, out _);
+            MarkInitialReadCompleted(command);
             return result;
+        }
+
+        public override ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData, DbDataReader result, CancellationToken cancellationToken = default)
+        {
+            MarkInitialReadCompleted(command);
+            return new ValueTask<DbDataReader>(result);
+        }
+
+        public override InterceptionResult<int> NonQueryExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<int> result)
+        {
+            WaitForInitialReads(command);
+            return base.NonQueryExecuting(command, eventData, result);
+        }
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            await WaitForInitialReadsAsync(command, cancellationToken);
+            return await base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
         }
 
         private static string Table(string type) => type switch
