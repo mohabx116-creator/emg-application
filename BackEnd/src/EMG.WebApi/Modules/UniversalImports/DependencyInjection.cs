@@ -9,6 +9,7 @@ public static class DependencyInjection
         services.AddScoped<IHistoricalImportPostingService, HistoricalImportPostingService>();
         services.AddSingleton<ReviewedWorkbookSnapshots>();
         services.AddScoped<ReviewedWorkbookImportService>();
+        services.AddScoped<HistoricalBulkMigrationService>();
         return services;
     }
 }

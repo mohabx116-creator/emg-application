@@ -45,6 +45,9 @@ docs/recovery/.git-history/
 
 # Local backup and recovery material; never publish encrypted or plaintext copies
 **/EMG-backups/
+EMG — Historical Data/
+EMG-Historical-Data/
+EMG-Historical-Data.zip
 **/backups/
 **/*.dump
 **/*.dump.*

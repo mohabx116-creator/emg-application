@@ -9,7 +9,7 @@ namespace EMG.Api.Modules.UniversalImports;
 
 public sealed record UniversalNewProjectRequest(string SnapshotId, string Name, string? Code, string? ClientName,
     string? OwnerName, string? PayerName, string? Location, string? EngineerName,
-    Dictionary<string, string>? MappingEvidence, bool ConfirmExcluded);
+    Dictionary<string, string>? MappingEvidence, bool ConfirmExcluded, string? HistoricalBaselineJson = null);
 
 public sealed record UniversalImportDisposition(string RecordId, string SourceCoordinate, string? Target,
     decimal? Amount, string Currency, bool CanImport, string? Reason);
@@ -100,6 +100,14 @@ public sealed partial class ReviewedWorkbookImportService
             ActorUserId = actor, Action = HistoricalImportStatuses.UniversalProjectCommitted,
             DetailsJson = JsonSerializer.Serialize(new { preview.Issues, preview.Exceptions, request.ConfirmExcluded })
         });
+        if (!string.IsNullOrWhiteSpace(request.HistoricalBaselineJson))
+        {
+            batch.AuditEvents.Add(new HistoricalImportAuditEvent
+            {
+                ActorUserId = actor, Action = "HISTORICAL_BASELINE_CAPTURED",
+                DetailsJson = request.HistoricalBaselineJson
+            });
+        }
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         var groups = accepted.GroupBy(row => row.Disposition.Target!).ToArray();
@@ -185,6 +193,8 @@ public sealed partial class ReviewedWorkbookImportService
 
     private bool IsNewProjectPostingAllowed(UniversalPreviewResponse preview)
     {
+        if (configuration.GetValue<bool>("HistoricalMigration:Enabled") && environment.IsDevelopment() &&
+            db.Database.IsNpgsql() && IsIsolatedQaDatabase()) return true;
         // Set only after the owner authorizes production imports. The controller
         // independently requires active administrator authorization and both permissions.
         if (environment.IsProduction() && db.Database.IsNpgsql())
@@ -198,6 +208,13 @@ public sealed partial class ReviewedWorkbookImportService
             connection.Port == configuration.GetValue<int>("UniversalImportQa:Port") &&
             connection.Database?.StartsWith("emg_universal_qa_", StringComparison.Ordinal) == true &&
             connection.Database == configuration["UniversalImportQa:Database"];
+    }
+
+    private bool IsIsolatedQaDatabase()
+    {
+        if (string.IsNullOrWhiteSpace(db.Database.GetConnectionString())) return false;
+        var connection = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString());
+        return connection.Port != 5432 && connection.Database?.StartsWith("emg_historical_qa_", StringComparison.Ordinal) == true;
     }
 
     private static bool FitsAmount(decimal? amount) => amount is >= -9999999999999999.99m and <= 9999999999999999.99m &&
