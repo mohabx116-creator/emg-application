@@ -3,6 +3,7 @@ using EMG.Api.Modules.SiteMovements.Dtos;
 using EMG.Api.Modules.SiteMovements.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using EMG.Api.Modules.Security.Authorization;
 
 namespace EMG.Api.Modules.SiteMovements.Controllers;
@@ -10,7 +11,7 @@ namespace EMG.Api.Modules.SiteMovements.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/site-movements")]
-public sealed class SiteMovementsController(ISiteMovementsService siteMovementsService) : ControllerBase
+public sealed class SiteMovementsController(ISiteMovementsService siteMovementsService, EMG.Infrastructure.Db.EmgDbContext db) : ControllerBase
 {
     [HttpGet]
     [PermissionAuthorize("site-movements.view")]
@@ -41,24 +42,23 @@ public sealed class SiteMovementsController(ISiteMovementsService siteMovementsS
     }
 
     [HttpPut("{id:int}")]
-    [PermissionAuthorize("transactions.correct")]
     public async Task<ActionResult<SiteMovementSummary>> Update(int id, CreateSiteMovementRequest request, CancellationToken cancellationToken)
     {
         if (request.ProjectId <= 0 || string.IsNullOrWhiteSpace(request.Description) || string.IsNullOrWhiteSpace(request.MovementType) || request.Amount < 0 || request.Quantity < 0 || request.UnitPrice < 0)
             return BadRequest(new { message = "بيانات الحركة غير صحيحة." });
         if (request.Amount is null && (request.Quantity is null || request.UnitPrice is null)) return BadRequest(new { message = "أدخل قيمة الحركة مباشرة أو الكمية وسعر الوحدة." });
         if (request.MovementType.Trim() == "مصروفات" && string.IsNullOrWhiteSpace(request.ExpenseCategory)) return BadRequest(new { message = "بند المصروف مطلوب للمصروفات اليومية." });
-        var movement = await siteMovementsService.UpdateAsync(id, request, CurrentUserId(), IsAdmin(), cancellationToken);
+        var movement = await siteMovementsService.UpdateAsync(id, request, CurrentUserId(), IsAdmin(), cancellationToken, await HasPermissionAsync("transactions.correct"));
         return movement is null ? BadRequest(new { message = "لا يمكن تعديل الحركة الحالية أو لا تملك الصلاحية." }) : Ok(movement);
     }
 
     [HttpDelete("{id:int}")]
-    [PermissionAuthorize("transactions.cancel")]
     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken) =>
-        await siteMovementsService.DeleteAsync(id, CurrentUserId(), IsAdmin(), cancellationToken)
+        await siteMovementsService.DeleteAsync(id, CurrentUserId(), IsAdmin(), cancellationToken, await HasPermissionAsync("transactions.cancel"))
             ? NoContent()
-            : BadRequest(new { message = "لا يمكن حذف الحركة بعد الترحيل أو لا تملك الصلاحية." });
+            : BadRequest(new { message = "لا يمكن حذف الحركة: لا تملك الصلاحية أو توجد اعتماديات مالية تابعة." });
 
 private bool IsAdmin() => HttpContext?.User?.IsInRole("admin") == true || HttpContext?.User?.IsInRole("director") == true;
     private int? CurrentUserId() => HttpContext?.User is not null && int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
+    private async Task<bool> HasPermissionAsync(string code) => CurrentUserId() is int userId && await db.UserRoles.Where(link => link.UserId == userId && link.User.IsActive).AnyAsync(link => link.Role.Name == "admin" || link.Role.RolePermissions.Any(permission => permission.Permission.Code == code));
 }

@@ -25,14 +25,14 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { IconCheck, IconEye, IconPaperclip, IconReceipt, IconSend, IconTransfer, IconX } from '@tabler/icons-react';
+import { IconEye, IconPaperclip, IconReceipt, IconTrash } from '@tabler/icons-react';
 import {
   createEmgSiteMovement,
+  deleteEmgTransaction,
   EmgEntrySuggestion,
   EmgProject,
   EmgSiteMovement,
   EmgSupplier,
-  executeEmgWorkflow,
   getEmgProject,
   getEmgSiteMovements,
   getEmgSuppliers,
@@ -82,9 +82,6 @@ export default function EmgSiteMovements() {
   const { projectId } = useParams();
   const { user } = useAuth();
   const canCreate = Boolean(user?.permissions?.includes('site-movements.create'));
-  const canSubmit = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.submit');
-  const canReview = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.approve');
-  const canPost = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.post');
   const id = Number(projectId);
 
   const [project, setProject] = useState<EmgProject | null>(null);
@@ -92,7 +89,6 @@ export default function EmgSiteMovements() {
   const [suppliers, setSuppliers] = useState<EmgSupplier[]>([]);
   const [form, setForm] = useState<MovementForm>(initialForm);
   const [attachment, setAttachment] = useState<File | null>(null);
-  const [workflowBusy, setWorkflowBusy] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -217,17 +213,15 @@ export default function EmgSiteMovements() {
     }
   };
 
-  const executeMovementAction = async (movement: EmgSiteMovement, action: string) => {
-    setWorkflowBusy(movement.id);
+  const deleteMovement = async (movement: EmgSiteMovement) => {
+    if (!window.confirm('هل تريد حذف هذه الحركة نهائيًا؟')) return;
     setMessage(null);
     try {
-      await executeEmgWorkflow('site-movement', movement.id, action);
-      setMessage({ severity: 'success', text: `تم تنفيذ إجراء ${action} على الحركة.` });
+      await deleteEmgTransaction('site-movement', movement.id);
+      setMessage({ severity: 'success', text: 'تم حذف الحركة نهائيًا.' });
       load();
     } catch (error: any) {
-      setMessage({ severity: 'error', text: error?.message || 'الإجراء غير مسموح للحالة الحالية أو لا تملك الصلاحية.' });
-    } finally {
-      setWorkflowBusy(null);
+      setMessage({ severity: 'error', text: error?.response?.data?.message || error?.message || 'تعذر حذف الحركة.' });
     }
   };
 
@@ -534,26 +528,7 @@ export default function EmgSiteMovements() {
                       <Button component={Link} to={`/emg/site-movements/${movement.id}`} size="small" startIcon={<IconEye size={14} />}>
                         التفاصيل
                       </Button>
-                      {canSubmit && (movement.status === 'مسودة' || movement.status === 'مرفوض') && (
-                        <Button size="small" disabled={workflowBusy === movement.id} onClick={() => executeMovementAction(movement, 'إرسال')} startIcon={<IconSend size={14} />}>
-                          إرسال
-                        </Button>
-                      )}
-                      {canReview && movement.status === 'للمراجعة' && (
-                        <>
-                          <Button size="small" color="success" disabled={workflowBusy === movement.id} onClick={() => executeMovementAction(movement, 'اعتماد')} startIcon={<IconCheck size={14} />}>
-                            اعتماد
-                          </Button>
-                          <Button size="small" color="error" disabled={workflowBusy === movement.id} onClick={() => executeMovementAction(movement, 'رفض')} startIcon={<IconX size={14} />}>
-                            رفض
-                          </Button>
-                        </>
-                      )}
-                      {canPost && movement.status === 'معتمد' && (
-                        <Button size="small" color="secondary" disabled={workflowBusy === movement.id} onClick={() => executeMovementAction(movement, 'ترحيل')} startIcon={<IconTransfer size={14} />}>
-                          ترحيل
-                        </Button>
-                      )}
+                      <Button size="small" color="error" onClick={() => void deleteMovement(movement)} startIcon={<IconTrash size={14} />}>حذف</Button>
                     </Stack>
                   </TableCell>
                 </TableRow>

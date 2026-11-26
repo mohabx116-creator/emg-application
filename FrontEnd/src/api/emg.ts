@@ -723,8 +723,12 @@ export async function deleteEmgSiteMovement(id: number): Promise<void> {
 export async function correctEmgTransaction(entityType: string, entityId: number, values: Record<string, unknown>, reason: string): Promise<void> {
   await axios.put(`/api/transactions/${encodeURIComponent(entityType)}/${entityId}`, { values, reason });
 }
+export async function deleteEmgTransaction(entityType: string, entityId: number): Promise<void> {
+  await axios.delete(`/api/transactions/${encodeURIComponent(entityType)}/${entityId}`);
+}
 export async function cancelEmgTransaction(entityType: string, entityId: number, reason: string): Promise<void> {
-  await axios.post(`/api/transactions/${encodeURIComponent(entityType)}/${entityId}/cancel`, { reason });
+  void reason;
+  await deleteEmgTransaction(entityType, entityId);
 }
 export async function getEmgAttachments(entityType: string, entityId: number): Promise<EmgAttachment[]> {
   return (await axios.get<EmgAttachment[]>(`/api/attachments/${entityType}/${entityId}`)).data;

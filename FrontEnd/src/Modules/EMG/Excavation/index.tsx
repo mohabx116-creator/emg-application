@@ -24,7 +24,7 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { IconCheck, IconPaperclip, IconPlus, IconSend, IconTransfer, IconX } from '@tabler/icons-react';
+import { IconPaperclip, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { useParams } from 'react-router-dom';
 import AttachmentGallery from 'ui-component/emg/AttachmentGallery';
 import SmartEntryAdvisor from 'ui-component/emg/SmartEntryAdvisor';
@@ -32,11 +32,10 @@ import {
   createEmgExcavation,
   EmgProject,
   EmgSupplier,
-  executeEmgWorkflow,
+  deleteEmgTransaction,
   getEmgExcavation,
   getEmgProject,
   getEmgSuppliers,
-  getEmgWorkflowAudit,
   uploadEmgAttachment
 } from 'api/emg';
 import type { EmgExcavation } from 'api/emg';
@@ -50,9 +49,6 @@ export default function EmgExcavation() {
   const id = Number(projectId);
   const { user } = useAuth();
   const canCreate = !user?.permissions || user.permissions.includes('excavation.create') || user.permissions.includes('excavation.manage');
-  const canSubmit = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('excavation.submit');
-  const canReview = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('excavation.approve');
-  const canPost = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('excavation.post');
 
   const [project, setProject] = useState<EmgProject | null>(null);
   const [records, setRecords] = useState<EmgExcavation[]>([]);
@@ -61,7 +57,6 @@ export default function EmgExcavation() {
   const [saving, setSaving] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [message, setMessage] = useState<{ severity: 'success' | 'warning' | 'error'; text: string } | null>(null);
-  const [workflowBusy, setWorkflowBusy] = useState<number | null>(null);
   const [attachment, setAttachment] = useState<File | null>(null);
   const [attachmentTarget, setAttachmentTarget] = useState<number | null>(null);
 
@@ -156,24 +151,15 @@ export default function EmgExcavation() {
     }
   };
 
-  const executeRecordAction = async (record: EmgExcavation, action: string) => {
-    setWorkflowBusy(record.id);
+  const deleteRecord = async (record: EmgExcavation) => {
+    if (!window.confirm('هل تريد حذف هذا السجل نهائيًا؟')) return;
     setMessage(null);
     try {
-      if (action === 'اعتماد' || action === 'ترحيل') {
-        const audit = await getEmgWorkflowAudit('excavation', record.id);
-        if (audit.blockingChecks.length > 0) {
-          setMessage({ severity: 'error', text: audit.blockingChecks.join(' · ') });
-          return;
-        }
-      }
-      await executeEmgWorkflow('excavation', record.id, action);
-      setMessage({ severity: 'success', text: `تم تنفيذ إجراء ${action} على سجل الحفر.` });
+      await deleteEmgTransaction('excavation', record.id);
+      setMessage({ severity: 'success', text: 'تم حذف سجل الحفر نهائيًا.' });
       load();
     } catch (error: any) {
-      setMessage({ severity: 'error', text: error?.message || 'الإجراء غير مسموح للحالة الحالية أو لا تملك الصلاحية.' });
-    } finally {
-      setWorkflowBusy(null);
+      setMessage({ severity: 'error', text: error?.response?.data?.message || error?.message || 'تعذر حذف السجل.' });
     }
   };
 
@@ -398,18 +384,7 @@ export default function EmgExcavation() {
                     <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
                       <Stack direction="row" spacing={0.5} justifyContent="center">
                         <Button size="small" onClick={() => setAttachmentTarget(record.id)} startIcon={<IconPaperclip size={14} />}>المرفقات</Button>
-                        {canSubmit && (record.status === 'مسودة' || record.status === 'مرفوض') && (
-                          <Button size="small" disabled={workflowBusy === record.id} onClick={() => executeRecordAction(record, 'إرسال')} startIcon={<IconSend size={14} />}>إرسال</Button>
-                        )}
-                        {canReview && record.status === 'للمراجعة' && (
-                          <>
-                            <Button size="small" color="success" disabled={workflowBusy === record.id} onClick={() => executeRecordAction(record, 'اعتماد')} startIcon={<IconCheck size={14} />}>اعتماد</Button>
-                            <Button size="small" color="error" disabled={workflowBusy === record.id} onClick={() => executeRecordAction(record, 'رفض')} startIcon={<IconX size={14} />}>رفض</Button>
-                          </>
-                        )}
-                        {canPost && record.status === 'معتمد' && (
-                          <Button size="small" color="secondary" disabled={workflowBusy === record.id} onClick={() => executeRecordAction(record, 'ترحيل')} startIcon={<IconTransfer size={14} />}>ترحيل</Button>
-                        )}
+                        <Button size="small" color="error" onClick={() => void deleteRecord(record)} startIcon={<IconTrash size={14} />}>حذف</Button>
                       </Stack>
                     </TableCell>
                   </TableRow>

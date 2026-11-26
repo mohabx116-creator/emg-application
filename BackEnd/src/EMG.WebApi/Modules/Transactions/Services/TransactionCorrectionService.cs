@@ -22,13 +22,13 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         ["attendance"] = ["CheckInAtUtc", "CheckOutAtUtc", "Notes"]
     };
 
-    public async Task<TransactionOperationResult?> CorrectAsync(string entityType, int entityId, TransactionCorrectionRequest request, int? userId, bool globalAccess, CancellationToken cancellationToken)
+    public async Task<TransactionOperationResult?> CorrectAsync(string entityType, int entityId, TransactionCorrectionRequest request, int? userId, bool globalAccess, bool hasCorrectionPermission, CancellationToken cancellationToken)
     {
-        if (userId is null || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > 2000) return null;
+        if (userId is null || request is null) return null;
         var type = Normalize(entityType);
         if (!EditableProperties.ContainsKey(type)) return null;
         var record = await FindAsync(type, entityId, cancellationToken);
-        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, cancellationToken) || IsCancelled(record)) return null;
+        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasCorrectionPermission, cancellationToken) || IsCancelled(record)) return null;
         if (!ValidateValues(type, request.Values, out var validation)) throw new TransactionValidationException(validation!);
 
         var before = Capture(record, EditableProperties[type]);
@@ -38,30 +38,35 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         if (JsonSerializer.Serialize(before) == JsonSerializer.Serialize(after)) return null;
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        db.WorkflowActions.Add(new WorkflowAction
+        db.SecurityAuditLogs.Add(new EMG.Domain.Security.SecurityAuditLog
         {
-            EntityType = type, EntityId = entityId, Action = "تصحيح", FromStatus = StatusOf(record), ToStatus = StatusOf(record), UserId = userId,
-            Notes = $"السبب={request.Reason.Trim()};قبل={JsonSerializer.Serialize(before)};بعد={JsonSerializer.Serialize(after)}"
+            UserId = userId, Action = "transaction.corrected", EntityType = type, EntityId = entityId,
+            Details = "تم تصحيح المعاملة مباشرة وفق صلاحية المنشئ أو الصلاحية الممنوحة."
         });
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new TransactionOperationResult(type, entityId, StatusOf(record), "تصحيح", DateTime.UtcNow);
     }
 
-    public async Task<TransactionOperationResult?> CancelAsync(string entityType, int entityId, TransactionCancellationRequest request, int? userId, bool globalAccess, CancellationToken cancellationToken)
+    public async Task<TransactionOperationResult?> DeleteAsync(string entityType, int entityId, int? userId, bool globalAccess, bool hasDeletePermission, CancellationToken cancellationToken)
     {
-        if (userId is null || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Trim().Length > 2000) return null;
+        if (userId is null) return null;
         var type = Normalize(entityType);
         if (!EditableProperties.ContainsKey(type)) return null;
         var record = await FindAsync(type, entityId, cancellationToken);
-        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, cancellationToken) || IsCancelled(record) || await HasDependentFinancialEffectsAsync(type, entityId, cancellationToken)) return null;
-        var previousStatus = StatusOf(record);
-        SetStatus(record, "ملغى");
+        if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasDeletePermission, cancellationToken) || await HasDependentFinancialEffectsAsync(type, entityId, cancellationToken)) return null;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        db.WorkflowActions.Add(new WorkflowAction { EntityType = type, EntityId = entityId, Action = "إلغاء", FromStatus = previousStatus, ToStatus = "ملغى", UserId = userId, Notes = $"السبب={request.Reason.Trim()}" });
+        await db.WorkflowActions.Where(x => x.EntityType == type && x.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
+        await db.Attachments.Where(x => x.EntityType == type && x.EntityId == entityId).ExecuteDeleteAsync(cancellationToken);
+        db.SecurityAuditLogs.Add(new EMG.Domain.Security.SecurityAuditLog
+        {
+            UserId = userId, Action = "transaction.deleted", EntityType = type, EntityId = entityId,
+            Details = "حذف دائم للمعاملة بعد التحقق من الملكية ونطاق المشروع والاعتماديات."
+        });
+        db.Remove(record);
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new TransactionOperationResult(type, entityId, "ملغى", "إلغاء", DateTime.UtcNow);
+        return new TransactionOperationResult(type, entityId, "محذوف", "حذف", DateTime.UtcNow);
     }
 
     private async Task<object?> FindAsync(string type, int id, CancellationToken cancellationToken) => type switch
@@ -78,7 +83,7 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         _ => null
     };
 
-    private async Task<bool> CanAccessAsync(string type, object record, int userId, bool globalAccess, CancellationToken cancellationToken)
+    private async Task<bool> CanAccessAsync(string type, object record, int userId, bool globalAccess, bool hasOverridePermission, CancellationToken cancellationToken)
     {
         if (globalAccess) return true;
         var projectValue = record.GetType().GetProperty("ProjectId")?.GetValue(record);
@@ -88,13 +93,19 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
             var supplyId = (int?)record.GetType().GetProperty("SupplyId")?.GetValue(record);
             projectId = supplyId is null ? null : await db.SupplierSupplies.Where(x => x.Id == supplyId).Select(x => (int?)x.ProjectId).SingleOrDefaultAsync(cancellationToken);
         }
-        return projectId is not null && await db.UserProjectAssignments.AnyAsync(x => x.ProjectId == projectId && x.UserId == userId && x.IsActive, cancellationToken);
+        var inProject = projectId is not null && await db.UserProjectAssignments.AnyAsync(x => x.ProjectId == projectId && x.UserId == userId && x.IsActive, cancellationToken);
+        if (!inProject && projectId is not null) return false;
+        var owner = record.GetType().GetProperty("CreatedByUserId")?.GetValue(record) as int?;
+        owner ??= record.GetType().GetProperty("UserId")?.GetValue(record) as int?;
+        return inProject && (hasOverridePermission || owner == userId) || projectId is null && (hasOverridePermission || owner == userId);
     }
 
     private async Task<bool> HasDependentFinancialEffectsAsync(string type, int id, CancellationToken cancellationToken)
     {
-        if (type == "supplier-supply" && await db.SupplierPayments.AnyAsync(x => x.SupplyId == id && (x.Status == "معتمد" || x.Status == "مرحّل"), cancellationToken)) return true;
+        if (type == "supplier-supply" && await db.SupplierPayments.AnyAsync(x => x.SupplyId == id, cancellationToken)) return true;
         if (type == "advance-payment" && await db.AdvanceAllocations.AnyAsync(x => x.AdvancePaymentId == id, cancellationToken)) return true;
+        if (type == "supplier-payment" && await db.AdvanceAllocations.AnyAsync(x => x.SupplierPaymentId == id, cancellationToken)) return true;
+        if (type == "site-movement" && await db.AdvanceAllocations.AnyAsync(x => x.SiteMovementId == id, cancellationToken)) return true;
         return await db.ContractorStatementLines.AnyAsync(x => x.SourceEntityType == type && x.SourceEntityId == id, cancellationToken);
     }
 

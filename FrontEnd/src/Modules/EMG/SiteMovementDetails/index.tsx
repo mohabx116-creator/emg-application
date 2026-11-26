@@ -44,7 +44,7 @@ import {
   getEmgSiteMovement,
   getEmgWorkflowHistory,
   getEmgWorkflowAudit,
-  cancelEmgTransaction,
+  deleteEmgTransaction,
   updateEmgSiteMovement,
   uploadEmgAttachment
 } from 'api/emg';
@@ -58,13 +58,7 @@ export default function EmgSiteMovementDetails() {
   const id = Number(movementId);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canUpdate = user?.permissions?.includes('transactions.correct');
-  const canCancel = user?.permissions?.includes('transactions.cancel');
-  const canSubmit = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.submit');
-  const canReview =
-    user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.approve');
-  const canPost =
-    user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('site-movements.post');
+  const canUpdate = true;
   const [movement, setMovement] = useState<EmgSiteMovement | null>(null);
   const [attachments, setAttachments] = useState<EmgAttachment[]>([]);
   const [history, setHistory] = useState<EmgWorkflowResult[]>([]);
@@ -219,18 +213,16 @@ export default function EmgSiteMovementDetails() {
     }
   };
 
-  const cancel = async () => {
+  const removePermanently = async () => {
     if (!movement) return;
-    const reason = window.prompt('اكتب سبب الإلغاء:');
-    if (!reason?.trim()) return;
+    if (!window.confirm('هل تريد حذف الحركة نهائيًا؟')) return;
     setBusy(true);
     setMessage(null);
     try {
-      await cancelEmgTransaction('site-movement', movement.id, reason.trim());
-      setMessage({ severity: 'success', text: 'تم إلغاء الحركة وتسجيل السبب في سجل التعديلات.' });
-      await load();
+      await deleteEmgTransaction('site-movement', movement.id);
+      navigate(`/emg/projects/${movement.projectId}/movements`);
     } catch (error: any) {
-      setMessage({ severity: 'error', text: error?.message || 'تعذر إلغاء الحركة.' });
+      setMessage({ severity: 'error', text: error?.response?.data?.message || error?.message || 'تعذر حذف الحركة.' });
     } finally {
       setBusy(false);
     }
@@ -320,28 +312,6 @@ export default function EmgSiteMovementDetails() {
           </Grid>
         </Grid>
         <Divider sx={{ my: 2 }} />
-        <Stack direction="row" spacing={1} flexWrap="wrap">
-          {canSubmit && (movement.status === 'مسودة' || movement.status === 'مرفوض') && (
-            <Button disabled={busy} onClick={() => action('إرسال')} startIcon={<IconSend size={16} />}>
-              إرسال للمراجعة
-            </Button>
-          )}
-          {canReview && movement.status === 'للمراجعة' && (
-            <>
-              <Button color="success" disabled={busy} onClick={() => action('اعتماد')} startIcon={<IconCheck size={16} />}>
-                اعتماد
-              </Button>
-              <Button color="error" disabled={busy} onClick={() => action('رفض')} startIcon={<IconX size={16} />}>
-                رفض
-              </Button>
-            </>
-          )}
-          {canPost && movement.status === 'معتمد' && (
-            <Button color="secondary" disabled={busy} onClick={() => action('ترحيل')} startIcon={<IconTransfer size={16} />}>
-              ترحيل
-            </Button>
-          )}
-        </Stack>
         {canUpdate && movement.status !== 'محذوف' && (
           <>
             <Divider sx={{ my: 2 }} />
@@ -349,8 +319,7 @@ export default function EmgSiteMovementDetails() {
               <Button disabled={busy} onClick={() => setEditOpen(true)} startIcon={<IconEdit size={16} />}>
                 تصحيح
               </Button>
-              {canCancel && <Button color="error" disabled={busy} onClick={cancel} startIcon={<IconX size={16} />}>إلغاء</Button>}
-              {(movement.status === 'مسودة' || movement.status === 'مرفوض') && <Button color="error" disabled={busy} onClick={remove} startIcon={<IconTrash size={16} />}>حذف</Button>}
+              <Button color="error" disabled={busy} onClick={removePermanently} startIcon={<IconTrash size={16} />}>حذف</Button>
             </Stack>
           </>
         )}

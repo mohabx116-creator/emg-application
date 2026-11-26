@@ -65,10 +65,10 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
         return await db.SiteMovements.AsNoTracking().Where(item => item.Id == movement.Id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 
-    public async Task<SiteMovementSummary?> UpdateAsync(int id, CreateSiteMovementRequest request, int? userId, bool isAdmin, CancellationToken cancellationToken)
+    public async Task<SiteMovementSummary?> UpdateAsync(int id, CreateSiteMovementRequest request, int? userId, bool isAdmin, CancellationToken cancellationToken, bool hasOverridePermission)
     {
         var movement = await db.SiteMovements.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-        if (movement is null || (!isAdmin && (userId is null || !await HasProjectAccessAsync(movement.ProjectId, userId.Value, cancellationToken)))) return null;
+        if (movement is null || (!isAdmin && (userId is null || !await CanManageAsync(movement, userId.Value, hasOverridePermission, cancellationToken)))) return null;
         if (movement.Status == "محذوف" || request.ProjectId != movement.ProjectId) return null;
         if (request.SupplierId is not null && !await db.Suppliers.AnyAsync(item => item.Id == request.SupplierId && item.IsActive, cancellationToken)) return null;
 
@@ -96,18 +96,27 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
         return await db.SiteMovements.AsNoTracking().Where(item => item.Id == id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 
-    public async Task<bool> DeleteAsync(int id, int? userId, bool isAdmin, CancellationToken cancellationToken)
+    public async Task<bool> DeleteAsync(int id, int? userId, bool isAdmin, CancellationToken cancellationToken, bool hasOverridePermission)
     {
         var movement = await db.SiteMovements.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
-        if (movement is null || movement.Status == "مرحّل" || (!isAdmin && (userId is null || !await HasProjectAccessAsync(movement.ProjectId, userId.Value, cancellationToken)))) return false;
-        db.WorkflowActions.Add(new WorkflowAction { EntityType = "site-movement", EntityId = id, Action = "حذف", FromStatus = movement.Status, ToStatus = "محذوف", UserId = userId, Notes = "حذف حركة قبل الترحيل" });
+        if (movement is null || (!isAdmin && (userId is null || !await CanManageAsync(movement, userId.Value, hasOverridePermission, cancellationToken)))) return false;
+        if (await db.AdvanceAllocations.AnyAsync(item => item.SiteMovementId == id, cancellationToken) || await db.ContractorStatementLines.AnyAsync(item => item.SourceEntityType == "site-movement" && item.SourceEntityId == id, cancellationToken)) return false;
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.WorkflowActions.Where(item => item.EntityType == "site-movement" && item.EntityId == id).ExecuteDeleteAsync(cancellationToken);
+        await db.Attachments.Where(item => item.EntityType == "site-movement" && item.EntityId == id).ExecuteDeleteAsync(cancellationToken);
+        db.SecurityAuditLogs.Add(new EMG.Domain.Security.SecurityAuditLog { UserId = userId, Action = "transaction.deleted", EntityType = "site-movement", EntityId = id, Details = "حذف دائم لحركة الموقع." });
         db.SiteMovements.Remove(movement);
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return true;
     }
 
     private async Task<bool> HasProjectAccessAsync(int projectId, int userId, CancellationToken cancellationToken) =>
         await db.UserProjectAssignments.AnyAsync(item => item.ProjectId == projectId && item.UserId == userId && item.IsActive, cancellationToken);
+
+    private async Task<bool> CanManageAsync(SiteMovement movement, int userId, bool hasOverridePermission, CancellationToken cancellationToken) =>
+        await HasProjectAccessAsync(movement.ProjectId, userId, cancellationToken) &&
+        (hasOverridePermission || movement.CreatedByUserId == userId);
 
     private static Expression<Func<SiteMovement, SiteMovementSummary>> ToSummary() => item => new SiteMovementSummary(
         item.Id, item.ProjectId, item.Project.Name, item.SupplierId, item.Supplier == null ? string.Empty : item.Supplier.Name,
