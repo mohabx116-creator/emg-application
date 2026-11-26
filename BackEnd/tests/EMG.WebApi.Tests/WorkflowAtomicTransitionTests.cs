@@ -186,7 +186,7 @@ public sealed class WorkflowAtomicTransitionTests
         private bool IsInitialRead(DbCommand command)
         {
             return command.CommandText.Contains("SELECT", StringComparison.OrdinalIgnoreCase)
-                && command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase)
+                && IsTargetTable(command)
                 && observedCommands.TryAdd(command, 0);
         }
 
@@ -200,17 +200,20 @@ public sealed class WorkflowAtomicTransitionTests
         private async ValueTask WaitForInitialReadsAsync(DbCommand command, CancellationToken cancellationToken)
         {
             if (command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
-                && command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase))
+                && IsTargetTable(command))
                 await readsReleased.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
         }
 
         private void WaitForInitialReads(DbCommand command)
         {
             if (command.CommandText.Contains("UPDATE", StringComparison.OrdinalIgnoreCase)
-                && command.CommandText.Contains($"\"{Table(entityType)}\"", StringComparison.OrdinalIgnoreCase)
+                && IsTargetTable(command)
                 && !readsReleased.Task.Wait(TimeSpan.FromSeconds(15)))
                 throw new TimeoutException($"Timed out waiting for both {entityType} initial reads.");
         }
+
+        private bool IsTargetTable(DbCommand command) =>
+            command.CommandText.Contains(Table(entityType), StringComparison.OrdinalIgnoreCase);
 
         public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result)
         {
