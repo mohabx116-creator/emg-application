@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using ClosedXML.Excel;
 using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
 using Microsoft.AspNetCore.Http;
@@ -66,7 +68,7 @@ public sealed class HistoricalBulkMigrationService(
                 var baseline = new HistoricalMigrationBaseline(preview.Totals
                     .Select(total => new HistoricalOpeningBalanceSeed(total.StreamKey, total.Currency, total.Amount,
                         $"{source.FileName}:{total.StreamKey}"))
-                    .ToArray());
+                    .ToArray(), ExtractContractorNames(path), source.FileName);
                 var committed = await imports.CommitNewProjectAsync(request, actor, cancellationToken, baseline);
                 results.Add(new(source.FileName, source.Sha256, preview.SourceProjectCode, committed.ProjectId, committed.BatchId,
                     "MIGRATED", preview.Records.Count, committed.Counts.Values.Sum(), committed.RetainedRecords,
@@ -109,6 +111,23 @@ public sealed class HistoricalBulkMigrationService(
     {
         await using var stream = File.OpenRead(path);
         return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken)).ToLowerInvariant();
+    }
+
+    private static IReadOnlyList<string> ExtractContractorNames(string path)
+    {
+        using var workbook = new XLWorkbook(path);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cell in workbook.Worksheets.SelectMany(sheet => sheet.CellsUsed()))
+        {
+            if (cell.DataType != XLDataType.Text) continue;
+            var text = cell.GetString().Trim();
+            if (!text.Contains("المقاول", StringComparison.Ordinal)) continue;
+            var match = Regex.Match(text, @"المقاول(?:ين)?\s*[:：]\s*(?<name>.+)$", RegexOptions.CultureInvariant);
+            if (!match.Success) continue;
+            var name = Regex.Replace(match.Groups["name"].Value.Trim(), @"\s+", " ");
+            if (name.Length is > 1 and <= 250 && !name.Contains("حساب", StringComparison.Ordinal)) names.Add(name);
+        }
+        return names.OrderBy(item => item, StringComparer.Ordinal).ToArray();
     }
 
     private static async Task<IReadOnlyList<ManifestRow>> LoadManifestAsync(string root, CancellationToken cancellationToken)

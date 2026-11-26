@@ -10,4 +10,10 @@ public sealed record ProjectSummary(
     string EngineerName,
     int OpenMovements,
     decimal TotalIssued,
-    decimal TotalReceived);
+    decimal TotalReceived)
+{
+    public decimal TotalWorks { get; init; }
+    public decimal TotalPayments { get; init; }
+    public decimal CashBalance { get; init; }
+    public string CashBalanceStatus { get; init; } = "الحساب متوازن";
+}

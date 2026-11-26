@@ -45,8 +45,6 @@ import {
   IconClock,
   IconFolders,
   IconFolderOff,
-  IconArrowUpRight,
-  IconArrowDownLeft,
   IconChevronLeft,
   IconChevronRight,
   IconMapPin,
@@ -64,6 +62,7 @@ import useConfig from 'hooks/useConfig';
 import axios from 'utils/axios';
 import { emgCardSx, emgSurfaceSx } from '../emgCardStyles';
 import { hasPermission } from '../roleAccess';
+import FinancialSummary from '../FinancialSummary';
 
 // currency formatter
 const numberFormat = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
@@ -217,6 +216,8 @@ export default function EmgProjects() {
     const openMovementsTotal = projects.reduce((sum, p) => sum + (p.openMovements || 0), 0);
     const totalIssued = projects.reduce((sum, p) => sum + (p.totalIssued || 0), 0);
     const totalReceived = projects.reduce((sum, p) => sum + (p.totalReceived || 0), 0);
+    const totalWorks = projects.reduce((sum, p) => sum + (p.totalWorks || 0), 0);
+    const totalPayments = projects.reduce((sum, p) => sum + (p.totalPayments || 0), 0);
     const projectsWithMovements = projects.filter((p) => (p.openMovements || 0) > 0).length;
 
     return {
@@ -226,6 +227,8 @@ export default function EmgProjects() {
       openMovementsTotal,
       totalIssued,
       totalReceived,
+      totalWorks,
+      totalPayments,
       projectsWithMovements
     };
   }, [projects]);
@@ -712,15 +715,15 @@ export default function EmgProjects() {
             </Typography>
             <Stack direction="row" spacing={2} sx={{ display: { xs: 'none', md: 'flex' } }}>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                إجمالي الصادر المتاح:{' '}
+                  إجمالي الأعمال المتاح:{' '}
                 <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                  {formatMoney(kpis.totalIssued)}
+                    {formatMoney(kpis.totalWorks)}
                 </Box>
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                إجمالي الوارد المتاح:{' '}
+                  إجمالي الدفعات المتاح:{' '}
                 <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                  {formatMoney(kpis.totalReceived)}
+                    {formatMoney(kpis.totalPayments)}
                 </Box>
               </Typography>
             </Stack>
@@ -971,90 +974,13 @@ export default function EmgProjects() {
                       </Box>
                     </Stack>
 
-                    {/* Financial Summary: صادر and وارد */}
-                    <Box
-                      sx={{
-                        p: 1.75,
-                        mb: 2,
-                        borderRadius: 1.5,
-                        bgcolor: withAlpha(theme.vars.palette.background.default, 0.7),
-                        border: '1px solid',
-                        borderColor: 'divider'
-                      }}
-                    >
-                      <Grid container spacing={2}>
-                        {/* صادر (Outgoing) */}
-                        <Grid size={6}>
-                          <Stack spacing={0.5}>
-                            <Stack direction="row" alignItems="center" spacing={0.5}>
-                              <Avatar
-                                variant="rounded"
-                                sx={{
-                                  width: 20,
-                                  height: 20,
-                                  bgcolor: withAlpha(theme.vars.palette.error.main, 0.1),
-                                  color: theme.vars.palette.error.main
-                                }}
-                              >
-                                <IconArrowUpRight size={13} stroke={2} />
-                              </Avatar>
-                              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                                صادر
-                              </Typography>
-                            </Stack>
-                            <Typography
-                              variant="h4"
-                              sx={{
-                                fontWeight: 700,
-                                fontSize: { xs: '0.825rem', sm: '0.9rem', md: '0.95rem' },
-                                color: 'text.primary',
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis'
-                              }}
-                              title={formatMoney(project.totalIssued)}
-                            >
-                              {formatMoney(project.totalIssued)}
-                            </Typography>
-                          </Stack>
-                        </Grid>
-
-                        {/* وارد (Incoming) */}
-                        <Grid size={6} sx={{ borderRight: isRtl ? '1px dashed' : 'none', borderLeft: !isRtl ? '1px dashed' : 'none', borderColor: 'divider' }}>
-                          <Stack spacing={0.5} sx={{ pl: isRtl ? 0 : 1, pr: isRtl ? 1 : 0 }}>
-                            <Stack direction="row" alignItems="center" spacing={0.5}>
-                              <Avatar
-                                variant="rounded"
-                                sx={{
-                                  width: 20,
-                                  height: 20,
-                                  bgcolor: withAlpha(theme.vars.palette.success.main, 0.1),
-                                  color: theme.vars.palette.success.main
-                                }}
-                              >
-                                <IconArrowDownLeft size={13} stroke={2} />
-                              </Avatar>
-                              <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                                وارد
-                              </Typography>
-                            </Stack>
-                            <Typography
-                              variant="h4"
-                              sx={{
-                                fontWeight: 700,
-                                fontSize: { xs: '0.825rem', sm: '0.9rem', md: '0.95rem' },
-                                color: 'text.primary',
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis'
-                              }}
-                              title={formatMoney(project.totalReceived)}
-                            >
-                              {formatMoney(project.totalReceived)}
-                            </Typography>
-                          </Stack>
-                        </Grid>
-                      </Grid>
+                    <Box sx={{ mb: 2 }}>
+                      <FinancialSummary
+                        totalWorks={project.totalWorks}
+                        totalPayments={project.totalPayments}
+                        cashBalance={project.cashBalance}
+                        cashBalanceStatus={project.cashBalanceStatus}
+                      />
                     </Box>
 
                     {/* Footer Area: Attention Indicator & Action Button */}

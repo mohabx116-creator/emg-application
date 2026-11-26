@@ -11,7 +11,7 @@ public sealed record UniversalNewProjectRequest(string SnapshotId, string Name, 
     string? OwnerName, string? PayerName, string? Location, string? EngineerName,
     Dictionary<string, string>? MappingEvidence, bool ConfirmExcluded);
 
-public sealed record HistoricalMigrationBaseline(IReadOnlyList<HistoricalOpeningBalanceSeed> Streams);
+public sealed record HistoricalMigrationBaseline(IReadOnlyList<HistoricalOpeningBalanceSeed> Streams, IReadOnlyList<string>? ContractorNames = null, string? SourceFileName = null);
 public sealed record HistoricalOpeningBalanceSeed(string StreamKey, string Currency, decimal Amount, string SourceReference);
 
 public sealed record UniversalImportDisposition(string RecordId, string SourceCoordinate, string? Target,
@@ -40,7 +40,7 @@ public sealed partial class ReviewedWorkbookImportService
         var preview = GetNewProjectPreview(request, actor);
         if (!IsNewProjectPostingAllowed(preview)) throw new HistoricalWorkbookPostingDisabledException();
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        var (project, rows) = await PlanNewProjectAsync(request, preview, ct);
+        var (project, rows) = await PlanNewProjectAsync(request, preview, ct, historicalBaseline is not null);
         var accepted = rows.Where(row => row.Disposition.CanImport).ToArray();
         if (accepted.Length == 0) throw new InvalidOperationException("لا توجد حركات مؤهلة للاستيراد.");
         if (!request.ConfirmExcluded && rows.Any(row => !row.Disposition.CanImport && !row.Record.IsSummary))
@@ -71,6 +71,15 @@ public sealed partial class ReviewedWorkbookImportService
                 ActorUserId = actor, Action = "HISTORICAL_OPENING_BALANCES_CAPTURED",
                 DetailsJson = JsonSerializer.Serialize(historicalBaseline.Streams)
             });
+            foreach (var contractorName in historicalBaseline.ContractorNames ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(contractorName) || await db.Contractors.AnyAsync(item => item.IsActive && item.Name == contractorName.Trim(), ct)) continue;
+                db.Contractors.Add(new Contractor
+                {
+                    Name = contractorName.Trim(), IsActive = true, Phone = string.Empty, TaxNumber = string.Empty,
+                    Notes = $"حساب تاريخي مستخرج من {historicalBaseline.SourceFileName ?? preview.FileName}"
+                });
+            }
         }
         var sections = preview.Sections.ToDictionary(section => section.SectionId);
         var entities = new List<(HistoricalImportRecord Record, StagedEvidence Evidence, object Entity)>();
@@ -134,7 +143,7 @@ public sealed partial class ReviewedWorkbookImportService
             throw new KeyNotFoundException("انتهت صلاحية المعاينة أو لا تخص حسابك. أعد رفع الملف.");
 
     private async Task<(Project Project, List<NewProjectRow> Rows)> PlanNewProjectAsync(
-        UniversalNewProjectRequest request, UniversalPreviewResponse preview, CancellationToken ct)
+        UniversalNewProjectRequest request, UniversalPreviewResponse preview, CancellationToken ct, bool allowHistoricalCounterparties = false)
     {
         var code = preview.SourceProjectCode ?? request.Code?.Trim();
         if (string.IsNullOrWhiteSpace(code) || code.Length > 80 || string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 250)
@@ -171,6 +180,22 @@ public sealed partial class ReviewedWorkbookImportService
             var note = corrections.GetValueOrDefault(record.RecordId)?.Trim();
             var duplicate = duplicates.Contains(record.RecordId);
             int? supplierId = null;
+            if (allowHistoricalCounterparties && fields?.Party is { Length: > 0 } party && fields.Target != "AdvancePayment" && !suppliers.ContainsKey(party))
+            {
+                supplierId = await MatchSupplier(party, ct);
+                if (supplierId is null)
+                {
+                    var historicalSupplier = new Supplier
+                    {
+                        Name = party.Trim(), SupplierType = "مورد تاريخي", IsActive = true,
+                        Notes = $"حساب تاريخي مستخرج من {preview.FileName}"
+                    };
+                    db.Suppliers.Add(historicalSupplier);
+                    await db.SaveChangesAsync(ct);
+                    supplierId = historicalSupplier.Id;
+                }
+                suppliers[party] = supplierId;
+            }
             var reason = record.IsSummary || record.RecordType is UniversalRecordType.DerivedValue or UniversalRecordType.Summary
                 ? "قيمة مرجعية للمطابقة."
                 : duplicate ? "تكرار محتمل يحتاج دليلاً مستقلاً."
@@ -185,7 +210,21 @@ public sealed partial class ReviewedWorkbookImportService
             if (reason is null && fields?.Target == "SupplierSupply")
             {
                 if (!suppliers.TryGetValue(fields.Party!, out supplierId))
-                    suppliers[fields.Party!] = supplierId = await MatchSupplier(fields.Party!, ct);
+                {
+                    supplierId = await MatchSupplier(fields.Party!, ct);
+                    if (supplierId is null && allowHistoricalCounterparties)
+                    {
+                        var historicalSupplier = new Supplier
+                        {
+                            Name = fields.Party!.Trim(), SupplierType = "مورد تاريخي", IsActive = true,
+                            Notes = $"حساب تاريخي مستخرج من {preview.FileName}"
+                        };
+                        db.Suppliers.Add(historicalSupplier);
+                        await db.SaveChangesAsync(ct);
+                        supplierId = historicalSupplier.Id;
+                    }
+                    suppliers[fields.Party!] = supplierId;
+                }
                 if (supplierId is null) reason = "اسم المورد لا يطابق مورداً نشطاً واحداً.";
             }
             if (reason is null && fields?.Target == "AdvancePayment" &&

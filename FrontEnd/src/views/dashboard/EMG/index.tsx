@@ -45,6 +45,7 @@ import {
   roleTitle
 } from 'Modules/EMG/roleAccess';
 import { EmgNotification, getEmgNotifications } from 'api/emg';
+import FinancialSummary from 'Modules/EMG/FinancialSummary';
 
 const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
 const fmt = (value: number) => `${money.format(value || 0)} ج.م`;
@@ -420,17 +421,16 @@ export default function EmgDashboard() {
       ? 'تعذر تحميل بعض المؤشرات المالية. راجع صلاحيات الحساب أو افتح المشاريع مباشرة.'
       : null;
 
-  if (engineerView) {
-    return <EngineerMobileDashboard />;
-  }
-
   const totals = useMemo(
     () => ({
       incoming: advances.reduce((x, a) => x + a.amount, 0),
       due: advances.reduce((x, a) => x + a.dueFromPayer, 0),
       supplierRemaining: suppliers.reduce((x, s) => x + s.remaining, 0),
       openMovements: projects.reduce((x, p) => x + p.openMovements, 0),
-      activeProjects: projects.filter((p) => p.status === 'نشط').length
+        activeProjects: projects.filter((p) => p.status === 'نشط').length,
+        totalWorks: projects.reduce((x, p) => x + (p.totalWorks || 0), 0),
+        totalPayments: projects.reduce((x, p) => x + (p.totalPayments || 0), 0),
+        cashBalance: projects.reduce((x, p) => x + (p.cashBalance || 0), 0)
     }),
     [advances, suppliers, projects]
   );
@@ -552,6 +552,10 @@ export default function EmgDashboard() {
     totals.openMovements
   ]);
 
+  if (engineerView) {
+    return <EngineerMobileDashboard />;
+  }
+
   if (loading) return <DashboardSkeleton />;
 
   const hasFinancialAccess = (canReadAdvances || canReadSuppliers) && !engineerView;
@@ -615,6 +619,17 @@ export default function EmgDashboard() {
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
+      )}
+
+      {canReadProjects && (
+        <Box sx={{ mb: 2.5 }}>
+          <FinancialSummary
+            totalWorks={totals.totalWorks}
+            totalPayments={totals.totalPayments}
+            cashBalance={totals.cashBalance}
+            cashBalanceStatus={totals.cashBalance > 0 ? 'العميل له فلوس' : totals.cashBalance < 0 ? 'لنا مستحقات لدى العميل' : 'الحساب متوازن'}
+          />
+        </Box>
       )}
 
       {isGeneralUserWithoutProjects && (
@@ -804,14 +819,14 @@ export default function EmgDashboard() {
                         </Stack>
 
                         {hasFinancialAccess && (
-                          <Stack direction="row" spacing={2.5} sx={{ mt: 1.25, fontVariantNumeric: 'tabular-nums' }}>
-                            <Typography variant="caption" sx={{ color: 'success.dark', fontWeight: 700 }}>
-                              وارد: {fmt(project.totalReceived)}
-                            </Typography>
-                            <Typography variant="caption" sx={{ color: 'text.primary', fontWeight: 600 }}>
-                              صادر: {fmt(project.totalIssued)}
-                            </Typography>
-                          </Stack>
+                          <Box sx={{ mt: 1.25 }}>
+                            <FinancialSummary
+                              totalWorks={project.totalWorks}
+                              totalPayments={project.totalPayments}
+                              cashBalance={project.cashBalance}
+                              cashBalanceStatus={project.cashBalanceStatus}
+                            />
+                          </Box>
                         )}
 
                         <Divider sx={{ my: 1.25 }} />

@@ -2,12 +2,9 @@ import { ReactNode, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
-  Avatar,
   Box,
   Breadcrumbs,
   Button,
-  Card,
-  CardContent,
   Chip,
   Dialog,
   DialogContent,
@@ -28,17 +25,14 @@ import {
 } from '@mui/material';
 import {
   IconArrowRight,
-  IconCheck,
-  IconClock,
-  IconListDetails,
   IconPlus,
-  IconReceipt,
   IconRefresh,
   IconSearch,
   IconX
 } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import { EmgProject } from 'api/emg';
+import FinancialSummary from './FinancialSummary';
 import { useActiveProject } from 'contexts/ActiveProjectContext';
 import useAuth from 'hooks/useAuth';
 import { hasPermission } from './roleAccess';
@@ -145,6 +139,9 @@ export default function WorkSectionShell({
   onCloseCreateModal,
   createModalContent
 }: WorkSectionShellProps) {
+  void totalAmount;
+  void approvedCount;
+  void pendingCount;
   const theme = useTheme();
   const downSM = useMediaQuery(theme.breakpoints.down('sm'));
   const navigate = useNavigate();
@@ -281,104 +278,14 @@ export default function WorkSectionShell({
         </Alert>
       )}
 
-      {/* Tier 1: Berry Signature Summary KPIs */}
-      <Grid container spacing={2} sx={{ mb: 2.5 }}>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card
-            sx={{
-              height: '100%',
-              borderRadius: 3,
-              color: '#fff',
-              background: 'linear-gradient(135deg, #0d47a1 0%, #1e88e5 100%)',
-              boxShadow: '0 10px 24px rgba(13, 71, 161, 0.2)'
-            }}
-          >
-            <CardContent sx={{ p: 2.25, '&:last-child': { pb: 2.25 } }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.84)', fontWeight: 700 }}>
-                    إجمالي قيمة القسم
-                  </Typography>
-                  <Typography variant="h3" sx={{ color: '#fff', fontWeight: 900, mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                    {formatWorkMoney(totalAmount)}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', width: 44, height: 44 }}>
-                  <IconReceipt size={22} />
-                </Avatar>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card
-            sx={{
-              height: '100%',
-              borderRadius: 3,
-              color: '#fff',
-              background: 'linear-gradient(135deg, #311b92 0%, #7e57c2 100%)',
-              boxShadow: '0 10px 24px rgba(49, 27, 146, 0.2)'
-            }}
-          >
-            <CardContent sx={{ p: 2.25, '&:last-child': { pb: 2.25 } }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.84)', fontWeight: 700 }}>
-                    عدد السجلات
-                  </Typography>
-                  <Typography variant="h2" sx={{ color: '#fff', fontWeight: 900, mt: 0.5 }}>
-                    {totalCount}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', width: 44, height: 44 }}>
-                  <IconListDetails size={22} />
-                </Avatar>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card variant="outlined" sx={{ height: '100%', borderRadius: 3 }}>
-            <CardContent sx={{ p: 2.25, '&:last-child': { pb: 2.25 } }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                    معتمد / مرحّل
-                  </Typography>
-                  <Typography variant="h2" sx={{ fontWeight: 900, mt: 0.5, color: 'success.main' }}>
-                    {approvedCount}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'rgba(16, 185, 129, 0.14)', color: 'success.main', width: 44, height: 44 }}>
-                  <IconCheck size={22} />
-                </Avatar>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card variant="outlined" sx={{ height: '100%', borderRadius: 3 }}>
-            <CardContent sx={{ p: 2.25, '&:last-child': { pb: 2.25 } }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                    مسودة / قيد المراجعة
-                  </Typography>
-                  <Typography variant="h2" sx={{ fontWeight: 900, mt: 0.5, color: pendingCount ? 'warning.dark' : 'text.primary' }}>
-                    {pendingCount}
-                  </Typography>
-                </Box>
-                <Avatar sx={{ bgcolor: 'rgba(217, 119, 6, 0.14)', color: 'warning.dark', width: 44, height: 44 }}>
-                  <IconClock size={22} />
-                </Avatar>
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      <Box sx={{ mb: 2.5 }}>
+        <FinancialSummary
+          totalWorks={project.totalWorks}
+          totalPayments={project.totalPayments}
+          cashBalance={project.cashBalance}
+          cashBalanceStatus={project.cashBalanceStatus}
+        />
+      </Box>
 
       {/* Tier 2: Full-Width Records Table Card */}
       <MainCard content={false} sx={{ borderRadius: 3, overflow: 'hidden' }}>

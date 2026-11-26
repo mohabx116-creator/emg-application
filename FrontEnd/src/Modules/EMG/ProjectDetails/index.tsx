@@ -6,8 +6,6 @@ import {
   Box,
   Breadcrumbs,
   Button,
-  Card,
-  CardContent,
   Chip,
   Dialog,
   DialogActions,
@@ -32,13 +30,9 @@ import {
   IconArrowRight,
   IconBuilding,
   IconChartBar,
-  IconCircleCheck,
   IconDownload,
-  IconFileAnalytics,
   IconMapPin,
-  IconReceipt,
   IconSearch,
-  IconTool,
   IconUser
 } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
@@ -58,6 +52,7 @@ import useConfig from 'hooks/useConfig';
 import { useActiveProject } from 'contexts/ActiveProjectContext';
 import { formatEmgMoney } from 'utils/emgFormatting';
 import { hasPermission } from '../roleAccess';
+import FinancialSummary from '../FinancialSummary';
 
 const formatMoney = (value: number | null | undefined) => formatEmgMoney(value);
 const formatDate = (value: string) => new Intl.DateTimeFormat('ar-EG', { dateStyle: 'medium' }).format(new Date(value));
@@ -70,82 +65,6 @@ const workSections = [
   { path: 'steel', permission: 'steel.view', ar: 'الحديد', en: 'Steel' },
   { path: 'finishing', permission: 'finishing.view', ar: 'التشطيبات', en: 'Finishing' }
 ];
-
-function GradientKpiCard({
-  label,
-  value,
-  icon,
-  variant = 'blue'
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  variant?: 'blue' | 'purple';
-}) {
-  const gradient =
-    variant === 'purple'
-      ? 'linear-gradient(135deg, #311b92 0%, #5e35b1 55%, #7e57c2 100%)'
-      : 'linear-gradient(135deg, #0d47a1 0%, #1565c0 55%, #1e88e5 100%)';
-
-  return (
-    <Card
-      sx={{
-        height: '100%',
-        borderRadius: 3,
-        color: '#fff',
-        background: gradient,
-        boxShadow: variant === 'purple' ? '0 10px 24px rgba(49, 27, 146, 0.22)' : '0 10px 24px rgba(13, 71, 161, 0.22)'
-      }}
-    >
-      <CardContent sx={{ p: 2.25, '&:last-child': { pb: 2.25 } }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.84)', fontWeight: 700 }}>
-              {label}
-            </Typography>
-            <Typography variant="h3" sx={{ mt: 0.6, color: '#fff', fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>
-              {value}
-            </Typography>
-          </Box>
-          <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', width: 44, height: 44, flexShrink: 0 }}>{icon}</Avatar>
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-}
-
-function SolidMetricCard({
-  label,
-  value,
-  tone,
-  icon
-}: {
-  label: string;
-  value: string;
-  tone: 'error' | 'warning';
-  icon: React.ReactNode;
-}) {
-  const accent = tone === 'error' ? 'error.main' : 'warning.dark';
-  const softBg = tone === 'error' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(217, 119, 6, 0.14)';
-
-  return (
-    <Card variant="outlined" sx={{ height: '100%', borderRadius: 3, bgcolor: 'background.paper' }}>
-      <CardContent sx={{ p: 2.25, '&:last-child': { pb: 2.25 } }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-              {label}
-            </Typography>
-            <Typography variant="h3" sx={{ mt: 0.6, color: accent, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>
-              {value}
-            </Typography>
-          </Box>
-          <Avatar sx={{ bgcolor: softBg, color: accent, width: 44, height: 44, flexShrink: 0 }}>{icon}</Avatar>
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-}
 
 function ProjectSkeleton() {
   return (
@@ -501,25 +420,12 @@ function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic:
       ) : (
         account && (
           <Stack spacing={1.5} sx={{ mt: 1.5 }}>
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                <SolidMetricCard label="إجمالي الصادر" value={formatMoney(account.totalOutgoing ?? 0)} tone="error" icon={<IconTool size={22} />} />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                <GradientKpiCard label="إجمالي الدفعات" value={formatMoney(account.totalIncoming)} icon={<IconReceipt size={22} />} variant="blue" />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                <SolidMetricCard
-                  label={`أتعاب المكتب (${account.officeSharePercentage}%)`}
-                  value={verifiedBalance(account.officeShareAmount)}
-                  tone="warning"
-                  icon={<IconFileAnalytics size={22} />}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                <GradientKpiCard label="صافي المشروع بعد أتعاب المكتب" value={verifiedBalance(account.netAfterOfficeShare)} icon={<IconCircleCheck size={22} />} variant="purple" />
-              </Grid>
-            </Grid>
+            <FinancialSummary
+              totalWorks={account.totalWorks ?? account.totalOutgoing ?? 0}
+              totalPayments={account.totalPayments ?? account.totalIncoming ?? 0}
+              cashBalance={account.cashBalance ?? 0}
+              cashBalanceStatus={account.cashBalanceStatus ?? 'الحساب متوازن'}
+            />
 
             <MainCard sx={{ borderRadius: 3 }} content={false}>
               <Grid container sx={{ p: 1.5 }} spacing={1.5}>

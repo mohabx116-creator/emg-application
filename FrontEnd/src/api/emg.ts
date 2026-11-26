@@ -11,6 +11,10 @@ export type EmgProject = {
   openMovements: number;
   totalIssued: number;
   totalReceived: number;
+  totalWorks: number;
+  totalPayments: number;
+  cashBalance: number;
+  cashBalanceStatus: string;
 };
 
 export type EmgWorkbookSheetPreview = {
@@ -63,6 +67,10 @@ export type EmgFinalAccount = {
   hasUnresolvedImportRecords?: boolean;
   outgoingByCategory?: Record<string, number>;
   incomingByCategory?: Record<string, number>;
+  totalWorks?: number;
+  totalPayments?: number;
+  cashBalance?: number;
+  cashBalanceStatus?: string;
 };
 
 export type EmgProjectReport = {
