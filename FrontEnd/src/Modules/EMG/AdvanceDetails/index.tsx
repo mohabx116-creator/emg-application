@@ -8,6 +8,7 @@ import {
   CardContent,
   CircularProgress,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
@@ -19,23 +20,22 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { IconArrowRight, IconCheck, IconDownload, IconEye, IconFile, IconPlus, IconSend, IconTransfer, IconX } from '@tabler/icons-react';
+import { IconArrowRight, IconDownload, IconEdit, IconEye, IconFile, IconPlus, IconTrash } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import {
   allocateEmgAdvance,
+  correctEmgTransaction,
+  deleteEmgTransaction,
   downloadEmgAttachment,
   EmgAdvance,
   EmgAdvanceAllocation,
   EmgAttachment,
   EmgProjectReport,
-  EmgWorkflowAudit,
   getEmgAdvance,
   getEmgAdvanceAllocations,
   getEmgAttachmentPreviewUrl,
   getEmgAttachments,
   getEmgProjectReport,
-  getEmgWorkflowAudit,
-  executeEmgWorkflow,
   uploadEmgAttachment
 } from 'api/emg';
 import useAuth from 'hooks/useAuth';
@@ -48,13 +48,9 @@ export default function AdvanceDetails() {
   const id = Number(advanceId);
   const { user } = useAuth();
   const canAllocate = user?.permissions?.includes('advances.allocate');
-  const canSubmit = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('advances.submit');
-  const canApprove = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('advances.approve');
-  const canPost = user?.permissions?.includes('workflow.execute') || user?.permissions?.includes('advances.post');
   const [advance, setAdvance] = useState<EmgAdvance | null>(null);
   const [report, setReport] = useState<EmgProjectReport | null>(null);
   const [allocations, setAllocations] = useState<EmgAdvanceAllocation[]>([]);
-  const [audit, setAudit] = useState<EmgWorkflowAudit | null>(null);
   const [attachments, setAttachments] = useState<EmgAttachment[]>([]);
   const [targetType, setTargetType] = useState('movement');
   const [targetId, setTargetId] = useState('');
@@ -67,14 +63,14 @@ export default function AdvanceDetails() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ clientName: '', payerName: '', amount: '', paymentDate: '', paymentMethod: '', reference: '', notes: '' });
   const load = () =>
-    Promise.all([getEmgAdvance(id), getEmgAdvanceAllocations(id), getEmgAttachments('advance-payment', id).catch(() => []), getEmgWorkflowAudit('advance-payment', id).catch(() => null)])
-      .then(async ([a, al, files, auditResult]) => {
+    Promise.all([getEmgAdvance(id), getEmgAdvanceAllocations(id), getEmgAttachments('advance-payment', id).catch(() => [])])
+      .then(async ([a, al, files]) => {
         setAdvance(a);
         setAllocations(al);
         setAttachments(files);
-        setAudit(auditResult);
         if (a) setReport(await getEmgProjectReport(a.projectId));
       })
       .catch(() => setMessage({ severity: 'error', text: 'تعذر تحميل تفاصيل الدفعة.' }));
@@ -136,19 +132,9 @@ export default function AdvanceDetails() {
       setUploading(false);
     }
   };
-  const runWorkflow = async (actionName: string) => {
-    setWorkflowBusy(true);
-    setMessage(null);
-    try {
-      await executeEmgWorkflow('advance-payment', id, actionName);
-      setMessage({ severity: 'success', text: `تم تنفيذ إجراء ${actionName} على الدفعة.` });
-      await load();
-    } catch (error: any) {
-      setMessage({ severity: 'error', text: error?.message || `تعذر تنفيذ إجراء ${actionName}.` });
-    } finally {
-      setWorkflowBusy(false);
-    }
-  };
+  const openEdit = () => { if (!advance) return; setEditForm({ clientName: advance.clientName, payerName: advance.payerName, amount: String(advance.amount), paymentDate: advance.paymentDate.slice(0, 10), paymentMethod: advance.paymentMethod, reference: advance.reference || '', notes: advance.notes || '' }); setEditOpen(true); };
+  const saveEdit = async (event: FormEvent) => { event.preventDefault(); try { await correctEmgTransaction('advance-payment', id, { ...editForm, amount: Number(editForm.amount) }, 'تصحيح مباشر'); setEditOpen(false); setMessage({ severity: 'success', text: 'تم حفظ تصحيح الدفعة.' }); await load(); } catch (error: any) { setMessage({ severity: 'error', text: error?.message || 'تعذر تصحيح الدفعة.' }); } };
+  const remove = async () => { if (!window.confirm('سيتم حذف الدفعة نهائيًا. هل تريد المتابعة؟')) return; try { await deleteEmgTransaction('advance-payment', id); window.location.assign('/emg/advances'); } catch (error: any) { setMessage({ severity: 'error', text: error?.message || 'تعذر حذف الدفعة. قد توجد تخصيصات مرتبطة بها.' }); } };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!Number.isFinite(allocationAmount) || allocationAmount <= 0 || targetWarning) {
@@ -196,35 +182,21 @@ export default function AdvanceDetails() {
             {advance.projectName} · الدافع: {advance.payerName || 'غير محدد'}
           </Typography>
         </Box>
-        <Button component={Link} to="/emg/advances" endIcon={<IconArrowRight size={18} />} variant="outlined" sx={{ gap: 0.75 }}>
-          كل الدفعات
-        </Button>
+        <Stack direction="row" spacing={1}><Button onClick={openEdit} variant="outlined" startIcon={<IconEdit size={17} />}>تعديل</Button><Button onClick={() => void remove()} color="error" variant="outlined" startIcon={<IconTrash size={17} />}>حذف</Button><Button component={Link} to="/emg/advances" endIcon={<IconArrowRight size={18} />} variant="outlined" sx={{ gap: 0.75 }}>كل الدفعات</Button></Stack>
       </Stack>
       <Card sx={{ mb: 2 }}>
         <CardContent>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}>
             <Box>
               <Typography fontWeight={700}>حالة الدفعة: {advance.status}</Typography>
-              <Typography variant="body2" color="text.secondary">تمر الدفعة بمراحل التسجيل ثم المراجعة والاعتماد والترحيل قبل توزيعها.</Typography>
+              <Typography variant="body2" color="text.secondary">تُسجّل الدفعة مباشرة، ويمكن تصحيحها أو حذفها وفق ملكية السجل ونطاق المشروع.</Typography>
             </Box>
-            <Stack direction="row" spacing={1} flexWrap="wrap">
-              {canSubmit && (advance.status === 'مسودة' || advance.status === 'مرفوض') && <Button size="small" variant="contained" disabled={workflowBusy} onClick={() => void runWorkflow('إرسال')} startIcon={<IconSend size={15} />}>إرسال للمراجعة</Button>}
-              {canApprove && advance.status === 'للمراجعة' && <><Button size="small" color="success" variant="contained" disabled={workflowBusy || Boolean(audit?.blockingChecks.length)} onClick={() => void runWorkflow('اعتماد')} startIcon={<IconCheck size={15} />}>اعتماد</Button><Button size="small" color="error" variant="outlined" disabled={workflowBusy} onClick={() => void runWorkflow('رفض')} startIcon={<IconX size={15} />}>رفض</Button></>}
-              {canPost && advance.status === 'معتمد' && <Button size="small" color="secondary" variant="contained" disabled={workflowBusy || Boolean(audit?.blockingChecks.length)} onClick={() => void runWorkflow('ترحيل')} startIcon={<IconTransfer size={15} />}>ترحيل</Button>}
-            </Stack>
           </Stack>
         </CardContent>
       </Card>
       {message && (
         <Alert severity={message.severity} sx={{ mb: 2 }}>
           {message.text}
-        </Alert>
-      )}
-      {audit && (audit.blockingChecks.length > 0 || audit.warnings.length > 0) && (
-        <Alert severity={audit.blockingChecks.length > 0 ? 'error' : 'warning'} sx={{ mb: 2 }}>
-          <Typography fontWeight={700} sx={{ mb: 0.5 }}>نتيجة مراجعة الدفعة</Typography>
-          {audit.blockingChecks.map((check) => <Typography key={`advance-block-${check}`} variant="body2">• {check}</Typography>)}
-          {audit.warnings.map((warning) => <Typography key={`advance-warning-${warning}`} variant="body2">• تنبيه: {warning}</Typography>)}
         </Alert>
       )}
       <MainCard>
@@ -424,6 +396,19 @@ export default function AdvanceDetails() {
           </MainCard>
         </Grid>
       </Grid>
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>تعديل الدفعة</DialogTitle>
+        <DialogContent dividers><Stack component="form" id="advance-edit-form" spacing={2} sx={{ pt: 1 }} onSubmit={saveEdit}>
+          <TextField label="اسم العميل" value={editForm.clientName} onChange={(e) => setEditForm({ ...editForm, clientName: e.target.value })} />
+          <TextField label="اسم الدافع" value={editForm.payerName} onChange={(e) => setEditForm({ ...editForm, payerName: e.target.value })} />
+          <TextField required type="number" label="قيمة الدفعة" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })} />
+          <TextField required type="date" label="تاريخ الدفع" value={editForm.paymentDate} onChange={(e) => setEditForm({ ...editForm, paymentDate: e.target.value })} InputLabelProps={{ shrink: true }} />
+          <TextField label="طريقة الدفع" value={editForm.paymentMethod} onChange={(e) => setEditForm({ ...editForm, paymentMethod: e.target.value })} />
+          <TextField label="المرجع" value={editForm.reference} onChange={(e) => setEditForm({ ...editForm, reference: e.target.value })} />
+          <TextField label="ملاحظات" multiline minRows={2} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+        </Stack></DialogContent>
+        <DialogActions><Button onClick={() => setEditOpen(false)}>إلغاء</Button><Button type="submit" form="advance-edit-form" variant="contained">حفظ</Button></DialogActions>
+      </Dialog>
       <Dialog open={Boolean(previewFile)} onClose={closePreview} fullWidth maxWidth="lg">
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
           {previewFile?.originalFileName}

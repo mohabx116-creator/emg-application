@@ -58,7 +58,7 @@ public sealed class SiteMovementsController(ISiteMovementsService siteMovementsS
             ? NoContent()
             : BadRequest(new { message = "لا يمكن حذف الحركة: لا تملك الصلاحية أو توجد اعتماديات مالية تابعة." });
 
-private bool IsAdmin() => HttpContext?.User?.IsInRole("admin") == true || HttpContext?.User?.IsInRole("director") == true;
+    private bool IsAdmin() => HttpContext?.User?.IsInRole("admin") == true;
     private int? CurrentUserId() => HttpContext?.User is not null && int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
     private async Task<bool> HasPermissionAsync(string code) => CurrentUserId() is int userId && await db.UserRoles.Where(link => link.UserId == userId && link.User.IsActive).AnyAsync(link => link.Role.Name == "admin" || link.Role.RolePermissions.Any(permission => permission.Permission.Code == code));
 }

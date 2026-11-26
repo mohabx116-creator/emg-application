@@ -121,4 +121,30 @@ public sealed class DirectPostingTests
         Assert.Null(await service.DeleteAsync("site-movement", movement.Id, 7, true, false, CancellationToken.None));
         Assert.NotNull(await db.SiteMovements.SingleOrDefaultAsync(x => x.Id == movement.Id));
     }
+
+    [Fact]
+    public async Task CorrectionCannotLowerAdvanceBelowExistingAllocations()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<EmgDbContext>().UseSqlite(connection).Options;
+        await using var db = new EmgDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        db.Users.Add(new AppUser { Id = 7, UserName = "advance-owner", Email = "advance-owner@example.test", DisplayName = "Advance owner", PasswordHash = "test-hash" });
+        var project = new Project { Name = "Advance correction QA", Code = "ADV-CORRECTION-QA" };
+        db.Projects.Add(project);
+        await db.SaveChangesAsync();
+        db.UserProjectAssignments.Add(new UserProjectAssignment { UserId = 7, ProjectId = project.Id, IsActive = true });
+        var advance = new AdvancePayment { ProjectId = project.Id, ClientName = "Client", PayerName = "Payer", Amount = 100m, Status = "مرحّل", CreatedByUserId = 7 };
+        db.AdvancePayments.Add(advance);
+        await db.SaveChangesAsync();
+        db.AdvanceAllocations.Add(new AdvanceAllocation { AdvancePaymentId = advance.Id, AccountCategory = "الموقع", Amount = 75m });
+        await db.SaveChangesAsync();
+
+        using var document = JsonDocument.Parse("{\"Amount\":50}");
+        var service = new TransactionCorrectionService(db);
+        await Assert.ThrowsAsync<TransactionValidationException>(() => service.CorrectAsync("advance-payment", advance.Id,
+            new TransactionCorrectionRequest(document.RootElement.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.Clone()), ""), 7, false, false, CancellationToken.None));
+        Assert.Equal(100m, await db.AdvancePayments.Where(x => x.Id == advance.Id).Select(x => x.Amount).SingleAsync());
+    }
 }

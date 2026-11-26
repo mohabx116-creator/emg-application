@@ -27,6 +27,7 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         if (userId is null || request is null) return null;
         var type = Normalize(entityType);
         if (!EditableProperties.ContainsKey(type)) return null;
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var record = await FindAsync(type, entityId, cancellationToken);
         if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasCorrectionPermission, cancellationToken) || IsCancelled(record)) return null;
         if (!ValidateValues(type, request.Values, out var validation)) throw new TransactionValidationException(validation!);
@@ -34,10 +35,11 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         var before = Capture(record, EditableProperties[type]);
         Apply(record, request.Values, EditableProperties[type]);
         Recalculate(record, type);
+        var dependencyError = await ValidateFinancialDependenciesAsync(type, record, entityId, cancellationToken);
+        if (dependencyError is not null) throw new TransactionValidationException([dependencyError]);
         var after = Capture(record, EditableProperties[type]);
         if (JsonSerializer.Serialize(before) == JsonSerializer.Serialize(after)) return null;
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         db.SecurityAuditLogs.Add(new EMG.Domain.Security.SecurityAuditLog
         {
             UserId = userId, Action = "transaction.corrected", EntityType = type, EntityId = entityId,
@@ -107,6 +109,48 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
         if (type == "supplier-payment" && await db.AdvanceAllocations.AnyAsync(x => x.SupplierPaymentId == id, cancellationToken)) return true;
         if (type == "site-movement" && await db.AdvanceAllocations.AnyAsync(x => x.SiteMovementId == id, cancellationToken)) return true;
         return await db.ContractorStatementLines.AnyAsync(x => x.SourceEntityType == type && x.SourceEntityId == id, cancellationToken);
+    }
+
+    private async Task<string?> ValidateFinancialDependenciesAsync(string type, object record, int id, CancellationToken cancellationToken)
+    {
+        var amount = record.GetType().GetProperty("Amount")?.GetValue(record) as decimal?;
+        var total = record.GetType().GetProperty("TotalAmount")?.GetValue(record) as decimal?;
+        if (amount is < 0 || total is < 0)
+        {
+            return "لا يمكن تسجيل قيمة مالية سالبة.";
+        }
+        if (type == "advance-payment")
+        {
+            var allocated = await db.AdvanceAllocations.Where(x => x.AdvancePaymentId == id).SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
+            if ((amount ?? 0m) < allocated)
+            {
+                return "قيمة الدفعة لا يمكن أن تقل عن إجمالي التخصيصات الحالية.";
+            }
+        }
+        if (type == "supplier-supply")
+        {
+            var paid = await db.SupplierPayments.Where(x => x.SupplyId == id && (x.Status == "معتمد" || x.Status == "مرحّل"))
+                .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
+            if ((total ?? 0m) < paid)
+            {
+                return "إجمالي التوريدة لا يمكن أن يقل عن الدفعات المسجلة عليها.";
+            }
+        }
+        if (type == "supplier-payment")
+        {
+            var supplyId = (int?)record.GetType().GetProperty("SupplyId")?.GetValue(record);
+            if (supplyId is not null)
+            {
+                var supplyTotal = await db.SupplierSupplies.Where(x => x.Id == supplyId).Select(x => (decimal?)x.TotalAmount).SingleOrDefaultAsync(cancellationToken) ?? 0m;
+                var otherPayments = await db.SupplierPayments.Where(x => x.SupplyId == supplyId && x.Id != id && (x.Status == "معتمد" || x.Status == "مرحّل"))
+                    .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
+                if ((amount ?? 0m) > supplyTotal - otherPayments)
+                {
+                    return "قيمة الدفع تتجاوز المتبقي على التوريدة.";
+                }
+            }
+        }
+        return null;
     }
 
     private static bool ValidateValues(string type, IReadOnlyDictionary<string, JsonElement> values, out IReadOnlyList<string>? errors)

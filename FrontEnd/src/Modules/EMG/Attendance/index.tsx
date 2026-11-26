@@ -20,9 +20,9 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { IconCalendar, IconClock, IconLogin, IconLogout, IconRefresh, IconUserCheck } from '@tabler/icons-react';
+import { IconCalendar, IconClock, IconLogin, IconLogout, IconRefresh, IconTrash, IconUserCheck } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
-import { checkInAttendance, checkOutAttendance, EmgAttendance as AttendanceRecord, getEmgAttendance, getTodayAttendance } from 'api/emg';
+import { checkInAttendance, checkOutAttendance, deleteEmgTransaction, EmgAttendance as AttendanceRecord, getEmgAttendance, getTodayAttendance } from 'api/emg';
 
 const formatTime = (value: string | null) =>
   value ? new Date(value).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—';
@@ -81,6 +81,12 @@ export default function EmgAttendance() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const remove = async (record: AttendanceRecord) => {
+    if (!window.confirm('سيتم حذف سجل الحضور نهائيًا. هل تريد المتابعة؟')) return;
+    try { await deleteEmgTransaction('attendance', record.id); setMessage({ severity: 'success', text: 'تم حذف سجل الحضور.' }); load(selectedDate); }
+    catch { setMessage({ severity: 'warning', text: 'تعذر حذف سجل الحضور.' }); }
   };
 
   const paginatedRecords = useMemo(
@@ -300,12 +306,13 @@ export default function EmgAttendance() {
                     <TableCell sx={{ fontWeight: 800 }}>الحضور</TableCell>
                     <TableCell sx={{ fontWeight: 800 }}>الانصراف</TableCell>
                     <TableCell sx={{ fontWeight: 800 }}>الحالة</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>إجراء</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {paginatedRecords.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
+                      <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
                         <Typography color="text.secondary" sx={{ fontWeight: 600 }}>
                           لا توجد سجلات حضور لهذا التاريخ.
                         </Typography>
@@ -325,6 +332,7 @@ export default function EmgAttendance() {
                             sx={{ fontWeight: 700 }}
                           />
                         </TableCell>
+                        <TableCell><Button size="small" color="error" onClick={() => void remove(record)} startIcon={<IconTrash size={15} />}>حذف</Button></TableCell>
                       </TableRow>
                     ))
                   )}

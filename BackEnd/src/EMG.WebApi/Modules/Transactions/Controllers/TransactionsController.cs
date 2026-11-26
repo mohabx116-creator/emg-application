@@ -36,7 +36,7 @@ public sealed class TransactionsController(ITransactionCorrectionService service
     [HttpPost("{entityType}/{entityId:int}/cancel")]
     public Task<ActionResult<TransactionOperationResult>> CancelCompatibility(string entityType, int entityId, TransactionCancellationRequest _, CancellationToken cancellationToken) => Delete(entityType, entityId, cancellationToken);
 
-    private bool GlobalAccess() => User.IsInRole("admin") || User.IsInRole("director");
+    private bool GlobalAccess() => User.IsInRole("admin");
     private int? CurrentUserId() => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
     private async Task<bool> HasPermissionAsync(string code) => CurrentUserId() is int userId && await db.UserRoles
         .Where(link => link.UserId == userId && link.User.IsActive)

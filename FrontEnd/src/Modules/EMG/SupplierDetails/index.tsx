@@ -22,11 +22,12 @@ import {
   TextField,
   Typography
 } from '@mui/material';
-import { IconArrowRight, IconCash, IconPlus, IconReceipt, IconTruckDelivery } from '@tabler/icons-react';
+import { IconArrowRight, IconCash, IconPlus, IconReceipt, IconTrash, IconTruckDelivery } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import AttachmentGallery from 'ui-component/emg/AttachmentGallery';
 import {
-  correctEmgSupply,
+  correctEmgTransaction,
+  deleteEmgTransaction,
   createEmgSupplierPayment,
   createEmgSupply,
   EmgProject,
@@ -39,7 +40,6 @@ import {
   getEmgSupplierPayments,
   getEmgSupplierSupplies,
   getEmgWorkflowAudit,
-  executeEmgWorkflow,
   uploadEmgAttachment
 } from 'api/emg';
 import useAuth from 'hooks/useAuth';
@@ -50,6 +50,7 @@ const today = new Date().toISOString().slice(0, 10);
 
 type WorkflowTarget = { type: 'supplier-supply'; id: number; supply: EmgSupply } | { type: 'supplier-payment'; id: number };
 type CorrectionFields = { supplyType: string; itemName: string; unit: string; quantity: string; unitPrice: string; invoiceNumber: string };
+type PaymentCorrectionFields = { amount: string; paymentDate: string; paymentMethod: string; reference: string; notes: string };
 
 export default function SupplierDetails() {
   const { supplierId } = useParams();
@@ -68,9 +69,8 @@ export default function SupplierDetails() {
   const [workflowAudit, setWorkflowAudit] = useState<EmgWorkflowAudit | null>(null);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [workflowError, setWorkflowError] = useState('');
-  const [rejecting, setRejecting] = useState(false);
-  const [rejection, setRejection] = useState('');
   const [correction, setCorrection] = useState<CorrectionFields | null>(null);
+  const [paymentCorrection, setPaymentCorrection] = useState<PaymentCorrectionFields | null>(null);
   const [message, setMessage] = useState<{ severity: 'success' | 'warning' | 'error'; text: string } | null>(null);
   const [supplyAttachment, setSupplyAttachment] = useState<File | null>(null);
   const [paymentAttachment, setPaymentAttachment] = useState<File | null>(null);
@@ -210,25 +210,9 @@ export default function SupplierDetails() {
   const openWorkflow = (target: WorkflowTarget) => {
     setWorkflowAudit(null);
     setWorkflowError('');
-    setRejecting(false);
-    setRejection('');
     setCorrection(null);
+    setPaymentCorrection(null);
     setWorkflowTarget(target);
-  };
-  const runWorkflow = async (action: string) => {
-    if (!workflowTarget || workflowBusy) return;
-    setWorkflowError('');
-    setWorkflowBusy(true);
-    try {
-      await executeEmgWorkflow(workflowTarget.type, workflowTarget.id, action, action === 'رفض' ? rejection.trim() : undefined);
-      setWorkflowTarget(null);
-      setMessage({ severity: 'success', text: `تم تنفيذ «${action}» بنجاح.` });
-      load();
-    } catch (e: any) {
-      setWorkflowError(e?.response?.data?.checks?.[0] || e?.response?.data?.message || e?.message || 'تعذر تنفيذ الإجراء.');
-    } finally {
-      setWorkflowBusy(false);
-    }
   };
   const saveCorrection = async (event: FormEvent) => {
     event.preventDefault();
@@ -236,15 +220,28 @@ export default function SupplierDetails() {
     setWorkflowError('');
     setWorkflowBusy(true);
     try {
-      await correctEmgSupply(workflowTarget.id, { ...correction, quantity: Number(correction.quantity), unitPrice: Number(correction.unitPrice) });
+      await correctEmgTransaction('supplier-supply', workflowTarget.id, { ...correction, quantity: Number(correction.quantity), unitPrice: Number(correction.unitPrice) }, 'تصحيح مباشر');
       setWorkflowTarget(null);
-      setMessage({ severity: 'success', text: 'تم حفظ التصحيح. أرسل التوريدة لإعادة المراجعة الفنية.' });
+      setMessage({ severity: 'success', text: 'تم حفظ التصحيح مباشرة.' });
       load();
     } catch (e: any) {
       setWorkflowError(e?.response?.data?.message || e?.message || 'تعذر حفظ التصحيح.');
     } finally {
       setWorkflowBusy(false);
     }
+  };
+  const savePaymentCorrection = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!paymentCorrection || workflowTarget?.type !== 'supplier-payment' || workflowBusy) return;
+    setWorkflowBusy(true); setWorkflowError('');
+    try { await correctEmgTransaction('supplier-payment', workflowTarget.id, { ...paymentCorrection, amount: Number(paymentCorrection.amount) }, 'تصحيح مباشر'); setWorkflowTarget(null); setMessage({ severity: 'success', text: 'تم حفظ تصحيح الدفعة مباشرة.' }); load(); }
+    catch (e: any) { setWorkflowError(e?.response?.data?.message || e?.message || 'تعذر حفظ تصحيح الدفعة.'); }
+    finally { setWorkflowBusy(false); }
+  };
+  const remove = async (type: 'supplier-supply' | 'supplier-payment', entityId: number) => {
+    if (!window.confirm('سيتم حذف السجل نهائيًا. هل تريد المتابعة؟')) return;
+    try { await deleteEmgTransaction(type, entityId); setMessage({ severity: 'success', text: 'تم حذف السجل نهائيًا.' }); load(); }
+    catch (e: any) { setMessage({ severity: 'error', text: e?.response?.data?.message || e?.message || 'تعذر حذف السجل لوجود اعتماديات.' }); }
   };
 
   if (loading && !supplier)
@@ -356,7 +353,8 @@ export default function SupplierDetails() {
                         >
                           المرفقات
                         </Button>
-                        {item.status !== 'مرحّل' && <Button size="small" onClick={() => openWorkflow({ type: 'supplier-supply', id: item.id, supply: item })}>إجراءات التوريدة</Button>}
+                        <Button size="small" onClick={() => openWorkflow({ type: 'supplier-supply', id: item.id, supply: item })}>تصحيح</Button>
+                        <Button size="small" color="error" onClick={() => void remove('supplier-supply', item.id)} startIcon={<IconTrash size={15} />}>حذف</Button>
                         <Typography variant="caption" color={item.status === 'معتمد' || item.status === 'مرحّل' ? 'success.main' : 'warning.main'}>
                           {item.status === 'مقبول فنياً' ? 'مقبول فنياً · بانتظار الاعتماد المالي' : item.status}
                         </Typography>
@@ -392,8 +390,8 @@ export default function SupplierDetails() {
                         >
                           المرفقات
                         </Button>
-                        {item.projectId !== null && item.status !== 'مرحّل' &&
-                          <Button size="small" onClick={() => openWorkflow({ type: 'supplier-payment', id: item.id })}>إجراءات الدفعة</Button>}
+                        <Button size="small" onClick={() => { openWorkflow({ type: 'supplier-payment', id: item.id }); setPaymentCorrection({ amount: String(item.amount), paymentDate: item.paymentDate.slice(0, 10), paymentMethod: item.paymentMethod, reference: item.reference, notes: item.notes }); }}>تعديل</Button>
+                        <Button size="small" color="error" onClick={() => void remove('supplier-payment', item.id)} startIcon={<IconTrash size={15} />}>حذف</Button>
                         <Typography variant="caption" color={item.status === 'معتمد' || item.status === 'مرحّل' ? 'success.main' : 'warning.main'}>{item.status}</Typography>
                       </Stack>
                     </Stack>
@@ -571,7 +569,7 @@ export default function SupplierDetails() {
         </Grid>
       )}
       <Dialog open={Boolean(workflowTarget)} onClose={() => !workflowBusy && setWorkflowTarget(null)} fullWidth maxWidth="sm" aria-labelledby="supplier-workflow-title">
-        <DialogTitle id="supplier-workflow-title">{workflowTarget?.type === 'supplier-payment' ? 'إجراءات دفعة المورد' : 'إجراءات التوريدة'}</DialogTitle>
+        <DialogTitle id="supplier-workflow-title">{workflowTarget?.type === 'supplier-payment' ? 'تعديل دفعة المورد' : 'تصحيح التوريدة'}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
             {workflowError && <Alert severity="error">{workflowError}</Alert>}
@@ -582,9 +580,16 @@ export default function SupplierDetails() {
                 {workflowAudit.rejectionReason && <Alert severity="warning">سبب الرفض: {workflowAudit.rejectionReason}</Alert>}
                 {workflowAudit.blockingChecks.length > 0 && <Alert severity="warning">{workflowAudit.blockingChecks.join('، ')}</Alert>}
                 {workflowAudit.warnings.map(warning => <Typography key={warning} variant="body2" color="text.secondary">{warning}</Typography>)}
-                {rejecting && <TextField autoFocus label="سبب رفض التوريدة" multiline minRows={2} value={rejection}
-                  onChange={event => setRejection(event.target.value)} slotProps={{ htmlInput: { maxLength: 2000 } }} />}
-                {correction && (
+                {paymentCorrection && workflowTarget?.type === 'supplier-payment' && (
+                  <Stack component="form" id="supplier-payment-correction" spacing={1.5} onSubmit={savePaymentCorrection}>
+                    <TextField required type="number" label="قيمة الدفع" value={paymentCorrection.amount} onChange={event => setPaymentCorrection({ ...paymentCorrection, amount: event.target.value })} />
+                    <TextField required type="date" label="تاريخ الدفع" value={paymentCorrection.paymentDate} onChange={event => setPaymentCorrection({ ...paymentCorrection, paymentDate: event.target.value })} InputLabelProps={{ shrink: true }} />
+                    <TextField label="طريقة الدفع" value={paymentCorrection.paymentMethod} onChange={event => setPaymentCorrection({ ...paymentCorrection, paymentMethod: event.target.value })} />
+                    <TextField label="المرجع" value={paymentCorrection.reference} onChange={event => setPaymentCorrection({ ...paymentCorrection, reference: event.target.value })} />
+                    <TextField label="ملاحظات" value={paymentCorrection.notes} onChange={event => setPaymentCorrection({ ...paymentCorrection, notes: event.target.value })} />
+                  </Stack>
+                )}
+                {correction && workflowTarget?.type === 'supplier-supply' && (
                   <Stack component="form" id="supplier-supply-correction" spacing={1.5} onSubmit={saveCorrection}>
                     {([
                       ['itemName', 'بيان التوريدة'], ['supplyType', 'نوع التوريد'], ['unit', 'الوحدة'],
@@ -595,36 +600,17 @@ export default function SupplierDetails() {
                     ))}
                   </Stack>
                 )}
-                {!rejecting && !correction && !workflowAudit.canSubmit && !workflowAudit.canAcceptTechnically &&
-                  !workflowAudit.canApproveFinancially && !workflowAudit.canApprove && !workflowAudit.canReject &&
-                  !workflowAudit.canPost && !workflowAudit.canCorrectSupply && <Typography color="text.secondary">لا توجد إجراءات متاحة لك لهذه الحركة.</Typography>}
+                {!correction && !paymentCorrection && <Typography color="text.secondary">لا توجد بيانات تصحيح متاحة.</Typography>}
               </>
             )}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
           <Button onClick={() => setWorkflowTarget(null)} disabled={workflowBusy}>إغلاق</Button>
-          {rejecting && workflowAudit?.canReject &&
-            <Button color="error" variant="contained" disabled={workflowBusy || !rejection.trim()} onClick={() => void runWorkflow('رفض')}>تأكيد الرفض</Button>}
-          {correction && workflowAudit?.canCorrectSupply &&
+          {correction &&
             <Button type="submit" form="supplier-supply-correction" variant="contained" disabled={workflowBusy}>حفظ التصحيح</Button>}
-          {!rejecting && !correction && workflowAudit && (
-            <>
-              {workflowAudit.canSubmit && <Button disabled={workflowBusy} onClick={() => void runWorkflow('إرسال')}>إرسال للمراجعة</Button>}
-              {workflowAudit.canAcceptTechnically && <Button variant="contained" disabled={workflowBusy} onClick={() => void runWorkflow('قبول فني')}>قبول فني</Button>}
-              {workflowAudit.canApproveFinancially && <Button variant="contained" color="success" disabled={workflowBusy} onClick={() => void runWorkflow('اعتماد مالي')}>اعتماد مالي</Button>}
-              {workflowTarget?.type === 'supplier-payment' && workflowAudit.canApprove &&
-                <Button variant="contained" color="success" disabled={workflowBusy} onClick={() => void runWorkflow('اعتماد')}>اعتماد الدفعة</Button>}
-              {workflowAudit.canPost && <Button disabled={workflowBusy} onClick={() => void runWorkflow('ترحيل')}>ترحيل</Button>}
-              {workflowAudit.canReject && <Button color="error" disabled={workflowBusy} onClick={() => setRejecting(true)}>رفض التوريدة</Button>}
-              {workflowTarget?.type === 'supplier-supply' && workflowAudit.canCorrectSupply && (
-                <Button disabled={workflowBusy} onClick={() => {
-                  const { itemName, supplyType, unit, quantity, unitPrice, invoiceNumber } = workflowTarget.supply;
-                  setCorrection({ itemName, supplyType, unit, quantity: String(quantity), unitPrice: String(unitPrice), invoiceNumber });
-                }}>تصحيح التوريدة</Button>
-              )}
-            </>
-          )}
+          {paymentCorrection && <Button type="submit" form="supplier-payment-correction" variant="contained" disabled={workflowBusy}>حفظ التعديل</Button>}
+          {workflowTarget?.type === 'supplier-supply' && !correction && <Button disabled={workflowBusy} onClick={() => { const { itemName, supplyType, unit, quantity, unitPrice, invoiceNumber } = workflowTarget.supply; setCorrection({ itemName, supplyType, unit, quantity: String(quantity), unitPrice: String(unitPrice), invoiceNumber }); }}>فتح نموذج التصحيح</Button>}
         </DialogActions>
       </Dialog>
       <Dialog open={Boolean(attachmentTarget)} onClose={() => setAttachmentTarget(null)} fullWidth maxWidth="md">

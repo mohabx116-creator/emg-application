@@ -170,7 +170,7 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
             SupplierId = supplierId, ProjectId = request.ProjectId, SupplyId = request.SupplyId, Amount = request.Amount,
             PaymentDate = request.PaymentDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.PaymentDate.Value.Date, DateTimeKind.Utc),
             PaymentMethod = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "نقدي" : request.PaymentMethod.Trim(),
-            Reference = request.Reference?.Trim(), Notes = request.Notes?.Trim(), Status = "مرحّل"
+            Reference = request.Reference?.Trim(), Notes = request.Notes?.Trim(), Status = "مرحّل", CreatedByUserId = userId
         };
         db.SupplierPayments.Add(payment);
         await db.SaveChangesAsync(cancellationToken);
