@@ -52,10 +52,10 @@ import {
   EmgEntrySuggestion,
   EmgProject,
   EmgSiteMovement,
-  EmgSupplier,
   getEmgProject,
   getEmgSiteMovements,
   getEmgContractors,
+  createEmgContractor,
   EmgContractor,
   getEmgWorkCategories,
   createEmgWorkCategory,
@@ -180,6 +180,10 @@ export default function EmgSiteMovements() {
   const [inlineSupplierType, setInlineSupplierType] = useState('خامات ومواد بناء');
   const [inlineSupplierPhone, setInlineSupplierPhone] = useState('');
   const [creatingSupplier, setCreatingSupplier] = useState(false);
+  const [inlineContractorOpen, setInlineContractorOpen] = useState(false);
+  const [inlineContractorName, setInlineContractorName] = useState('');
+  const [inlineContractorPhone, setInlineContractorPhone] = useState('');
+  const [creatingContractor, setCreatingContractor] = useState(false);
 
   // Clickable invoice / transaction quick drawer
   const [drawerMovement, setDrawerMovement] = useState<EmgSiteMovement | null>(null);
@@ -309,6 +313,29 @@ export default function EmgSiteMovements() {
       setMessage({ severity: 'error', text: error?.response?.data?.message || error?.message || 'تعذر إضافة المورد.' });
     } finally {
       setCreatingSupplier(false);
+    }
+  };
+
+  const handleCreateInlineContractor = async () => {
+    if (!inlineContractorName.trim()) return;
+    setCreatingContractor(true);
+    try {
+      const created = await createEmgContractor({
+        name: inlineContractorName.trim(),
+        phone: inlineContractorPhone.trim() || null,
+        taxNumber: null,
+        notes: null
+      });
+      setContractors((current) => [...current.filter((item) => item.id !== created.id), created]);
+      updateHeader('contractorId', String(created.id));
+      setInlineContractorName('');
+      setInlineContractorPhone('');
+      setInlineContractorOpen(false);
+      setMessage({ severity: 'success', text: `تمت إضافة المقاول "${created.name}" واختياره مع الحفاظ على بيانات الحركة.` });
+    } catch (error: any) {
+      setMessage({ severity: 'error', text: error?.response?.data?.message || error?.message || 'تعذر إضافة المقاول.' });
+    } finally {
+      setCreatingContractor(false);
     }
   };
 
@@ -555,7 +582,7 @@ export default function EmgSiteMovements() {
                 onChange={(_, val) => updateHeader('contractorId', val ? String(val.id) : '')}
                 renderInput={(params) => <TextField {...params} label="المقاول" placeholder="ابحث عن مقاول..." />}
               /> : <TextField fullWidth size="small" label="الطرف" value="بدون طرف" InputProps={{ readOnly: true }} />}
-              {canCreateSupplier && (
+              {canCreateSupplier && header.counterpartyType === 'مورد' && (
                 <Button
                   size="small"
                   variant="outlined"
@@ -563,7 +590,18 @@ export default function EmgSiteMovements() {
                   startIcon={<IconUserPlus size={16} />}
                   sx={{ whiteSpace: 'nowrap', minHeight: 40, borderRadius: 2 }}
                 >
-                  مورد جديد
+                  أخرى — إضافة جديد
+                </Button>
+              )}
+              {canCreateSupplier && header.counterpartyType === 'مقاول' && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setInlineContractorOpen((prev) => !prev)}
+                  startIcon={<IconUserPlus size={16} />}
+                  sx={{ whiteSpace: 'nowrap', minHeight: 40, borderRadius: 2 }}
+                >
+                  أخرى — إضافة جديد
                 </Button>
               )}
             </Stack>
@@ -646,6 +684,29 @@ export default function EmgSiteMovements() {
                     sx={{ minHeight: 40, fontWeight: 700 }}
                   >
                     {creatingSupplier ? '...' : 'إضافة'}
+                  </Button>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Collapse>
+
+        <Collapse in={inlineContractorOpen}>
+          <Card variant="outlined" sx={{ borderRadius: 2.5, bgcolor: 'action.hover' }}>
+            <CardContent sx={{ p: 1.75, '&:last-child': { pb: 1.75 } }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1.25 }}>
+                إضافة مقاول سريع (مع الاحتفاظ ببيانات الحركة الحالية)
+              </Typography>
+              <Grid container spacing={1.25} alignItems="center">
+                <Grid size={{ xs: 12, sm: 5 }}>
+                  <TextField fullWidth size="small" label="اسم المقاول *" value={inlineContractorName} onChange={(e) => setInlineContractorName(e.target.value)} />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 5 }}>
+                  <TextField fullWidth size="small" label="رقم الهاتف" value={inlineContractorPhone} onChange={(e) => setInlineContractorPhone(e.target.value)} />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 2 }}>
+                  <Button fullWidth variant="contained" size="small" disabled={creatingContractor || !inlineContractorName.trim()} onClick={() => void handleCreateInlineContractor()} sx={{ minHeight: 40, fontWeight: 700 }}>
+                    {creatingContractor ? '...' : 'إضافة'}
                   </Button>
                 </Grid>
               </Grid>
