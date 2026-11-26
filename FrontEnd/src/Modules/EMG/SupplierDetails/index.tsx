@@ -573,13 +573,14 @@ export default function SupplierDetails() {
         <DialogContent dividers>
           <Stack spacing={2}>
             {workflowError && <Alert severity="error">{workflowError}</Alert>}
-            {!workflowAudit && !workflowError && <CircularProgress size={24} aria-label="تحميل الإجراءات" />}
-            {workflowAudit && (
+            {!workflowAudit && !workflowError && workflowTarget?.type === 'supplier-supply' && <CircularProgress size={24} aria-label="تحميل بيانات التصحيح" />}
+            {workflowError && <Alert severity="warning">تعذر تحميل معلومات المراجعة القديمة، ويمكن متابعة التصحيح المباشر.</Alert>}
+            {workflowTarget && (
               <>
-                <Typography fontWeight={700}>{workflowAudit.status}</Typography>
-                {workflowAudit.rejectionReason && <Alert severity="warning">سبب الرفض: {workflowAudit.rejectionReason}</Alert>}
-                {workflowAudit.blockingChecks.length > 0 && <Alert severity="warning">{workflowAudit.blockingChecks.join('، ')}</Alert>}
-                {workflowAudit.warnings.map(warning => <Typography key={warning} variant="body2" color="text.secondary">{warning}</Typography>)}
+                {workflowAudit && <Typography fontWeight={700}>الحالة الحالية: {workflowAudit.status}</Typography>}
+                {workflowAudit?.rejectionReason && <Alert severity="warning">سبب الرفض: {workflowAudit.rejectionReason}</Alert>}
+                {workflowAudit && workflowAudit.blockingChecks.length > 0 && <Alert severity="warning">{workflowAudit.blockingChecks.join('، ')}</Alert>}
+                {workflowAudit?.warnings.map(warning => <Typography key={warning} variant="body2" color="text.secondary">{warning}</Typography>)}
                 {paymentCorrection && workflowTarget?.type === 'supplier-payment' && (
                   <Stack component="form" id="supplier-payment-correction" spacing={1.5} onSubmit={savePaymentCorrection}>
                     <TextField required type="number" label="قيمة الدفع" value={paymentCorrection.amount} onChange={event => setPaymentCorrection({ ...paymentCorrection, amount: event.target.value })} />
