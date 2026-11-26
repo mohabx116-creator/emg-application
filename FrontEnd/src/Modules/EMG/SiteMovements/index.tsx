@@ -55,6 +55,8 @@ import {
   EmgSupplier,
   getEmgProject,
   getEmgSiteMovements,
+  getEmgContractors,
+  EmgContractor,
   suggestEmgEntry,
   uploadEmgAttachment
 } from 'api/emg';
@@ -80,8 +82,15 @@ type InvoiceHeaderForm = {
   movementDate: string;
   expenseCategory: string;
   supplierId: string;
+  contractorId: string;
+  counterpartyType: 'مورد' | 'مقاول' | 'بدون طرف';
+  currency: string;
+  fundingSource: string;
+  recipient: string;
+  workCategory: string;
   paidTo: string;
   paymentMethod: string;
+  paymentSource: string;
   paymentMode: PaymentMode;
   partialPaidAmount: string;
   details: string;
@@ -114,8 +123,15 @@ function createInitialHeader(): InvoiceHeaderForm {
     movementDate: getLocalIsoDate(),
     expenseCategory: '',
     supplierId: '',
+    contractorId: '',
+    counterpartyType: 'بدون طرف',
+    currency: 'EGP',
+    fundingSource: '',
+    recipient: '',
+    workCategory: '',
     paidTo: '',
     paymentMethod: 'نقدي',
+    paymentSource: 'مكتب',
     paymentMode: 'cash',
     partialPaidAmount: '',
     details: ''
@@ -144,6 +160,7 @@ export default function EmgSiteMovements() {
 
   const [project, setProject] = useState<EmgProject | null>(null);
   const [movements, setMovements] = useState<EmgSiteMovement[]>([]);
+  const [contractors, setContractors] = useState<EmgContractor[]>([]);
   const [header, setHeader] = useState<InvoiceHeaderForm>(createInitialHeader);
   const [lines, setLines] = useState<InvoiceLine[]>([createEmptyLine()]);
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -171,6 +188,7 @@ export default function EmgSiteMovements() {
   const [rowsPerPage, setRowsPerPage] = useState(25);
 
   const activeSuppliers = useMemo(() => cachedSuppliers.filter((s) => s.isActive), [cachedSuppliers]);
+  const activeContractors = useMemo(() => contractors.filter((s) => s.isActive), [contractors]);
 
   const load = () => {
     setLoading(true);
@@ -187,6 +205,8 @@ export default function EmgSiteMovements() {
     if (Number.isInteger(id)) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => { getEmgContractors().then(setContractors).catch(() => setContractors([])); }, []);
 
   // Auto-open entry sheet if navigated from bottom-nav "+" FAB or Engineer quick CTA
   useEffect(() => {
@@ -211,7 +231,7 @@ export default function EmgSiteMovements() {
         const result = await suggestEmgEntry({
           projectId: id,
           description: primaryDescription,
-          movementType: header.movementType,
+            movementType: header.movementType,
           unit: lines[0]?.unit || null,
           supplierName: activeSuppliers.find((item) => String(item.id) === header.supplierId)?.name || null,
           quantity: lines[0]?.quantity ? Number(lines[0].quantity) : null,
@@ -324,7 +344,8 @@ export default function EmgSiteMovements() {
           })),
           initialPayment, paymentMethod: header.paymentMode === 'credit' ? 'آجل' : header.paymentMethod || 'نقدي',
           paymentReference: header.invoiceNumber || null, notes: combinedDetails,
-          movementDescription: header.details.trim() || validLines[0].description.trim(),
+          movementDescription: header.details.trim() || (header.paymentSource === 'مالك مباشر' ? 'دفع فاتورة مباشرة من المالك' : validLines[0].description.trim()),
+          paymentSource: header.paymentSource,
           expenseCategory: header.expenseCategory || null, paidTo: header.paidTo || null, details: combinedDetails
         });
         attachmentEntityType = 'supplier-invoice';
@@ -338,7 +359,10 @@ export default function EmgSiteMovements() {
         const created = await createEmgSiteMovementBatch({ movements: validLines.map((line, i) => {
           const refCode = validLines.length > 1 ? `${header.invoiceNumber}-${i + 1}` : header.invoiceNumber;
           return {
-            projectId: id, supplierId: null, movementType: header.movementType,
+            projectId: id, supplierId: header.counterpartyType === 'مورد' && header.supplierId ? Number(header.supplierId) : null,
+            contractorId: header.counterpartyType === 'مقاول' && header.contractorId ? Number(header.contractorId) : null,
+            counterpartyType: header.counterpartyType, currency: header.currency, fundingSource: header.fundingSource || null,
+            recipient: header.recipient || null, workCategory: header.workCategory || null, movementType: header.movementType,
             description: line.description.trim(), unit: line.unit || null,
             quantity: line.quantity ? Number(line.quantity) : null, unitPrice: line.unitPrice ? Number(line.unitPrice) : null,
             amount: line.amount ? Number(line.amount) : null, movementDate: header.movementDate,
@@ -432,6 +456,7 @@ export default function EmgSiteMovements() {
   if (!project) return <Alert severity="error">المشروع غير موجود أو لا تملك صلاحية الوصول إليه.</Alert>;
 
   const selectedSupplierObj = activeSuppliers.find((s) => String(s.id) === header.supplierId) || null;
+  const selectedContractorObj = activeContractors.find((s) => String(s.id) === header.contractorId) || null;
 
   const createForm = (
     <Box component="form" onSubmit={(e) => void submitInvoice(e, false)}>
@@ -453,6 +478,8 @@ export default function EmgSiteMovements() {
               <InputLabel>نوع الحركة</InputLabel>
               <Select value={header.movementType} label="نوع الحركة" onChange={(e) => updateHeader('movementType', e.target.value)}>
                 <MenuItem value="مصروفات">مصروفات</MenuItem>
+                <MenuItem value="وارد">وارد</MenuItem>
+                <MenuItem value="صادر">صادر</MenuItem>
                 <MenuItem value="توريدات">توريدات</MenuItem>
                 <MenuItem value="عمالة">عمالة</MenuItem>
                 <MenuItem value="معدات">معدات</MenuItem>
@@ -473,18 +500,42 @@ export default function EmgSiteMovements() {
             />
           </Grid>
 
-          {/* Fast Supplier Selector + Inline Supplier Creation */}
+          <Grid size={{ xs: 12, sm: 3 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel>الطرف</InputLabel>
+              <Select value={header.counterpartyType} label="الطرف" onChange={(e) => {
+                const value = e.target.value as InvoiceHeaderForm['counterpartyType'];
+                updateHeader('counterpartyType', value);
+                if (value !== 'مورد') updateHeader('supplierId', '');
+                if (value !== 'مقاول') updateHeader('contractorId', '');
+              }}>
+                <MenuItem value="بدون طرف">بدون طرف</MenuItem>
+                <MenuItem value="مورد">مورد</MenuItem>
+                <MenuItem value="مقاول">مقاول</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* Exclusive supplier/contractor selector */}
           <Grid size={{ xs: 12, sm: 7 }}>
             <Stack direction="row" spacing={1} alignItems="center">
-              <Autocomplete
+              {header.counterpartyType === 'مورد' ? <Autocomplete
                 fullWidth
                 size="small"
                 options={activeSuppliers}
                 value={selectedSupplierObj}
                 getOptionLabel={(option) => `${option.name}${option.supplierType ? ` · ${option.supplierType}` : ''}`}
                 onChange={(_, val) => updateHeader('supplierId', val ? String(val.id) : '')}
-                renderInput={(params) => <TextField {...params} label="المورد أو المقاول (اختياري)" placeholder="ابحث عن مورد..." />}
-              />
+                renderInput={(params) => <TextField {...params} label="المورد" placeholder="ابحث عن مورد..." />}
+              /> : header.counterpartyType === 'مقاول' ? <Autocomplete
+                fullWidth
+                size="small"
+                options={activeContractors}
+                value={selectedContractorObj}
+                getOptionLabel={(option) => option.name}
+                onChange={(_, val) => updateHeader('contractorId', val ? String(val.id) : '')}
+                renderInput={(params) => <TextField {...params} label="المقاول" placeholder="ابحث عن مقاول..." />}
+              /> : <TextField fullWidth size="small" label="الطرف" value="بدون طرف" InputProps={{ readOnly: true }} />}
               {canCreateSupplier && (
                 <Button
                   size="small"
@@ -510,6 +561,16 @@ export default function EmgSiteMovements() {
               placeholder="مثال: نقل، أسمنت، عمالة"
             />
           </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <FormControl fullWidth size="small"><InputLabel>مصدر الدفع</InputLabel>
+              <Select value={header.paymentSource} label="مصدر الدفع" onChange={(e) => updateHeader('paymentSource', e.target.value)}>
+                <MenuItem value="مكتب">المكتب</MenuItem><MenuItem value="مالك مباشر">دفع مباشر من المالك</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth size="small" label="مصدر التمويل" value={header.fundingSource} onChange={(e) => updateHeader('fundingSource', e.target.value)} /></Grid>
+          <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth size="small" label="المستلم" value={header.recipient} onChange={(e) => updateHeader('recipient', e.target.value)} /></Grid>
+          <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth size="small" label="التصنيف" value={header.workCategory} onChange={(e) => updateHeader('workCategory', e.target.value)} /></Grid>
         </Grid>
 
         {/* Inline Supplier Creation Panel — preserves all form inputs */}

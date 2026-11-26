@@ -54,6 +54,14 @@ public sealed class ContractorsController(IContractorStatementService service) :
         catch (InvalidOperationException exception) { return Conflict(new { message = exception.Message }); }
     }
 
+    [HttpPost("{contractorId:int}/payments")]
+    [PermissionAuthorize("suppliers.payments-create")]
+    public async Task<ActionResult<ContractorPaymentSummary>> Payment(int contractorId, CreateContractorPaymentRequest request, CancellationToken cancellationToken)
+    {
+        try { return (await service.AddPaymentAsync(contractorId, request, CurrentUserId(), GlobalAccess(), cancellationToken)) is { } result ? Ok(result) : BadRequest(new { message = "بيانات دفعة المقاول أو نطاق المشروع غير صحيحة." }); }
+        catch (InvalidOperationException exception) { return Conflict(new { message = exception.Message }); }
+    }
+
     [HttpGet("statements/{statementId:int}.xlsx")]
     [PermissionAuthorize("reports.export")]
     public async Task<IActionResult> Export(int statementId, CancellationToken cancellationToken) => (await service.ExportDraftAsync(statementId, CurrentUserId(), GlobalAccess(), cancellationToken)) is { } bytes ? File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"contractor-statement-{statementId}-draft.xlsx") : NotFound();

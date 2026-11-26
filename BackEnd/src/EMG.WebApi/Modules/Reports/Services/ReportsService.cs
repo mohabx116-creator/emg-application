@@ -43,7 +43,10 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
         // sequence (and can move equal-date rows around), so use the stable
         // database identity for report/export ordering.
         var movements = await db.SiteMovements.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
-            .Select(item => new ProjectMovementRow(item.Id, item.MovementDate, item.MovementType, item.Description, item.Supplier == null ? string.Empty : item.Supplier.Name, item.Unit ?? string.Empty, item.Quantity, item.UnitPrice, item.TotalAmount, item.ExpenseCategory ?? string.Empty, item.Status, item.Reference ?? string.Empty)).ToListAsync(cancellationToken);
+            .Select(item => new ProjectMovementRow(item.Id, item.MovementDate, item.MovementType, item.Description,
+                item.Supplier == null ? string.Empty : item.Supplier.Name, item.Unit ?? string.Empty, item.Quantity, item.UnitPrice,
+                item.TotalAmount, item.ExpenseCategory ?? string.Empty, item.Status, item.Reference ?? string.Empty, item.Currency,
+                item.Contractor == null ? string.Empty : item.Contractor.Name)).ToListAsync(cancellationToken);
         var advanceRows = await db.AdvancePayments.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
             .Select(item => new { item.Id, item.PaymentDate, item.ClientName, item.PayerName, item.Amount, item.Status, Reference = item.Reference ?? string.Empty }).ToListAsync(cancellationToken);
         var advanceIds = advanceRows.Select(item => item.Id).ToArray();
@@ -54,7 +57,9 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
         var supplies = await db.SupplierSupplies.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
             .Select(item => new ProjectSupplierSupplyRow(item.Id, item.SupplyDate, item.Supplier.Name, item.SupplyType, item.ItemName, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.InvoiceNumber ?? string.Empty)).ToListAsync(cancellationToken);
         var payments = await db.SupplierPayments.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
-            .Select(item => new ProjectSupplierPaymentRow(item.Id, item.PaymentDate, item.Supplier.Name, item.Amount, item.PaymentMethod, item.Reference ?? string.Empty)).ToListAsync(cancellationToken);
+            .Select(item => new ProjectSupplierPaymentRow(item.Id, item.PaymentDate, item.Supplier.Name, item.Amount, item.PaymentMethod, item.Reference ?? string.Empty, item.PaymentSource)).ToListAsync(cancellationToken);
+        var contractorPayments = await db.ContractorPayments.AsNoTracking().Where(item => item.ProjectId == projectId).OrderBy(item => item.Id)
+            .Select(item => new ProjectContractorPaymentRow(item.Id, item.PaymentDate, item.Contractor.Name, item.Amount, item.Currency, item.PaymentMethod, item.PaymentSource, item.Reference ?? string.Empty)).ToListAsync(cancellationToken);
         var excavations = await db.ExcavationRecords.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
             .Select(item => new ProjectWorkRow(item.Id, item.ExcavationDate, item.Supplier == null ? string.Empty : item.Supplier.Name, item.AccountCategory, item.Description, item.Description, item.Unit, item.CalculatedQuantity, item.UnitPrice, item.TotalAmount, item.CalculationMethod, item.SoilType ?? string.Empty, $"{item.Length} × {item.Width} × {item.Depth}", item.Status, item.Notes ?? string.Empty)).ToListAsync(cancellationToken);
         var concretes = await db.ConcreteRecords.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
@@ -63,7 +68,7 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
             .Select(item => new ProjectWorkRow(item.Id, item.OperationDate, item.Supplier == null ? string.Empty : item.Supplier.Name, item.AccountCategory, item.SteelType ?? item.OperationType, item.Description, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.BarDiameter ?? string.Empty, item.Grade ?? string.Empty, item.DeliveryNoteNumber ?? string.Empty, item.Status, item.Notes ?? string.Empty)).ToListAsync(cancellationToken);
         var finishings = await db.FinishingRecords.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
             .Select(item => new ProjectWorkRow(item.Id, item.WorkDate, item.Supplier == null ? string.Empty : item.Supplier.Name, item.AccountCategory, item.WorkType, item.Description, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.AreaName ?? string.Empty, string.Empty, string.Empty, item.Status, item.Notes ?? string.Empty)).ToListAsync(cancellationToken);
-        return new ProjectReportSummary(finalAccount, movements, advances, supplies, payments, excavations, concretes, steels, finishings);
+        return new ProjectReportSummary(finalAccount, movements, advances, supplies, payments, excavations, concretes, steels, finishings) { ContractorPayments = contractorPayments };
     }
 
     public async Task<string?> ExportProjectMovementsCsvAsync(int projectId, int? userId, bool isAdmin, CancellationToken cancellationToken)
@@ -72,9 +77,9 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
         if (report is null) return null;
         var builder = new StringBuilder();
         builder.Append('\uFEFF');
-        builder.AppendLine("التاريخ,نوع الحركة,الوصف,المورد,المبلغ,الحالة,المرجع");
+        builder.AppendLine("التاريخ,نوع الحركة,الوصف,الطرف,المبلغ,العملة,الحالة,المرجع");
         foreach (var row in report.Movements)
-            builder.AppendLine(string.Join(',', Csv(row.Date.ToString("yyyy-MM-dd")), Csv(row.Type), Csv(row.Description), Csv(row.SupplierName), row.Amount.ToString("0.00", CultureInfo.InvariantCulture), Csv(row.Status), Csv(row.Reference)));
+            builder.AppendLine(string.Join(',', Csv(row.Date.ToString("yyyy-MM-dd")), Csv(row.Type), Csv(row.Description), Csv(string.IsNullOrWhiteSpace(row.SupplierName) ? row.CounterpartyName : row.SupplierName), row.Amount.ToString("0.00", CultureInfo.InvariantCulture), Csv(row.Currency), Csv(row.Status), Csv(row.Reference)));
         return builder.ToString();
     }
 

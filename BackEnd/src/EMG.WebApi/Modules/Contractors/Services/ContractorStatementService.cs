@@ -1,4 +1,5 @@
 using ClosedXML.Excel;
+using System.Data;
 using EMG.Api.Modules.Contractors.Dtos;
 using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
@@ -144,6 +145,45 @@ public sealed class ContractorStatementService(EmgDbContext db) : IContractorSta
         db.WorkflowActions.Add(new WorkflowAction { EntityType = "contractor-statement", EntityId = statement.Id, Action = "إنشاء مسودة", FromStatus = "", ToStatus = "مسودة", UserId = userId, Notes = "مسودة للمعاينة فقط؛ لا أثر مالي ولا اعتماد متاح." });
         await db.SaveChangesAsync(cancellationToken);
         return await LoadSummaryAsync(statement.Id, cancellationToken);
+    }
+
+    public async Task<ContractorPaymentSummary?> AddPaymentAsync(int contractorId, CreateContractorPaymentRequest request, int? userId, bool globalAccess, CancellationToken cancellationToken)
+    {
+        if (request.Amount <= 0 || !IsCurrency(request.Currency ?? "EGP") || !await CanAccessProjectAsync(request.ProjectId, userId, globalAccess, cancellationToken)) return null;
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var contractor = await db.Contractors.SingleOrDefaultAsync(item => item.Id == contractorId && item.IsActive, cancellationToken);
+        var source = request.PaymentSource?.Trim() == "مالك مباشر" ? "مالك مباشر" : "مكتب";
+        var statement = request.ContractorStatementId is int statementId
+            ? await db.ContractorStatements.SingleOrDefaultAsync(item => item.Id == statementId && item.ProjectId == request.ProjectId && item.ContractorId == contractorId && item.Status != "مرفوض", cancellationToken)
+            : null;
+        if (contractor is null || request.ContractorStatementId.HasValue && statement is null || source == "مالك مباشر" && statement is null)
+            throw new InvalidOperationException("يجب ربط الدفع المباشر من المالك بكشف مقاول مثبت.");
+        var currency = (request.Currency ?? statement?.Currency ?? "EGP").Trim().ToUpperInvariant();
+        if (statement is not null && statement.Currency != currency) return null;
+        if (!string.IsNullOrWhiteSpace(request.Reference) && await db.ContractorPayments.AnyAsync(item => item.ProjectId == request.ProjectId && item.Reference == request.Reference.Trim(), cancellationToken))
+            throw new InvalidOperationException("مرجع دفعة المقاول مستخدم بالفعل داخل المشروع.");
+        if (statement is not null)
+        {
+            var paid = await db.ContractorPayments.Where(item => item.ContractorStatementId == statement.Id).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
+            var remaining = statement.NetAmount - paid;
+            if (request.Amount > remaining) throw new InvalidOperationException("قيمة الدفعة تتجاوز صافي التزام المقاول المتبقي.");
+        }
+        var payment = new ContractorPayment
+        {
+            ProjectId = request.ProjectId, ContractorId = contractorId, ContractorStatementId = request.ContractorStatementId,
+            Amount = request.Amount, Currency = currency, PaymentDate = request.PaymentDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.PaymentDate.Value.Date, DateTimeKind.Utc),
+            PaymentMethod = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "نقدي" : request.PaymentMethod.Trim(), PaymentSource = source,
+            Reference = request.Reference?.Trim(), Notes = string.IsNullOrWhiteSpace(request.Notes) && source == "مالك مباشر" ? "تخليص حساب" : request.Notes?.Trim(), CreatedByUserId = userId
+        };
+        db.ContractorPayments.Add(payment);
+        if (statement is not null)
+        {
+            statement.PreviousPaymentsAmount += payment.Amount;
+            statement.NetAmount = statement.GrossAmount - statement.PreviousPaymentsAmount - statement.DeductionsAmount;
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new ContractorPaymentSummary(payment.Id, payment.ProjectId, payment.ContractorId, payment.ContractorStatementId, payment.Amount, payment.Currency, payment.PaymentDate, payment.PaymentMethod, payment.PaymentSource, payment.Reference ?? string.Empty, payment.Notes ?? string.Empty);
     }
 
     public async Task<byte[]?> ExportDraftAsync(int statementId, int? userId, bool globalAccess, CancellationToken cancellationToken)

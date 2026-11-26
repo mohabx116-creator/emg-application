@@ -25,6 +25,7 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
 
         var total = decimal.Round(request.Lines.Sum(line => line.Quantity * line.UnitPrice), 2);
         if (request.InitialPayment > total) throw new DuplicateSupplierTransactionException("الدفعة الأولية تتجاوز إجمالي الفاتورة.");
+        var paymentSource = request.PaymentSource?.Trim() == "مالك مباشر" ? "مالك مباشر" : "مكتب";
         var invoiceNumber = GenerateInvoiceNumber(request.ProjectId, request.SupplierId);
         var invoiceDate = request.InvoiceDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.InvoiceDate.Value.Date, DateTimeKind.Utc);
         if (request.SiteMovementId is null)
@@ -32,7 +33,11 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
             var movement = new SiteMovement
             {
                 ProjectId = request.ProjectId, SupplierId = request.SupplierId, MovementType = "مصروفات",
-                Description = string.IsNullOrWhiteSpace(request.MovementDescription) ? request.Lines[0].Description.Trim() : request.MovementDescription.Trim(),
+                Description = string.IsNullOrWhiteSpace(request.MovementDescription)
+                    ? paymentSource == "مالك مباشر" ? "دفع فاتورة مباشرة من المالك" : request.Lines[0].Description.Trim()
+                    : request.MovementDescription.Trim(),
+                CounterpartyType = "مورد", Currency = "EGP", FundingSource = paymentSource == "مالك مباشر" ? "المالك" : "المكتب",
+                Recipient = supplier.Name, WorkCategory = request.ExpenseCategory?.Trim(),
                 TotalAmount = total, ExpenseCategory = request.ExpenseCategory?.Trim(), PaidTo = request.PaidTo?.Trim(),
                 PaymentMethod = request.InitialPayment == 0 ? "آجل" : request.PaymentMethod?.Trim() ?? "نقدي",
                 IsPaid = request.InitialPayment >= total && total > 0, MovementDate = invoiceDate, Status = "مرحّل",
@@ -72,7 +77,8 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
                 SupplierId = request.SupplierId, ProjectId = request.ProjectId, InvoiceId = invoice.Id,
                 Amount = request.InitialPayment, PaymentDate = invoice.InvoiceDate,
                 PaymentMethod = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "نقدي" : request.PaymentMethod.Trim(),
-                Reference = request.PaymentReference?.Trim(), Notes = request.Notes?.Trim(), Status = "مرحّل", CreatedByUserId = userId
+                Reference = request.PaymentReference?.Trim(), Notes = string.IsNullOrWhiteSpace(request.Notes) && paymentSource == "مالك مباشر" ? "تخليص حساب" : request.Notes?.Trim(),
+                PaymentSource = paymentSource, Status = "مرحّل", CreatedByUserId = userId
             });
         }
         db.WorkflowActions.Add(new WorkflowAction { EntityType = "supplier-invoice", EntityId = invoice.Id, Action = "ترحيل مباشر", FromStatus = "", ToStatus = "مرحّل", UserId = userId, Notes = "فاتورة مورد مرتبطة بحركة الموقع" });

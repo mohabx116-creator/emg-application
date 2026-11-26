@@ -16,6 +16,7 @@ public sealed class SupplierPayment
     public string PaymentMethod { get; set; } = "نقدي";
     public string? Reference { get; set; }
     public string? Notes { get; set; }
+    public string PaymentSource { get; set; } = "مكتب";
     public string Status { get; set; } = "مسودة";
     public int? CreatedByUserId { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

@@ -13,5 +13,6 @@ public interface IContractorStatementService
     Task<IReadOnlyList<EligibleContractorWorkSummary>> GetEligibleWorkAsync(int contractId, int? userId, bool globalAccess, CancellationToken cancellationToken);
     Task<IReadOnlyList<ContractorStatementSummary>> GetStatementsAsync(int? projectId, int? userId, bool globalAccess, CancellationToken cancellationToken);
     Task<ContractorStatementSummary?> CreateDraftAsync(CreateStatementRequest request, int? userId, bool globalAccess, CancellationToken cancellationToken);
+    Task<ContractorPaymentSummary?> AddPaymentAsync(int contractorId, CreateContractorPaymentRequest request, int? userId, bool globalAccess, CancellationToken cancellationToken);
     Task<byte[]?> ExportDraftAsync(int statementId, int? userId, bool globalAccess, CancellationToken cancellationToken);
 }

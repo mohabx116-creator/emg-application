@@ -9,7 +9,10 @@ namespace EMG.Api.Modules.UniversalImports;
 
 public sealed record UniversalNewProjectRequest(string SnapshotId, string Name, string? Code, string? ClientName,
     string? OwnerName, string? PayerName, string? Location, string? EngineerName,
-    Dictionary<string, string>? MappingEvidence, bool ConfirmExcluded, string? HistoricalBaselineJson = null);
+    Dictionary<string, string>? MappingEvidence, bool ConfirmExcluded);
+
+public sealed record HistoricalMigrationBaseline(IReadOnlyList<HistoricalOpeningBalanceSeed> Streams);
+public sealed record HistoricalOpeningBalanceSeed(string StreamKey, string Currency, decimal Amount, string SourceReference);
 
 public sealed record UniversalImportDisposition(string RecordId, string SourceCoordinate, string? Target,
     decimal? Amount, string Currency, bool CanImport, string? Reason);
@@ -31,7 +34,8 @@ public sealed partial class ReviewedWorkbookImportService
             plan.Rows.Any(row => !row.Disposition.CanImport && !row.Record.IsSummary));
     }
 
-    public async Task<UniversalNewProjectResult> CommitNewProjectAsync(UniversalNewProjectRequest request, int actor, CancellationToken ct)
+    public async Task<UniversalNewProjectResult> CommitNewProjectAsync(UniversalNewProjectRequest request, int actor, CancellationToken ct,
+        HistoricalMigrationBaseline? historicalBaseline = null)
     {
         var preview = GetNewProjectPreview(request, actor);
         if (!IsNewProjectPostingAllowed(preview)) throw new HistoricalWorkbookPostingDisabledException();
@@ -50,6 +54,24 @@ public sealed partial class ReviewedWorkbookImportService
         };
         db.HistoricalImportBatches.Add(batch);
         await db.SaveChangesAsync(ct);
+        if (historicalBaseline is not null)
+        {
+            foreach (var stream in historicalBaseline.Streams.Where(item => !string.IsNullOrWhiteSpace(item.StreamKey)))
+            {
+                db.HistoricalOpeningBalances.Add(new HistoricalOpeningBalance
+                {
+                    ProjectId = project.Id, BatchId = batch.Id, StreamKey = stream.StreamKey.Trim(),
+                    Currency = string.IsNullOrWhiteSpace(stream.Currency) ? "EGP" : stream.Currency.Trim().ToUpperInvariant(),
+                    Amount = decimal.Round(stream.Amount, 2), SourceReference = stream.SourceReference.Trim(),
+                    ProvenanceJson = JsonSerializer.Serialize(new { SourceFile = preview.FileName, SourceSha256 = preview.SourceSha256, stream.StreamKey, stream.Currency, stream.Amount })
+                });
+            }
+            batch.AuditEvents.Add(new HistoricalImportAuditEvent
+            {
+                ActorUserId = actor, Action = "HISTORICAL_OPENING_BALANCES_CAPTURED",
+                DetailsJson = JsonSerializer.Serialize(historicalBaseline.Streams)
+            });
+        }
         var sections = preview.Sections.ToDictionary(section => section.SectionId);
         var entities = new List<(HistoricalImportRecord Record, StagedEvidence Evidence, object Entity)>();
         foreach (var row in rows)
@@ -100,14 +122,6 @@ public sealed partial class ReviewedWorkbookImportService
             ActorUserId = actor, Action = HistoricalImportStatuses.UniversalProjectCommitted,
             DetailsJson = JsonSerializer.Serialize(new { preview.Issues, preview.Exceptions, request.ConfirmExcluded })
         });
-        if (!string.IsNullOrWhiteSpace(request.HistoricalBaselineJson))
-        {
-            batch.AuditEvents.Add(new HistoricalImportAuditEvent
-            {
-                ActorUserId = actor, Action = "HISTORICAL_BASELINE_CAPTURED",
-                DetailsJson = request.HistoricalBaselineJson
-            });
-        }
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         var groups = accepted.GroupBy(row => row.Disposition.Target!).ToArray();

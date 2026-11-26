@@ -7,4 +7,5 @@ public sealed record CreateSupplierPaymentRequest(
     DateTime? PaymentDate,
     string? PaymentMethod,
     string? Reference,
-    string? Notes);
+    string? Notes,
+    string? PaymentSource = null);

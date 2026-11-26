@@ -405,6 +405,74 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.ToTable("contractor_contract_items", (string)null);
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.ContractorPayment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("ContractorId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ContractorStatementId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("EGP");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("PaymentDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PaymentSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasDefaultValue("مكتب");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractorId");
+
+                    b.HasIndex("ContractorStatementId");
+
+                    b.HasIndex("ProjectId", "ContractorId", "PaymentDate");
+
+                    b.ToTable("contractor_payments", (string)null);
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.ContractorStatement", b =>
                 {
                     b.Property<int>("Id")
@@ -898,6 +966,57 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.ToTable("historical_import_records", (string)null);
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.HistoricalOpeningBalance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("BatchId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProvenanceJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("StreamKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId");
+
+                    b.HasIndex("ProjectId", "BatchId", "StreamKey", "Currency")
+                        .IsUnique();
+
+                    b.ToTable("historical_opening_balances", (string)null);
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.HistoricalPostedEntry", b =>
                 {
                     b.Property<int>("Id")
@@ -1027,6 +1146,44 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.ToTable("projects", (string)null);
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.ProjectWorkCategory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Classification")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<int?>("ProjectId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("project_work_categories", (string)null);
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.SiteMovement", b =>
                 {
                     b.Property<int>("Id")
@@ -1035,11 +1192,28 @@ namespace EMG.Infrastructure.Db.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("ContractorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CounterpartyType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasDefaultValue("بدون طرف");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("CreatedByUserId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("EGP");
 
                     b.Property<string>("Description")
                         .IsRequired()
@@ -1053,6 +1227,10 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.Property<string>("ExpenseCategory")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
+
+                    b.Property<string>("FundingSource")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
 
                     b.Property<bool>("IsPaid")
                         .HasColumnType("boolean");
@@ -1080,6 +1258,10 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
 
+                    b.Property<string>("Recipient")
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
+
                     b.Property<string>("Reference")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)");
@@ -1104,7 +1286,13 @@ namespace EMG.Infrastructure.Db.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<string>("WorkCategory")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("ContractorId");
 
                     b.HasIndex("SupplierId");
 
@@ -1357,6 +1545,13 @@ namespace EMG.Infrastructure.Db.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("PaymentSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasDefaultValue("مكتب");
 
                     b.Property<int?>("ProjectId")
                         .HasColumnType("integer");
@@ -1963,6 +2158,32 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.Navigation("Contract");
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.ContractorPayment", b =>
+                {
+                    b.HasOne("EMG.Domain.Entities.Contractor", "Contractor")
+                        .WithMany()
+                        .HasForeignKey("ContractorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("EMG.Domain.Entities.ContractorStatement", "ContractorStatement")
+                        .WithMany()
+                        .HasForeignKey("ContractorStatementId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("EMG.Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Contractor");
+
+                    b.Navigation("ContractorStatement");
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.ContractorStatement", b =>
                 {
                     b.HasOne("EMG.Domain.Entities.ContractorContract", "Contract")
@@ -2085,6 +2306,25 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.Navigation("Batch");
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.HistoricalOpeningBalance", b =>
+                {
+                    b.HasOne("EMG.Domain.Entities.HistoricalImportBatch", "Batch")
+                        .WithMany()
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("EMG.Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Batch");
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.HistoricalPostedEntry", b =>
                 {
                     b.HasOne("EMG.Domain.Entities.HistoricalImportBatch", "Batch")
@@ -2112,8 +2352,23 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.Navigation("Project");
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.ProjectWorkCategory", b =>
+                {
+                    b.HasOne("EMG.Domain.Entities.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.SiteMovement", b =>
                 {
+                    b.HasOne("EMG.Domain.Entities.Contractor", "Contractor")
+                        .WithMany()
+                        .HasForeignKey("ContractorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("EMG.Domain.Entities.Project", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
@@ -2124,6 +2379,8 @@ namespace EMG.Infrastructure.Db.Migrations
                         .WithMany()
                         .HasForeignKey("SupplierId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Contractor");
 
                     b.Navigation("Project");
 

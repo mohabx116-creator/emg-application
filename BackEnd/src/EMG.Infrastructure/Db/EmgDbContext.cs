@@ -36,11 +36,14 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
     public DbSet<HistoricalImportRecord> HistoricalImportRecords => Set<HistoricalImportRecord>();
     public DbSet<HistoricalImportAuditEvent> HistoricalImportAuditEvents => Set<HistoricalImportAuditEvent>();
     public DbSet<HistoricalPostedEntry> HistoricalPostedEntries => Set<HistoricalPostedEntry>();
+    public DbSet<HistoricalOpeningBalance> HistoricalOpeningBalances => Set<HistoricalOpeningBalance>();
+    public DbSet<ProjectWorkCategory> ProjectWorkCategories => Set<ProjectWorkCategory>();
     public DbSet<Contractor> Contractors => Set<Contractor>();
     public DbSet<ContractorContract> ContractorContracts => Set<ContractorContract>();
     public DbSet<ContractorContractItem> ContractorContractItems => Set<ContractorContractItem>();
     public DbSet<ContractorStatement> ContractorStatements => Set<ContractorStatement>();
     public DbSet<ContractorStatementLine> ContractorStatementLines => Set<ContractorStatementLine>();
+    public DbSet<ContractorPayment> ContractorPayments => Set<ContractorPayment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -164,6 +167,7 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
             entity.Property(item => item.PaymentMethod).HasMaxLength(100).IsRequired();
             entity.Property(item => item.Reference).HasMaxLength(150);
             entity.Property(item => item.Notes).HasMaxLength(2000);
+            entity.Property(item => item.PaymentSource).HasMaxLength(40).IsRequired().HasDefaultValue("مكتب");
             entity.Property(item => item.Status).HasMaxLength(80).IsRequired().HasDefaultValue("مسودة");
             entity.HasOne(item => item.Supplier).WithMany(supplier => supplier.Payments).HasForeignKey(item => item.SupplierId);
             entity.HasOne(item => item.Project).WithMany(project => project.SupplierPayments).HasForeignKey(item => item.ProjectId).OnDelete(DeleteBehavior.SetNull);
@@ -263,6 +267,22 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
             entity.HasIndex(item => new { item.SourceEntityType, item.SourceEntityId, item.ContractItemId });
         });
 
+        modelBuilder.Entity<ContractorPayment>(entity =>
+        {
+            entity.ToTable("contractor_payments");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Amount).HasPrecision(18, 2);
+            entity.Property(item => item.Currency).HasMaxLength(10).IsRequired().HasDefaultValue("EGP");
+            entity.Property(item => item.PaymentMethod).HasMaxLength(100).IsRequired();
+            entity.Property(item => item.PaymentSource).HasMaxLength(40).IsRequired().HasDefaultValue("مكتب");
+            entity.Property(item => item.Reference).HasMaxLength(150);
+            entity.Property(item => item.Notes).HasMaxLength(2000);
+            entity.HasOne(item => item.Project).WithMany().HasForeignKey(item => item.ProjectId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.Contractor).WithMany().HasForeignKey(item => item.ContractorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(item => item.ContractorStatement).WithMany().HasForeignKey(item => item.ContractorStatementId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(item => new { item.ProjectId, item.ContractorId, item.PaymentDate });
+        });
+
         modelBuilder.Entity<Attachment>(entity =>
         {
             entity.ToTable("attachments");
@@ -289,11 +309,41 @@ public sealed class EmgDbContext(DbContextOptions<EmgDbContext> options) : DbCon
             entity.Property(item => item.Reference).HasMaxLength(150);
             entity.Property(item => item.Details).HasMaxLength(4000);
             entity.Property(item => item.ExpenseCategory).HasMaxLength(150);
+            entity.Property(item => item.CounterpartyType).HasMaxLength(40).IsRequired().HasDefaultValue("بدون طرف");
+            entity.Property(item => item.Currency).HasMaxLength(10).IsRequired().HasDefaultValue("EGP");
+            entity.Property(item => item.FundingSource).HasMaxLength(250);
+            entity.Property(item => item.Recipient).HasMaxLength(250);
+            entity.Property(item => item.WorkCategory).HasMaxLength(150);
             entity.Property(item => item.PaidTo).HasMaxLength(250);
             entity.Property(item => item.PaymentMethod).HasMaxLength(100);
             entity.HasOne(item => item.Project).WithMany().HasForeignKey(item => item.ProjectId);
             entity.HasOne(item => item.Supplier).WithMany().HasForeignKey(item => item.SupplierId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(item => item.Contractor).WithMany().HasForeignKey(item => item.ContractorId).OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(item => new { item.ProjectId, item.MovementDate, item.MovementType });
+        });
+
+        modelBuilder.Entity<HistoricalOpeningBalance>(entity =>
+        {
+            entity.ToTable("historical_opening_balances");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.StreamKey).HasMaxLength(150).IsRequired();
+            entity.Property(item => item.Currency).HasMaxLength(10).IsRequired();
+            entity.Property(item => item.Amount).HasPrecision(18, 2);
+            entity.Property(item => item.SourceReference).HasMaxLength(500).IsRequired();
+            entity.Property(item => item.ProvenanceJson).HasMaxLength(4000).IsRequired();
+            entity.HasOne(item => item.Project).WithMany().HasForeignKey(item => item.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.Batch).WithMany().HasForeignKey(item => item.BatchId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(item => new { item.ProjectId, item.BatchId, item.StreamKey, item.Currency }).IsUnique();
+        });
+
+        modelBuilder.Entity<ProjectWorkCategory>(entity =>
+        {
+            entity.ToTable("project_work_categories");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Name).HasMaxLength(150).IsRequired();
+            entity.Property(item => item.Classification).HasMaxLength(80).IsRequired();
+            entity.HasOne(item => item.Project).WithMany().HasForeignKey(item => item.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(item => new { item.ProjectId, item.Name }).IsUnique();
         });
 
         modelBuilder.Entity<ExcavationRecord>(entity =>

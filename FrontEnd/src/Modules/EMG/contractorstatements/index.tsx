@@ -52,6 +52,7 @@ import {
   createEmgContractItem,
   createEmgContractor,
   createEmgContractorDraft,
+  createEmgContractorPayment,
   downloadEmgContractorDraft,
   getEmgContractItems,
   getEmgContractorContracts,
@@ -138,6 +139,10 @@ export default function ContractorStatements() {
   const [stmtPeriodTo, setStmtPeriodTo] = useState(getLocalIsoDate());
   const [stmtLines, setStmtLines] = useState<DraftLineInput[]>([createEmptyDraftLine()]);
   const [saving, setSaving] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentProjectId, setPaymentProjectId] = useState<number | ''>('');
+  const [paymentStatementId, setPaymentStatementId] = useState<number | ''>('');
+  const [paymentAmount, setPaymentAmount] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -242,6 +247,36 @@ export default function ContractorStatements() {
       setSelectedContractorId(created.id);
     } catch {
       setError('تعذر إضافة المقاول. تحقق من الصلاحيات.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openPayment = () => {
+    const firstProject = selectedAccount?.contracts[0]?.projectId ?? selectedAccount?.statements[0]?.projectId ?? '';
+    setPaymentProjectId(firstProject);
+    setPaymentStatementId(selectedAccount?.statements[0]?.id ?? '');
+    setPaymentAmount('');
+    setPaymentOpen(true);
+  };
+
+  const handlePayment = async () => {
+    if (!selectedAccount || !paymentProjectId || !paymentAmount || Number(paymentAmount) <= 0) return;
+    setSaving(true);
+    try {
+      await createEmgContractorPayment(selectedAccount.contractor.id, {
+        projectId: paymentProjectId,
+        contractorStatementId: paymentStatementId || null,
+        amount: Number(paymentAmount),
+        currency: 'EGP',
+        paymentSource: 'مالك مباشر',
+        notes: 'تخليص حساب'
+      });
+      setPaymentOpen(false);
+      setMessage('تم تسجيل دفع فاتورة مباشرة من المالك وربطها بحساب المقاول.');
+      await load();
+    } catch {
+      setError('تعذر تسجيل دفعة المقاول أو تجاوزت الرصيد المتبقي.');
     } finally {
       setSaving(false);
     }
@@ -422,6 +457,9 @@ export default function ContractorStatements() {
               sx={{ borderRadius: 2, fontWeight: 700 }}
             >
               إنشاء كشف جديد
+            </Button>
+            <Button variant="outlined" color="success" onClick={openPayment} disabled={cContracts.length === 0 && cStatements.length === 0} sx={{ borderRadius: 2, fontWeight: 700 }}>
+              دفع مباشر من المالك
             </Button>
           </Stack>
         </Stack>
@@ -1057,6 +1095,33 @@ export default function ContractorStatements() {
       </MainCard>
 
       {/* Dialog: Add Contractor */}
+      <Dialog open={paymentOpen} onClose={() => setPaymentOpen(false)} fullWidth maxWidth="xs" fullScreen={downSM}>
+        <DialogTitle>دفع فاتورة مباشرة من المالك</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel>المشروع</InputLabel>
+              <Select value={paymentProjectId} label="المشروع" onChange={(e) => setPaymentProjectId(Number(e.target.value))}>
+                {allContracts.filter((contract) => contract.contractorId === selectedContractorId).map((contract) => <MenuItem key={contract.projectId} value={contract.projectId}>{contract.projectName}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth size="small">
+              <InputLabel>كشف المقاول</InputLabel>
+              <Select value={paymentStatementId} label="كشف المقاول" onChange={(e) => setPaymentStatementId(e.target.value ? Number(e.target.value) : '')}>
+                <MenuItem value="">اختر كشف المقاول</MenuItem>
+                {statements.filter((statement) => statement.contractorId === selectedContractorId && (!paymentProjectId || statement.projectId === paymentProjectId)).map((statement) => <MenuItem key={statement.id} value={statement.id}>كشف #{statement.id} — {statement.projectName}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <TextField fullWidth required size="small" type="number" label="المبلغ بالجنيه" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} inputProps={{ min: 0, step: 0.01 }} />
+            <Alert severity="info">سيظهر الدفع كـ«تخليص حساب»، ويزيد دفعات العميل دون إضافة رصيد إلى عهدة المهندس أو المكتب.</Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPaymentOpen(false)}>إلغاء</Button>
+          <Button variant="contained" color="success" disabled={saving || !paymentProjectId || !paymentStatementId || !paymentAmount} onClick={() => void handlePayment()}>حفظ الدفع</Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={addContractorOpen} onClose={() => setAddContractorOpen(false)} fullWidth maxWidth="xs" fullScreen={downSM}>
         <DialogTitle>إضافة مقاول جديد</DialogTitle>
         <DialogContent dividers>

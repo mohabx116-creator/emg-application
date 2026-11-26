@@ -16,14 +16,16 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         // Reports and balances are based only on approved/posted source rows.
         // Draft and review rows remain visible in workflow screens and cannot
         // affect the financial truth until an authorized approval occurs.
-        var totalExpenses = await db.SiteMovements.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.TotalAmount, cancellationToken)
-            + await db.SupplierPayments.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
+        var postedSite = db.SiteMovements.Where(item => item.ProjectId == projectId && item.Currency == "EGP" && (item.Status == "معتمد" || item.Status == "مرحّل"));
+        var totalExpenses = await postedSite.Where(item => item.MovementType != "وارد").SumAsync(item => item.TotalAmount, cancellationToken)
+            + await db.SupplierPayments.Where(item => item.ProjectId == projectId && item.PaymentSource != "مالك مباشر" && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken)
+            + await db.ContractorPayments.Where(item => item.ProjectId == projectId && item.PaymentSource != "مالك مباشر" && item.Currency == "EGP").SumAsync(item => item.Amount, cancellationToken);
         var supplierSupplies = await db.SupplierSupplies.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.TotalAmount, cancellationToken);
         var supplierPaid = await db.SupplierPayments.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
         var supplierOutstanding = supplierSupplies - supplierPaid;
         var outgoingByCategory = new Dictionary<string, decimal>(StringComparer.Ordinal);
         void AddOutgoing(string category, decimal amount) => outgoingByCategory[category] = outgoingByCategory.GetValueOrDefault(category) + amount;
-        AddOutgoing("الموقع", await db.SiteMovements.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.TotalAmount, cancellationToken));
+        AddOutgoing("الموقع", await postedSite.Where(item => item.MovementType != "وارد").SumAsync(item => item.TotalAmount, cancellationToken));
         // Canonical financial buckets are independent from the detailed
         // operational section.  In particular, imported concrete and
         // finishing rows historically entered with the entity default
@@ -48,6 +50,9 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         var totalIncoming = await db.AdvancePayments
             .Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل"))
             .SumAsync(item => item.Amount, cancellationToken);
+        totalIncoming += await postedSite.Where(item => item.MovementType == "وارد").SumAsync(item => item.TotalAmount, cancellationToken);
+        totalIncoming += await db.SupplierPayments.Where(item => item.ProjectId == projectId && item.PaymentSource == "مالك مباشر" && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
+        totalIncoming += await db.ContractorPayments.Where(item => item.ProjectId == projectId && item.PaymentSource == "مالك مباشر" && item.Currency == "EGP").SumAsync(item => item.Amount, cancellationToken);
         var totalOutgoing = outgoingByCategory.Values.Sum();
         var officePaid = incomingByCategory.GetValueOrDefault("المكتب");
         var office = OfficeFeeCalculation.Calculate(totalOutgoing, project.OfficeSharePercentage, officePaid);
@@ -61,6 +66,7 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             record.LifecycleStatus == HistoricalImportStatuses.ReviewRequired && !record.IsSummary, cancellationToken);
         var status = incomplete ? "غير مكتمل: توجد سجلات استيراد قيد المراجعة" :
             payerBalance > 0 ? "مستحق على الدافع" : payerBalance < 0 ? "رصيد زائد لدى الدافع" : "متزن";
+        var cashBalance = decimal.Round(totalIncoming - totalOutgoing, 2);
 
         return new FinalAccountSummary(
             project.Id, project.Name, project.ClientName ?? string.Empty, project.PayerName ?? string.Empty,
@@ -70,6 +76,10 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             ProjectCode = project.Code,
             OwnerName = project.OwnerName ?? string.Empty,
             TotalOutgoing = totalOutgoing,
+            TotalWorks = totalOutgoing,
+            TotalPayments = totalIncoming,
+            CashBalance = cashBalance,
+            CashBalanceStatus = cashBalance > 0 ? "العميل له فلوس" : cashBalance < 0 ? "لنا مستحقات لدى العميل" : "الحساب متوازن",
             OfficePaid = officePaid,
             OfficeNetDue = office.Outstanding,
             HasUnresolvedImportRecords = incomplete,

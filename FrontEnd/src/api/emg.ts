@@ -113,6 +113,7 @@ export type EmgContractor = { id: number; name: string; phone: string; taxNumber
 export type EmgContract = { id: number; projectId: number; projectName: string; contractorId: number; contractorName: string; contractNumber: string; currency: string; status: string; itemCount: number };
 export type EmgContractItem = { id: number; contractId: number; description: string; unit: string; approvedQuantity: number; unitRate: number; sourceReference: string; usedQuantity: number; remainingQuantity: number };
 export type EmgContractorStatement = { id: number; projectId: number; projectName: string; contractorId: number; contractorName: string; contractId: number; contractNumber: string; periodFrom: string; periodTo: string; currency: string; status: string; grossAmount: number; previousPaymentsAmount: number; deductionsAmount: number; netAmount: number; sourceReference: string; lines: Array<{ id: number; contractItemId: number; description: string; sourceEntityType: string; sourceEntityId: number; quantity: number; unit: string; unitRate: number; grossAmount: number; sourceReference: string }> };
+export type EmgContractorPayment = { id: number; projectId: number; contractorId: number; contractorStatementId: number | null; amount: number; currency: string; paymentDate: string; paymentMethod: string; paymentSource: string; reference: string; notes: string };
 export type EmgEligibleContractorWork = { sourceEntityType: string; sourceEntityId: number; description: string; unit: string; quantity: number; unitRate: number; status: string; sourceReference: string; alreadyUsed: boolean };
 
 export type EmgOperationalAudit = {
@@ -251,6 +252,13 @@ export type EmgSiteMovement = {
   projectName: string;
   supplierId: number | null;
   supplierName: string;
+  contractorId: number | null;
+  contractorName: string;
+  counterpartyType: string;
+  currency: string;
+  fundingSource: string;
+  recipient: string;
+  workCategory: string;
   movementType: string;
   description: string;
   unit: string;
@@ -464,6 +472,7 @@ export type EmgSupplierPayment = {
   reference: string;
   notes: string;
   status: string;
+  paymentSource: string;
 };
 export type EmgAdvance = {
   id: number;
@@ -836,6 +845,13 @@ export async function createEmgSupplierPayment(id: number, payload: Record<strin
   return (await axios.post<EmgSupplierPayment>(`/api/suppliers/${id}/payments`, payload)).data;
 }
 export async function getEmgContractors(): Promise<EmgContractor[]> { return (await axios.get<EmgContractor[]>('/api/contractors')).data; }
+export type EmgWorkCategory = { id: number; projectId: number | null; name: string; classification: string; isActive: boolean };
+export async function getEmgWorkCategories(projectId?: number, classification?: string): Promise<EmgWorkCategory[]> {
+  return (await axios.get<EmgWorkCategory[]>('/api/work-categories', { params: { projectId, classification } })).data;
+}
+export async function createEmgWorkCategory(payload: Record<string, unknown>): Promise<EmgWorkCategory> {
+  return (await axios.post<EmgWorkCategory>('/api/work-categories', payload)).data;
+}
 export async function createEmgContractor(payload: Record<string, unknown>): Promise<EmgContractor> { return (await axios.post<EmgContractor>('/api/contractors', payload)).data; }
 export async function getEmgContractorContracts(projectId?: number, contractorId?: number): Promise<EmgContract[]> { return (await axios.get<EmgContract[]>('/api/contractors/contracts', { params: { projectId, contractorId } })).data; }
 export async function createEmgContract(contractorId: number, payload: Record<string, unknown>): Promise<EmgContract> { return (await axios.post<EmgContract>(`/api/contractors/${contractorId}/contracts`, payload)).data; }
@@ -844,6 +860,7 @@ export async function getEmgEligibleContractorWork(contractId: number): Promise<
 export async function createEmgContractItem(contractId: number, payload: Record<string, unknown>): Promise<EmgContractItem> { return (await axios.post<EmgContractItem>(`/api/contractors/contracts/${contractId}/items`, payload)).data; }
 export async function getEmgContractorStatements(projectId?: number): Promise<EmgContractorStatement[]> { return (await axios.get<EmgContractorStatement[]>('/api/contractors/statements', { params: { projectId } })).data; }
 export async function createEmgContractorDraft(payload: Record<string, unknown>): Promise<EmgContractorStatement> { return (await axios.post<EmgContractorStatement>('/api/contractors/statements/draft', payload)).data; }
+export async function createEmgContractorPayment(contractorId: number, payload: Record<string, unknown>): Promise<EmgContractorPayment> { return (await axios.post<EmgContractorPayment>(`/api/contractors/${contractorId}/payments`, payload)).data; }
 export async function downloadEmgContractorDraft(id: number): Promise<Blob> { return (await axios.get(`/api/contractors/statements/${id}.xlsx`, { responseType: 'blob' })).data; }
 export async function getEmgExcavation(projectId: number): Promise<EmgExcavation[]> {
   return (await axios.get<EmgExcavation[]>('/api/excavation', { params: { projectId } })).data;

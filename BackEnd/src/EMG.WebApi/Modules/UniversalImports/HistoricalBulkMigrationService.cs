@@ -60,19 +60,14 @@ public sealed class HistoricalBulkMigrationService(
                 var projectName = Path.GetFileNameWithoutExtension(source.FileName);
                 if (projectName.Length > 250) projectName = projectName[..250];
                 var projectCode = preview.SourceProjectCode ?? $"H-{source.Sha256[..12]}";
-                var baselineJson = JsonSerializer.Serialize(new
-                {
-                    CutoffUtc = DateTime.UtcNow,
-                    SourceFile = source.FileName,
-                    SourceSha256 = source.Sha256,
-                    CurrencyTotals = preview.Totals,
-                    Reconciliations = preview.Reconciliations,
-                    HistoricalException = "Source values and unresolved relationships are preserved as supplied; no implicit FX or payment/allocation link was created."
-                });
                 var request = new UniversalNewProjectRequest(snapshotId, projectName, projectCode,
                     preview.ProjectMetadata?.ClientName, preview.ProjectMetadata?.OwnerName, preview.ProjectMetadata?.PayerName,
-                    preview.ProjectMetadata?.Location, null, null, true, baselineJson);
-                var committed = await imports.CommitNewProjectAsync(request, actor, cancellationToken);
+                    preview.ProjectMetadata?.Location, null, null, true);
+                var baseline = new HistoricalMigrationBaseline(preview.Totals
+                    .Select(total => new HistoricalOpeningBalanceSeed(total.StreamKey, total.Currency, total.Amount,
+                        $"{source.FileName}:{total.StreamKey}"))
+                    .ToArray());
+                var committed = await imports.CommitNewProjectAsync(request, actor, cancellationToken, baseline);
                 results.Add(new(source.FileName, source.Sha256, preview.SourceProjectCode, committed.ProjectId, committed.BatchId,
                     "MIGRATED", preview.Records.Count, committed.Counts.Values.Sum(), committed.RetainedRecords,
                     preview.Totals.GroupBy(item => item.Currency).ToDictionary(group => group.Key, group => group.Sum(item => item.Amount)),

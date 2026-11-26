@@ -11,4 +11,5 @@ public sealed record PaymentSummary(
     string PaymentMethod,
     string Reference,
     string Notes,
-    string Status);
+    string Status,
+    string PaymentSource = "مكتب");

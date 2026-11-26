@@ -7,6 +7,13 @@ public sealed class SiteMovement
     public Project Project { get; set; } = null!;
     public int? SupplierId { get; set; }
     public Supplier? Supplier { get; set; }
+    public int? ContractorId { get; set; }
+    public Contractor? Contractor { get; set; }
+    public string CounterpartyType { get; set; } = "بدون طرف";
+    public string Currency { get; set; } = "EGP";
+    public string? FundingSource { get; set; }
+    public string? Recipient { get; set; }
+    public string? WorkCategory { get; set; }
     public string MovementType { get; set; } = "مصروفات";
     public string Description { get; set; } = string.Empty;
     public string? Unit { get; set; }

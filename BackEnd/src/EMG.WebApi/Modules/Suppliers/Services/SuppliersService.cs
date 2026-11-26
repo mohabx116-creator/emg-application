@@ -221,7 +221,7 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
             SupplierId = supplierId, ProjectId = request.ProjectId, SupplyId = request.SupplyId, InvoiceId = invoiceId, Amount = request.Amount,
             PaymentDate = request.PaymentDate is null ? DateTime.UtcNow.Date : DateTime.SpecifyKind(request.PaymentDate.Value.Date, DateTimeKind.Utc),
             PaymentMethod = string.IsNullOrWhiteSpace(request.PaymentMethod) ? "نقدي" : request.PaymentMethod.Trim(),
-            Reference = request.Reference?.Trim(), Notes = request.Notes?.Trim(), Status = "مرحّل", CreatedByUserId = userId
+            Reference = request.Reference?.Trim(), Notes = NormalizePaymentNotes(request.Notes, request.PaymentSource), PaymentSource = NormalizePaymentSource(request.PaymentSource), Status = "مرحّل", CreatedByUserId = userId
         };
         db.SupplierPayments.Add(payment);
         await db.SaveChangesAsync(cancellationToken);
@@ -237,11 +237,16 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
         return value[..Math.Min(120, value.Length)];
     }
 
+    private static string NormalizePaymentSource(string? source) => source?.Trim() == "مالك مباشر" ? "مالك مباشر" : "مكتب";
+
+    private static string? NormalizePaymentNotes(string? notes, string? source) =>
+        string.IsNullOrWhiteSpace(notes) && NormalizePaymentSource(source) == "مالك مباشر" ? "تخليص حساب" : notes?.Trim();
+
     private static System.Linq.Expressions.Expression<Func<SupplierSupply, SupplySummary>> ToSummary() => item => new SupplySummary(
         item.Id, item.SupplierId, item.Supplier.Name, item.ProjectId, item.Project.Name, item.SupplyType, item.ItemName,
         item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.Payments.Where(payment => payment.Status == "معتمد" || payment.Status == "مرحّل").Sum(payment => (decimal?)payment.Amount) ?? 0m, item.TotalAmount - (item.Payments.Where(payment => payment.Status == "معتمد" || payment.Status == "مرحّل").Sum(payment => (decimal?)payment.Amount) ?? 0m), item.SupplyDate, item.InvoiceNumber ?? string.Empty, item.Notes ?? string.Empty, item.Status);
 
     private static System.Linq.Expressions.Expression<Func<SupplierPayment, PaymentSummary>> ToPaymentSummary() => item => new PaymentSummary(
         item.Id, item.SupplierId, item.ProjectId, item.Project == null ? string.Empty : item.Project.Name, item.SupplyId,
-        item.Amount, item.PaymentDate, item.PaymentMethod, item.Reference ?? string.Empty, item.Notes ?? string.Empty, item.Status);
+        item.Amount, item.PaymentDate, item.PaymentMethod, item.Reference ?? string.Empty, item.Notes ?? string.Empty, item.Status, item.PaymentSource);
 }

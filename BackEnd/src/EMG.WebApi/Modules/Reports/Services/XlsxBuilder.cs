@@ -29,7 +29,7 @@ internal static class XlsxBuilder
             Add(archive, "xl/worksheets/sheet2.xml", MovementsSheet(report.Movements));
             Add(archive, "xl/worksheets/sheet3.xml", AdvancesSheet(report.Advances));
             Add(archive, "xl/worksheets/sheet4.xml", SuppliesSheet(report.SupplierSupplies));
-            Add(archive, "xl/worksheets/sheet5.xml", PaymentsSheet(report.SupplierPayments));
+            Add(archive, "xl/worksheets/sheet5.xml", PaymentsSheet(report.SupplierPayments, report.ContractorPayments));
             Add(archive, "xl/worksheets/sheet6.xml", AuditSheet(audit));
         }
         return CompactSharedStrings(output.ToArray());
@@ -199,7 +199,7 @@ internal static class XlsxBuilder
                 }
             }
             Add(archive, "xl/worksheets/sheet12.xml", SuppliesSheet(report.SupplierSupplies));
-            Add(archive, "xl/worksheets/sheet13.xml", PaymentsSheet(report.SupplierPayments));
+            Add(archive, "xl/worksheets/sheet13.xml", PaymentsSheet(report.SupplierPayments, report.ContractorPayments));
             if (appendFullMovements)
                 Add(archive, "xl/worksheets/sheet14.xml", MovementsSheet(report.Movements));
         }
@@ -692,10 +692,11 @@ internal static class XlsxBuilder
         return Sheet(rows, numericColumns: new HashSet<int> { 5, 6, 7 });
     }
 
-    private static XDocument PaymentsSheet(IReadOnlyList<ProjectSupplierPaymentRow> payments)
+    private static XDocument PaymentsSheet(IReadOnlyList<ProjectSupplierPaymentRow> payments, IReadOnlyList<ProjectContractorPaymentRow> contractorPayments)
     {
-        var rows = new List<string[]> { new[] { "التاريخ", "المورد", "المبلغ", "طريقة الدفع", "المرجع" } };
-        rows.AddRange(payments.Select(item => new[] { item.Date.ToString("yyyy-MM-dd"), item.SupplierName, N(item.Amount), item.Method, item.Reference }));
+        var rows = new List<string[]> { new[] { "التاريخ", "الطرف", "المبلغ", "العملة", "طريقة الدفع", "مصدر الدفع", "المرجع" } };
+        rows.AddRange(payments.Select(item => new[] { item.Date.ToString("yyyy-MM-dd"), item.SupplierName, N(item.Amount), "EGP", item.Method, item.PaymentSource, item.Reference }));
+        rows.AddRange(contractorPayments.Select(item => new[] { item.Date.ToString("yyyy-MM-dd"), item.ContractorName, N(item.Amount), item.Currency, item.Method, item.PaymentSource, item.Reference }));
         return Sheet(rows, numericColumns: new HashSet<int> { 2 });
     }
 
