@@ -830,6 +830,11 @@ export default function EmgReportsDetails() {
               />
             ))}
           </Stack>
+          {historical.openingBalances.length > 0 && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              أرصدة البداية التشغيلية المحفوظة: {historical.openingBalances.map((item) => `${item.streamKey} ${money.format(item.amount)} ${localizeCurrency(item.currency)}`).join(' · ')}
+            </Alert>
+          )}
           {historical.entries.length === 0 ? (
             <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
               لا توجد حركات تاريخية منشورة.

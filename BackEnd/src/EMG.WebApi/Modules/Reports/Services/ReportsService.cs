@@ -31,7 +31,11 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
             .OrderBy(group => group.Key.Currency).ThenBy(group => group.Key.LedgerStream)
             .Select(group => new HistoricalReportTotal(group.Key.LedgerStream, group.Key.Currency, group.Sum(item => item.Amount), group.Count()))
             .ToList();
-        return new HistoricalProjectReport(projectId, totals, entries);
+        var openingBalances = await db.HistoricalOpeningBalances.AsNoTracking().Where(item => item.ProjectId == projectId)
+            .OrderBy(item => item.Id)
+            .Select(item => new HistoricalOpeningBalanceReportRow(item.StreamKey, item.Currency, item.Amount, item.SourceReference, item.ProvenanceJson))
+            .ToListAsync(cancellationToken);
+        return new HistoricalProjectReport(projectId, totals, entries) { OpeningBalances = openingBalances };
     }
 
     public async Task<ProjectReportSummary?> GetProjectReportAsync(int projectId, int? userId, bool isAdmin, CancellationToken cancellationToken)

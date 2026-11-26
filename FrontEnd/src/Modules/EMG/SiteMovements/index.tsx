@@ -57,6 +57,8 @@ import {
   getEmgSiteMovements,
   getEmgContractors,
   EmgContractor,
+  getEmgWorkCategories,
+  createEmgWorkCategory,
   suggestEmgEntry,
   uploadEmgAttachment
 } from 'api/emg';
@@ -161,6 +163,7 @@ export default function EmgSiteMovements() {
   const [project, setProject] = useState<EmgProject | null>(null);
   const [movements, setMovements] = useState<EmgSiteMovement[]>([]);
   const [contractors, setContractors] = useState<EmgContractor[]>([]);
+  const [workCategories, setWorkCategories] = useState<string[]>([]);
   const [header, setHeader] = useState<InvoiceHeaderForm>(createInitialHeader);
   const [lines, setLines] = useState<InvoiceLine[]>([createEmptyLine()]);
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -207,6 +210,22 @@ export default function EmgSiteMovements() {
   }, [id]);
 
   useEffect(() => { getEmgContractors().then(setContractors).catch(() => setContractors([])); }, []);
+  useEffect(() => {
+    if (!Number.isInteger(id)) return;
+    getEmgWorkCategories(id, 'الموقع').then((items) => setWorkCategories(items.map((item) => item.name))).catch(() => setWorkCategories([]));
+  }, [id]);
+
+  const ensureWorkCategory = async () => {
+    const name = header.workCategory.trim();
+    if (!name || workCategories.some((item) => item.toLocaleLowerCase() === name.toLocaleLowerCase())) return;
+    try {
+      const created = await createEmgWorkCategory({ projectId: id, name, classification: 'الموقع' });
+      setWorkCategories((current) => [...current, created.name].sort((a, b) => a.localeCompare(b)));
+    } catch {
+      // The server remains authoritative; a duplicate or missing permission
+      // must not block saving the operational record itself.
+    }
+  };
 
   // Auto-open entry sheet if navigated from bottom-nav "+" FAB or Engineer quick CTA
   useEffect(() => {
@@ -570,7 +589,16 @@ export default function EmgSiteMovements() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth size="small" label="مصدر التمويل" value={header.fundingSource} onChange={(e) => updateHeader('fundingSource', e.target.value)} /></Grid>
           <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth size="small" label="المستلم" value={header.recipient} onChange={(e) => updateHeader('recipient', e.target.value)} /></Grid>
-          <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth size="small" label="التصنيف" value={header.workCategory} onChange={(e) => updateHeader('workCategory', e.target.value)} /></Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Autocomplete
+              freeSolo
+              options={workCategories}
+              value={header.workCategory}
+              onInputChange={(_, value) => updateHeader('workCategory', value)}
+              onChange={(_, value) => updateHeader('workCategory', typeof value === 'string' ? value : '')}
+              renderInput={(params) => <TextField {...params} fullWidth size="small" label="التصنيف" onBlur={() => void ensureWorkCategory()} />}
+            />
+          </Grid>
         </Grid>
 
         {/* Inline Supplier Creation Panel — preserves all form inputs */}

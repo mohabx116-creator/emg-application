@@ -106,6 +106,7 @@ export type EmgProjectReport = {
 export type EmgHistoricalProjectReport = {
   projectId: number;
   totals: Array<{ ledgerStream: string; currency: string; amount: number; entryCount: number }>;
+  openingBalances: Array<{ streamKey: string; currency: string; amount: number; sourceReference: string; provenanceJson: string }>;
   entries: Array<{ id: number; batchId: number; sourceFileName: string; sourceSha256: string; sheetName: string; sourceCoordinate: string; mappingFamily: string; businessEventType: string; ledgerStream: string; amount: number; currency: string; postedAtUtc: string; provenanceJson: string }>;
 };
 
