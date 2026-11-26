@@ -79,13 +79,14 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
             Dimension(visible, item => item.Resolution == ClassificationResolution.Unresolved, "Financial rows requiring review; excluded from resolved category totals."));
 
         var officePercentage = source.OfficeSharePercentage;
-        var hasUnresolvedBasis = visible.Any(item => item.Resolution == ClassificationResolution.Unresolved && IsOperationalSource(item.EntityType));
+        var hasUnresolvedBasis = source.HasUnresolvedImportRecords ||
+            visible.Any(item => item.Resolution == ClassificationResolution.Unresolved && IsOperationalSource(item.EntityType));
         var officeBasis = hasUnresolvedBasis ? resolvedOperational : visible.Where(item => IsOperationalSource(item.EntityType)).Sum(item => item.Amount);
         var office = OfficeFeeCalculation.Calculate(officeBasis, officePercentage, dimensions.OfficePayments.CurrentAmount);
         var officeAccrual = new OfficeAccrualPreview(office.Fee, officePercentage, officeBasis, !hasUnresolvedBasis,
             hasUnresolvedBasis ? "INCOMPLETE_UNVERIFIED" : "VERIFIED_PROJECTION",
             hasUnresolvedBasis
-                ? "Unresolved operational rows remain outside the diagnostic basis."
+                ? "Unresolved operational or imported rows remain outside the diagnostic basis."
                 : "Project outgoing multiplied by its office percentage. Office payments reduce the outstanding fee.")
         {
             OfficeFee = hasUnresolvedBasis ? null : office.Fee,
@@ -100,7 +101,7 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
         };
 
         var columns = ColumnMap.Select(pair => BuildColumn(pair.Key, pair.Value.Heading, pair.Value.Code, source, concrete, unresolvedLines)).ToList();
-        var complete = unresolved.Count == 0;
+        var complete = unresolved.Count == 0 && !source.HasUnresolvedImportRecords;
         return new ConsolidatedStatementRow(source.ProjectId, source.ProjectCode, source.ProjectName, columns, dimensions, officeAccrual,
             netDiagnostics, unresolved, complete, complete ? "COMPLETE_FOR_RESOLVED_CATEGORIES" : "INCOMPLETE_UNVERIFIED");
     }
@@ -115,9 +116,11 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
         var total = source.Totals.Single(item => item.Classification == code);
         var affected = unresolved.Where(item => code == AccountingClassificationCode.ContractorWorkmanship || code == AccountingClassificationCode.ConcreteStation
             ? item.EntityType == "concrete" : false).ToList();
-        var status = total.UnresolvedRecordCount > 0 || affected.Count > 0 ? "INCOMPLETE_UNVERIFIED" : "VERIFIED_PROJECTION";
+        var status = source.HasUnresolvedImportRecords || total.UnresolvedRecordCount > 0 || affected.Count > 0
+            ? "INCOMPLETE_UNVERIFIED" : "VERIFIED_PROJECTION";
         return new(column, heading, total.ImportedApprovedPostedAmount, total.CurrentApprovedPostedAmount, null,
-            affected.Sum(item => item.Amount), affected.Count, true, status, status == "VERIFIED_PROJECTION" ? "Resolved classification total." : "Unresolved source rows affect this category.");
+            affected.Sum(item => item.Amount), affected.Count, status == "VERIFIED_PROJECTION", status,
+            status == "VERIFIED_PROJECTION" ? "Resolved classification total." : "Unresolved source rows affect this category.");
     }
 
     private static StatementDimension Dimension(IEnumerable<AccountingClassificationLine> lines, Func<AccountingClassificationLine, bool> predicate, string meaning)

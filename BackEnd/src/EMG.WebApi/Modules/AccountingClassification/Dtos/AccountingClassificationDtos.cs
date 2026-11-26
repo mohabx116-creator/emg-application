@@ -62,4 +62,7 @@ public sealed record AccountingClassificationPreview(
     string SnapshotRule,
     IReadOnlyList<AccountingClassificationTotal> Totals,
     IReadOnlyList<AccountingClassificationLine> Lines,
-    IReadOnlyList<AccountingClassificationLine> UnresolvedRecords);
+    IReadOnlyList<AccountingClassificationLine> UnresolvedRecords)
+{
+    public bool HasUnresolvedImportRecords { get; init; }
+}

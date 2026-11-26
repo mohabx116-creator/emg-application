@@ -60,6 +60,7 @@ export type EmgFinalAccount = {
   totalOutgoing?: number;
   officePaid?: number;
   officeNetDue?: number;
+  hasUnresolvedImportRecords?: boolean;
   outgoingByCategory?: Record<string, number>;
   incomingByCategory?: Record<string, number>;
 };

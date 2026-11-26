@@ -58,7 +58,7 @@ public sealed class UniversalImportsController(IUniversalImportPreviewService pr
         catch (KeyNotFoundException error) { return NotFound(new { message = error.Message }); }
         catch (HistoricalWorkbookPostingDisabledException)
         {
-            return StatusCode(403, new { message = "ترحيل ملفات الشركة متاح فقط في قاعدة الاختبار المعزولة المصرّح بها." });
+            return StatusCode(403, new { message = "ترحيل ملفات الشركة غير مفعّل لهذه البيئة أو لهذا الحساب." });
         }
         catch (InvalidOperationException error) { return Conflict(new { message = error.Message }); }
         catch (Exception error) when (error is DbUpdateException or PostgresException { SqlState: PostgresErrorCodes.SerializationFailure })

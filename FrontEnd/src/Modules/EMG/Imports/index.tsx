@@ -449,7 +449,7 @@ export default function EmgImports() {
           <Divider />
           {reviewed && (
             <MainCard title="نتيجة التحقق على الخادم">
-              {!reviewed.postingEnabled && <Alert severity="info">الترحيل المالي مفعّل فقط في بيئة الاختبار المعزولة المصرّح بها.</Alert>}
+              {!reviewed.postingEnabled && <Alert severity="info">الترحيل المالي غير مفعّل لهذه البيئة أو لهذا الحساب.</Alert>}
               <TableContainer sx={{ maxHeight: 420 }}>
                 <Table size="small" stickyHeader>
                   <TableHead><TableRow><TableCell>المصدر</TableCell><TableCell>القيمة</TableCell><TableCell>النتيجة</TableCell></TableRow></TableHead>

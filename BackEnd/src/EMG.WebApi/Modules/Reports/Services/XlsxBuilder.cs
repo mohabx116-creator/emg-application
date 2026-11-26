@@ -285,7 +285,7 @@ internal static class XlsxBuilder
 
     private static void PopulateFinalAccountTemplate(XElement worksheet, FinalAccountSummary account, XNamespace ns)
     {
-        SetText(worksheet, "D5", "كشف حساب", ns);
+        SetText(worksheet, "D5", account.HasUnresolvedImportRecords ? "كشف حساب تشخيصي: استيراد غير مكتمل" : "كشف حساب", ns);
         SetText(worksheet, "D6", $"اسم العميل: {account.ClientName}", ns);
         SetText(worksheet, "D7", $"رقم القطعة: {account.ProjectCode}", ns);
         SetText(worksheet, "E8", "ح / الموقع", ns);
@@ -303,7 +303,8 @@ internal static class XlsxBuilder
         SetNumber(worksheet, "F12", account.OfficePaid, ns);
         SetText(worksheet, "G13", "نسبة المكتب", ns);
         SetNumber(worksheet, "H13", account.OfficeSharePercentage / 100m, ns);
-        SetNumber(worksheet, "I13", account.OfficeNetDue, ns);
+        if (account.HasUnresolvedImportRecords) ClearCell(worksheet, "I13", ns);
+        else SetNumber(worksheet, "I13", account.OfficeNetDue, ns);
     }
 
     private static void PopulateSiteTemplate(XElement worksheet, ProjectReportSummary report, XNamespace ns)
@@ -625,20 +626,20 @@ internal static class XlsxBuilder
         var outgoing = categories.Select(category => category == "باقي المصنعيات" ? OtherCategories(report.FinalAccount.OutgoingByCategory) : Value(report.FinalAccount.OutgoingByCategory, category)).ToList();
         var incoming = categories.Select(category => category == "باقي المصنعيات" ? OtherCategories(report.FinalAccount.IncomingByCategory) : Value(report.FinalAccount.IncomingByCategory, category)).ToList();
         var rows = new List<string[]> {
-            new[] { "كشف حساب", report.FinalAccount.ProjectName },
+            new[] { report.FinalAccount.HasUnresolvedImportRecords ? "كشف حساب تشخيصي: استيراد غير مكتمل" : "كشف حساب", report.FinalAccount.ProjectName },
             new[] { "اسم العميل", report.FinalAccount.ClientName },
             new[] { "الدافع", report.FinalAccount.PayerName },
             Array.Empty<string>(),
             new[] { "البند" }.Concat(categories).Concat(new[] { "إجمالي" }).ToArray(),
             new[] { "صادر" }.Concat(outgoing.Select(N)).Concat(new[] { N(report.FinalAccount.TotalOutgoing) }).ToArray(),
             new[] { "وارد" }.Concat(incoming.Select(N)).Concat(new[] { N(report.FinalAccount.TotalIncoming) }).ToArray(),
-            new[] { "ح/ نسبة المكتب", "", "", "", "", "", N(report.FinalAccount.OfficeShareAmount) },
+            new[] { "ح/ نسبة المكتب", "", "", "", "", "", report.FinalAccount.HasUnresolvedImportRecords ? "" : N(report.FinalAccount.OfficeShareAmount) },
             new[] { "إجمالي الدفعات تحت ح/ المكتب", "", "", "", "", "", N(report.FinalAccount.OfficePaid) },
-            new[] { "صافي المستحق للمكتب", "", "", "", "", "", N(report.FinalAccount.OfficeNetDue) },
+            new[] { "صافي المستحق للمكتب", "", "", "", "", "", report.FinalAccount.HasUnresolvedImportRecords ? "" : N(report.FinalAccount.OfficeNetDue) },
             Array.Empty<string>(),
             new[] { "إجمالي المصروفات النقدية", N(report.FinalAccount.TotalExpenses) },
-            new[] { "صافي المشروع بعد نصيب المكتب", N(report.FinalAccount.NetAfterOfficeShare) },
-            new[] { "رصيد الدافع", N(report.FinalAccount.PayerBalance) },
+            new[] { "صافي المشروع بعد نصيب المكتب", report.FinalAccount.HasUnresolvedImportRecords ? "" : N(report.FinalAccount.NetAfterOfficeShare) },
+            new[] { "رصيد الدافع", report.FinalAccount.HasUnresolvedImportRecords ? "" : N(report.FinalAccount.PayerBalance) },
             new[] { "حالة الرصيد", report.FinalAccount.BalanceStatus }
         };
         if (report.FinalAccount.OutgoingByCategory.Count > 0)

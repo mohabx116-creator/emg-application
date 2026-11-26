@@ -27,14 +27,14 @@ public sealed partial class ReviewedWorkbookImportService
     {
         var preview = GetNewProjectPreview(request, actor);
         var plan = await PlanNewProjectAsync(request, preview, ct);
-        return new(plan.Project.Code, plan.Rows.Select(row => row.Disposition).ToArray(), IsNewProjectQaAllowed(preview),
+        return new(plan.Project.Code, plan.Rows.Select(row => row.Disposition).ToArray(), IsNewProjectPostingAllowed(preview),
             plan.Rows.Any(row => !row.Disposition.CanImport && !row.Record.IsSummary));
     }
 
     public async Task<UniversalNewProjectResult> CommitNewProjectAsync(UniversalNewProjectRequest request, int actor, CancellationToken ct)
     {
         var preview = GetNewProjectPreview(request, actor);
-        if (!IsNewProjectQaAllowed(preview)) throw new HistoricalWorkbookPostingDisabledException();
+        if (!IsNewProjectPostingAllowed(preview)) throw new HistoricalWorkbookPostingDisabledException();
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var (project, rows) = await PlanNewProjectAsync(request, preview, ct);
         var accepted = rows.Where(row => row.Disposition.CanImport).ToArray();
@@ -97,7 +97,7 @@ public sealed partial class ReviewedWorkbookImportService
         });
         batch.AuditEvents.Add(new HistoricalImportAuditEvent
         {
-            ActorUserId = actor, Action = "UNIVERSAL_NEW_PROJECT_COMMITTED",
+            ActorUserId = actor, Action = HistoricalImportStatuses.UniversalProjectCommitted,
             DetailsJson = JsonSerializer.Serialize(new { preview.Issues, preview.Exceptions, request.ConfirmExcluded })
         });
         await db.SaveChangesAsync(ct);
@@ -153,7 +153,8 @@ public sealed partial class ReviewedWorkbookImportService
                 ? "قيمة مرجعية للمطابقة."
                 : duplicate ? "تكرار محتمل يحتاج دليلاً مستقلاً."
                 : record.Currency != "EGP" ? "عملة المصدر محفوظة للمراجعة."
-                : fields is null || !FitsAmount(record.Amount) || record.Amount == 0 ? "دليل الحركة أو قيمتها غير مكتمل."
+                : fields is null ? MissingSourceEvidence(record.StreamKey)
+                : !FitsAmount(record.Amount) || record.Amount == 0 ? "القيمة لا تصلح للتسجيل كحركة مالية."
                 : !record.EligibleForPosting && !(fields.RequiresManualMapping && note is not null) ? "تحتاج المطابقة إلى تأكيد مدعوم بالمصدر."
                 : record.Amount < 0 && (record.RecordType != UniversalRecordType.Adjustment ||
                     fields.Target is not ("SiteMovement" or "FinishingRecord") ||
@@ -174,8 +175,21 @@ public sealed partial class ReviewedWorkbookImportService
         return (project, rows);
     }
 
-    private bool IsNewProjectQaAllowed(UniversalPreviewResponse preview)
+    private static string MissingSourceEvidence(string streamKey) => streamKey switch
     {
+        "allocation_ledger" => "توزيع مصدر مستقل. مطلوب مرجع إيصال التمويل أو الالتزام الذي يخصه.",
+        "main_payment_ledger" => "دفعة رئيسية في المصدر. مطلوب إثبات الدافع والمستلم وعلاقتها بالإيصالات الأخرى.",
+        "unallocated_multicurrency_ledger" => "دفعة غير موزعة. مطلوب إثبات الطرف وعلاقتها بالدفعات الرئيسية.",
+        _ => "دليل نوع الحركة أو الطرف أو الربط المحاسبي غير مكتمل."
+    };
+
+    private bool IsNewProjectPostingAllowed(UniversalPreviewResponse preview)
+    {
+        // Set only after the owner authorizes production imports. The controller
+        // independently requires active administrator authorization and both permissions.
+        if (environment.IsProduction() && db.Database.IsNpgsql())
+            return configuration.GetValue<bool>("UniversalImport:EnableProductionCommit");
+
         if (!environment.IsDevelopment() || !configuration.GetValue<bool>("UniversalImportQa:Enabled") ||
             !string.Equals(preview.SourceSha256, configuration["UniversalImportQa:ApprovedSha256"], StringComparison.OrdinalIgnoreCase) ||
             !db.Database.IsNpgsql() || string.IsNullOrWhiteSpace(db.Database.GetConnectionString())) return false;

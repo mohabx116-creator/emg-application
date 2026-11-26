@@ -21,6 +21,7 @@ public sealed record FinalAccountSummary(
     public decimal TotalOutgoing { get; init; }
     public decimal OfficePaid { get; init; }
     public decimal OfficeNetDue { get; init; }
+    public bool HasUnresolvedImportRecords { get; init; }
     public IReadOnlyDictionary<string, decimal> OutgoingByCategory { get; init; } = new Dictionary<string, decimal>();
     public IReadOnlyDictionary<string, decimal> IncomingByCategory { get; init; } = new Dictionary<string, decimal>();
 }

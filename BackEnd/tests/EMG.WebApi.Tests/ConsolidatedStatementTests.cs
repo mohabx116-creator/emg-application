@@ -99,6 +99,36 @@ public sealed class ConsolidatedStatementTests
     }
 
     [Fact]
+    public async Task HeldImportRowsKeepFinancialProjectionDiagnostic()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDb(connection);
+        await db.Database.EnsureCreatedAsync();
+        var project = new Project { Name = "Partial source", Code = "PARTIAL", OfficeSharePercentage = 5m };
+        db.HistoricalImportBatches.Add(new HistoricalImportBatch
+        {
+            Project = project, Status = "POSTED", SourceSha256 = new string('A', 64),
+            Records = [new HistoricalImportRecord { DeterministicIdentity = "held", OriginalAmount = 250m }],
+            AuditEvents = [new HistoricalImportAuditEvent { Action = "UNIVERSAL_NEW_PROJECT_COMMITTED" }]
+        });
+        await db.SaveChangesAsync();
+        db.SiteMovements.Add(new SiteMovement { ProjectId = project.Id, TotalAmount = 1000m, Status = "مرحّل" });
+        await db.SaveChangesAsync();
+
+        var row = Assert.Single((await CreateService(db).PreviewAsync(null, true, default)).Projects);
+        Assert.Equal("INCOMPLETE_UNVERIFIED", row.CompletenessStatus);
+        Assert.False(row.OfficeAccrual.IsOfficial);
+        Assert.Null(row.OfficeAccrual.OfficeOutstanding);
+        Assert.Equal(1000m, Column(row, "G").CurrentAmount);
+        Assert.Equal("INCOMPLETE_UNVERIFIED", Column(row, "G").Status);
+        var final = await new FinalAccountsService(db).GetAsync(project.Id, null, true, default);
+        Assert.True(final!.HasUnresolvedImportRecords);
+        Assert.Equal("تشخيصي", final.Status);
+        Assert.Equal(1000m, final.TotalOutgoing);
+    }
+
+    [Fact]
     public void Controller_RequiresAuthenticationAndReportsPermission()
     {
         var type = typeof(ConsolidatedStatementsController);

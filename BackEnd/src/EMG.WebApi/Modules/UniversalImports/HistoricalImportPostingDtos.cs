@@ -8,6 +8,7 @@ public static class HistoricalImportStatuses
     public const string ApprovedForPosting = "APPROVED_FOR_POSTING";
     public const string Posted = "POSTED";
     public const string Rejected = "REJECTED";
+    internal const string UniversalProjectCommitted = "UNIVERSAL_NEW_PROJECT_COMMITTED";
 }
 
 public sealed record HistoricalImportStageRequest(

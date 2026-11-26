@@ -3,6 +3,7 @@ using EMG.Api.Modules.AccountingClassification.Dtos;
 using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
+using EMG.Api.Modules.UniversalImports;
 
 namespace EMG.Api.Modules.AccountingClassification.Services;
 
@@ -63,9 +64,14 @@ public sealed class AccountingClassificationService(EmgDbContext db) : IAccounti
                 matching.Count(item => item.Resolution == ClassificationResolution.Unresolved));
         }).ToList();
 
+        var incompleteImport = await db.HistoricalImportRecords.AnyAsync(record => record.Batch.ProjectId == projectId &&
+            record.Batch.Status == HistoricalImportStatuses.Posted &&
+            record.Batch.AuditEvents.Any(item => item.Action == HistoricalImportStatuses.UniversalProjectCommitted) &&
+            record.LifecycleStatus == HistoricalImportStatuses.ReviewRequired && !record.IsSummary, cancellationToken);
         return new AccountingClassificationPreview(project.Id, project.Code, project.Name, project.OfficeSharePercentage,
             "Lines are read-only; current totals include only معتمد/مرحّل. Imported totals are the imported subset of those same visible rows.",
-            totals, lines, lines.Where(item => item.Resolution == ClassificationResolution.Unresolved).ToList());
+            totals, lines, lines.Where(item => item.Resolution == ClassificationResolution.Unresolved).ToList())
+        { HasUnresolvedImportRecords = incompleteImport };
     }
 
     private static AccountingClassificationLine ClassifyConcrete(RawLine item)

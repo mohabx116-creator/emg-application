@@ -54,6 +54,34 @@ public sealed class AuthSecurityRegressionTests
     }
 
     [Fact]
+    public async Task LoginAcceptsOnlyTheCurrentPasswordAfterResetAndSelfServiceChange()
+    {
+        await using var db = CreateSqliteDb();
+        var hasher = new PasswordHasher<AppUser>();
+        var sessions = new AuthSessionService(db);
+        var user = new AppUser
+        {
+            UserName = "rotation-user", Email = "rotation@example.test", DisplayName = "Rotation QA", IsActive = true
+        };
+        user.PasswordHash = hasher.HashPassword(user, "Original-password-2026!");
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var users = new UsersService(db, hasher, sessions);
+        var profile = new ProfileService(db, hasher, sessions, new UnavailablePasswordRecoveryDelivery(), null!);
+        var accounts = new AccountService(db, hasher, sessions);
+
+        Assert.True(await users.ResetPasswordAsync(user.Id, "Temporary-password-2026!", default));
+        Assert.Null(await accounts.LoginAsync(new(user.Email, "Original-password-2026!"), default));
+        var temporarySession = await accounts.LoginAsync(new(user.Email, "Temporary-password-2026!"), default);
+        Assert.NotNull(temporarySession);
+        Assert.True(await profile.ChangePasswordAsync(user.Id, "Temporary-password-2026!", "Final-password-2026!", default));
+        Assert.False(user.MustChangePassword);
+        Assert.Null(await sessions.ValidateAsync(temporarySession.SessionSecret, default));
+        Assert.Null(await accounts.LoginAsync(new(user.Email, "Temporary-password-2026!"), default));
+        Assert.NotNull(await accounts.LoginAsync(new(user.Email, "Final-password-2026!"), default));
+    }
+
+    [Fact]
     public async Task PublicRecoveryFailsClosedWithoutCreatingOrExposingAToken()
     {
         await using var db = CreateSqliteDb();

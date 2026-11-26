@@ -1,6 +1,7 @@
 using EMG.Api.Modules.FinalAccounts.Dtos;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
+using EMG.Api.Modules.UniversalImports;
 
 namespace EMG.Api.Modules.FinalAccounts.Services;
 
@@ -54,18 +55,24 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         var netBeforeOfficeShare = totalOutgoing - totalExpenses;
         var netAfterOfficeShare = netBeforeOfficeShare - officeShareAmount;
         var payerBalance = totalOutgoing - totalIncoming;
-        var status = payerBalance > 0 ? "مستحق على الدافع" : payerBalance < 0 ? "رصيد زائد لدى الدافع" : "متزن";
+        var incomplete = await db.HistoricalImportRecords.AnyAsync(record => record.Batch.ProjectId == projectId &&
+            record.Batch.Status == HistoricalImportStatuses.Posted &&
+            record.Batch.AuditEvents.Any(item => item.Action == HistoricalImportStatuses.UniversalProjectCommitted) &&
+            record.LifecycleStatus == HistoricalImportStatuses.ReviewRequired && !record.IsSummary, cancellationToken);
+        var status = incomplete ? "غير مكتمل: توجد سجلات استيراد قيد المراجعة" :
+            payerBalance > 0 ? "مستحق على الدافع" : payerBalance < 0 ? "رصيد زائد لدى الدافع" : "متزن";
 
         return new FinalAccountSummary(
             project.Id, project.Name, project.ClientName ?? string.Empty, project.PayerName ?? string.Empty,
             project.OfficeSharePercentage, totalIncoming, totalExpenses, supplierOutstanding, netBeforeOfficeShare,
-            officeShareAmount, netAfterOfficeShare, payerBalance, status, "مسودة")
+            officeShareAmount, netAfterOfficeShare, payerBalance, status, incomplete ? "تشخيصي" : "مسودة")
         {
             ProjectCode = project.Code,
             OwnerName = project.OwnerName ?? string.Empty,
             TotalOutgoing = totalOutgoing,
             OfficePaid = officePaid,
             OfficeNetDue = office.Outstanding,
+            HasUnresolvedImportRecords = incomplete,
             OutgoingByCategory = outgoingByCategory,
             IncomingByCategory = incomingByCategory
         };
