@@ -19,6 +19,7 @@ public sealed record ConsolidatedStatementRow(
     bool IsComplete,
     string CompletenessStatus)
 {
+    public IReadOnlyList<EMG.Api.Modules.FinalAccounts.Dtos.CurrencyFinancialSummary> Currencies { get; init; } = [];
     public decimal TotalWorks { get; init; }
     public decimal? TotalPayments { get; init; }
     public decimal? CashBalance { get; init; }

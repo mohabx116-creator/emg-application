@@ -23,7 +23,8 @@ const SECTION_CATEGORY_KEYS: Record<WorkSectionKey, string[]> = {
 
 export function extractSectionFinancialSummary(
   account: Pick<EmgFinalAccount, 'sections'> | null | undefined,
-  sectionKey: WorkSectionKey
+  sectionKey: WorkSectionKey,
+  currency = 'EGP'
 ): SectionFinancialSummary {
   if (!account?.sections) {
     return {
@@ -38,8 +39,8 @@ export function extractSectionFinancialSummary(
   }
 
   const keys = SECTION_CATEGORY_KEYS[sectionKey];
-  const rows = account.sections.filter(row => row.currency === 'EGP' && (row.sectionKey ? row.sectionKey === sectionKey : keys.includes(row.category)));
-  if (!rows.length) return extractSectionFinancialSummary(null, sectionKey);
+  const rows = account.sections.filter(row => row.currency === currency && (row.sectionKey ? row.sectionKey === sectionKey : keys.includes(row.category)));
+  if (!rows.length) return extractSectionFinancialSummary(null, sectionKey, currency);
   const totalWorks = rows.reduce((sum, row) => sum + row.works, 0);
   const totalPayments = rows.reduce((sum, row) => sum + row.allocatedFunding, 0);
   const cashBalance = totalPayments - totalWorks;

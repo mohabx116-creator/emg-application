@@ -125,7 +125,7 @@ export default function FinancialSummary({
                   overflowWrap: 'anywhere'
                 }}
               >
-                {item.value}
+                {item.value}{currency !== 'EGP' && item.value !== 'غير محدد' ? ` ${currency}` : ''}
               </Typography>
             </Box>
           </Grid>

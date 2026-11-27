@@ -1,3 +1,4 @@
+import { ForeignCurrencySummaries } from 'Modules/EMG/PortfolioFinancials';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -352,6 +353,7 @@ function FinancialPanels({
               cashBalanceStatus={project.cashBalanceStatus}
 
             />
+            <ForeignCurrencySummaries accounts={project.currencies} />
 
             {project.financialWarnings?.map(warning => <Alert key={warning} severity="warning">{warning}</Alert>)}
             {/* Clickable Project Section Financial Cards (Works / Payments / Balance before entering) */}
@@ -523,7 +525,7 @@ function FinancialPanels({
                           )}
                         </TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                          {formatMoney(movement.amount)}
+                          {formatEmgMoney(movement.amount, movement.currency)}
                         </TableCell>
                       </TableRow>
                     ))}

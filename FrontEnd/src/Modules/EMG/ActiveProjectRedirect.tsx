@@ -6,13 +6,13 @@ import { useActiveProject } from 'contexts/ActiveProjectContext';
 
 export default function ActiveProjectRedirect({ section = 'movements' }: { section?: 'movements' | 'advances' }) {
   const navigate = useNavigate();
-  const { projects, activeProjectId, setActiveProjectId, loading } = useActiveProject();
+  const { projects, activeProjectId, setActiveProjectId, loading, failed } = useActiveProject();
 
   useEffect(() => {
-    if (!loading && activeProjectId) {
+    if (!loading && !failed && activeProjectId) {
       navigate(`/emg/projects/${activeProjectId}/${section}`, { replace: true });
     }
-  }, [loading, activeProjectId, navigate, section]);
+  }, [loading, failed, activeProjectId, navigate, section]);
 
   if (loading) {
     return (
@@ -22,6 +22,8 @@ export default function ActiveProjectRedirect({ section = 'movements' }: { secti
       </Stack>
     );
   }
+
+  if (failed) return <Alert severity="error">تعذر تحميل المشروعات.</Alert>;
 
   if (projects.length === 0) {
     return (

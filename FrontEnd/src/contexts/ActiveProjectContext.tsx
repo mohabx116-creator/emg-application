@@ -9,6 +9,7 @@ type ActiveProjectContextValue = {
   activeProject: EmgProject | null;
   setActiveProjectId: (projectId: number | null) => void;
   loading: boolean;
+  failed: boolean;
   refreshProjects: () => Promise<EmgProject[] | undefined>;
 };
 
@@ -18,6 +19,7 @@ const ActiveProjectContext = createContext<ActiveProjectContextValue>({
   activeProject: null,
   setActiveProjectId: () => undefined,
   loading: false,
+  failed: false,
   refreshProjects: async () => undefined
 });
 
@@ -28,7 +30,7 @@ function storageKeyForUser(userId?: string | number | null): string | null {
 
 export function ActiveProjectProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { data: projects = [], isLoading, mutate } = useEmgProjectsCache(true);
+  const { data: projects = [], isLoading, error, mutate } = useEmgProjectsCache(true);
   const storageKey = storageKeyForUser(user?.id);
 
   const [storedId, setStoredId] = useState<number | null>(() => {
@@ -105,9 +107,10 @@ export function ActiveProjectProvider({ children }: { children: ReactNode }) {
       activeProject,
       setActiveProjectId,
       loading: isLoading,
+      failed: Boolean(error),
       refreshProjects
     }),
-    [projects, activeProjectId, activeProject, setActiveProjectId, isLoading, refreshProjects]
+    [projects, activeProjectId, activeProject, setActiveProjectId, isLoading, error, refreshProjects]
   );
 
   return <ActiveProjectContext.Provider value={value}>{children}</ActiveProjectContext.Provider>;

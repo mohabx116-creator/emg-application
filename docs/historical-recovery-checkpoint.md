@@ -89,3 +89,7 @@ The read-only 38-card service benchmark used a cold process followed by three wa
 ### Independent section requests
 
 The five sections load the project independently. Partial detail failures preserve the successful collection and report the failing source and HTTP status. A focused frontend check covered historical 404, operational 403, empty new projects and linked-row suppression. TypeScript passed. The prior server binary predated the endpoint. No authenticated pre-refresh status was captured.
+
+### Currency and financial knowledge
+
+Project and consolidated account DTOs expose currency-specific summaries. Report, portfolio and engineer views identify known partial funding and display failed requests explicitly. Frontend tests covered zero, unknown, partial, later recognized funding and complete totals. TypeScript passed. Operational currency entry is tracked separately.

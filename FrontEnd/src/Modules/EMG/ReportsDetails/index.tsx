@@ -1,3 +1,4 @@
+import { ForeignCurrencySummaries } from 'Modules/EMG/PortfolioFinancials';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -59,7 +60,7 @@ import {
 } from 'api/emg';
 
 const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
-const formatMoney = (value: number) => `${money.format(value || 0)} ج.م`;
+const formatMoney = (value: number | null | undefined, currency = 'EGP') => value == null || !Number.isFinite(value) ? 'غير محدد' : `${money.format(value)} ${currency === 'EGP' ? 'ج.م' : currency}`;
 const formatDate = (value: string) => (value ? new Date(value).toLocaleDateString('ar-EG-u-nu-latn') : '—');
 
 function GradientKpiCard({
@@ -354,7 +355,7 @@ export default function EmgReportsDetails() {
     { label: 'إجمالي الصادر', value: formatMoney(account.totalOutgoing ?? account.totalExpenses) },
     { label: 'الرصيد قبل نصيب المكتب', value: verifiedBalance(account.netBeforeOfficeShare) },
     { label: `نصيب المكتب (${account.officeSharePercentage}%)`, value: verifiedBalance(account.officeShareAmount) },
-    { label: 'دفعات المكتب المسددة', value: formatMoney(account.officePaid ?? 0) },
+    { label: 'دفعات المكتب المسددة', value: formatMoney(account.officePaid) },
     {
       label: 'صافي المستحق للمكتب',
       value: verifiedBalance(account.officeNetDue),
@@ -486,6 +487,7 @@ export default function EmgReportsDetails() {
       <Grid container spacing={2} sx={{ mb: 2.5 }}>
         <Grid size={{ xs: 12, lg: 7 }}>
           <MainCard title="كشف الحساب النهائي للمشروع" sx={{ borderRadius: 3, height: '100%' }} contentSX={{ p: { xs: 2, sm: 2.5 } }}>
+            <ForeignCurrencySummaries accounts={account.currencies} />
             <Grid container spacing={1.5}>
               {statementRows.map((row) => (
                 <Grid key={row.label} size={{ xs: 12, sm: 6 }}>
@@ -667,7 +669,7 @@ export default function EmgReportsDetails() {
                       <TableCell>{item.supplierName || '—'}</TableCell>
                       <TableCell>{item.reference || '—'}</TableCell>
                       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        {formatMoney(item.amount)}
+                        {formatMoney(item.amount, item.currency)}
                       </TableCell>
                       <TableCell align="center">
                         <Chip size="small" label={item.status} color={item.status === 'معتمد' || item.status === 'مرحّل' ? 'success' : 'warning'} />
@@ -707,13 +709,13 @@ export default function EmgReportsDetails() {
                       <TableCell>{item.payerName || item.clientName}</TableCell>
                       <TableCell>{item.reference || '—'}</TableCell>
                       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        {formatMoney(item.amount)}
+                        {formatMoney(item.amount, item.currency)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                        {formatMoney(item.allocated)}
+                        {formatMoney(item.allocated, item.currency)}
                       </TableCell>
                       <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'warning.dark', whiteSpace: 'nowrap' }}>
-                        {formatMoney(item.remaining)}
+                        {formatMoney(item.remaining, item.currency)}
                       </TableCell>
                       <TableCell align="center">
                         <Chip size="small" label={item.status} color={item.status === 'معتمد' || item.status === 'مرحّل' ? 'success' : 'warning'} />

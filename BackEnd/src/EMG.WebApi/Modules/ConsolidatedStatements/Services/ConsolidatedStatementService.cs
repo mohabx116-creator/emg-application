@@ -57,7 +57,7 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
             if (classification is null) continue;
             var account = await accounts.GetAsync(project.Id,userId,isGlobalAccess,cancellationToken);
             if (account != null) rows.Add(BuildRow(classification) with
-                { TotalWorks = account.TotalWorks, TotalPayments = account.TotalPayments, CashBalance = account.CashBalance });
+                { Currencies = account.Currencies, TotalWorks = account.TotalWorks, TotalPayments = account.TotalPayments, CashBalance = account.CashBalance });
         }
 
         return new ConsolidatedStatementPreview(DateTime.UtcNow,

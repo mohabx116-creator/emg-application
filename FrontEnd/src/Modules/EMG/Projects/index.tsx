@@ -1,3 +1,4 @@
+import { portfolioFunding, ForeignCurrencySummaries } from 'Modules/EMG/PortfolioFinancials';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -215,7 +216,7 @@ export default function EmgProjects() {
     const totalIssued = projects.reduce((sum, p) => sum + (p.totalIssued || 0), 0);
     const totalReceived = projects.reduce((sum, p) => sum + (p.totalReceived || 0), 0);
     const totalWorks = projects.reduce((sum, p) => sum + (p.totalWorks || 0), 0);
-    const totalPayments = projects.reduce((sum, p) => sum + (p.totalPayments || 0), 0);
+    const funding = portfolioFunding(projects);
 
     return {
       total,
@@ -223,7 +224,7 @@ export default function EmgProjects() {
       totalIssued,
       totalReceived,
       totalWorks,
-      totalPayments,
+      funding,
     };
   }, [projects]);
 
@@ -581,9 +582,9 @@ export default function EmgProjects() {
                 </Box>
               </Typography>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                  إجمالي الدفعات المتاح:{' '}
+                  {kpis.funding.caption}{' '}
                 <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                    {formatMoney(kpis.totalPayments)}
+                    {kpis.funding.amount == null ? 'غير محدد' : formatMoney(kpis.funding.amount)}
                 </Box>
               </Typography>
             </Stack>
@@ -793,6 +794,7 @@ export default function EmgProjects() {
                       cashBalance={project.historicalFundingUnknown ? null : project.cashBalance}
                       cashBalanceStatus={project.cashBalanceStatus}
                     />
+                    <ForeignCurrencySummaries accounts={project.currencies} />
                   </CardContent>
                 </Card>
               </Grid>

@@ -1,3 +1,4 @@
+import { ForeignCurrencySummaries } from '../PortfolioFinancials';
 import FinancialSummary from '../FinancialSummary';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -223,6 +224,7 @@ function DetailsDialog({ row, onClose }: { row: EmgConsolidatedStatementRow | nu
 
       <DialogContent dividers sx={{ p: 3 }}>
         <FinancialSummary totalWorks={row.totalWorks} totalPayments={row.totalPayments} cashBalance={row.cashBalance} />
+        <ForeignCurrencySummaries accounts={row.currencies} />
         <Alert severity={row.isComplete ? 'success' : 'warning'} sx={{ mb: 2.5, borderRadius: 2 }}>
           {row.isComplete
             ? 'كل السجلات المالية لهذا المشروع مصنّفة بالكامل ضمن الأبعاد المعتمدة.'

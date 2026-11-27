@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { portfolioFunding } from 'Modules/EMG/PortfolioFinancials';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -43,7 +44,7 @@ import FinancialSummary from 'Modules/EMG/FinancialSummary';
 export default function EngineerMobileDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { projects, activeProject, activeProjectId, setActiveProjectId, loading: projectsLoading } = useActiveProject();
+  const { projects, activeProject, activeProjectId, setActiveProjectId, loading: projectsLoading, failed } = useActiveProject();
   const { data: attendance } = useTodayAttendanceCache(true);
 
   const [recentMovements, setRecentMovements] = useState<EmgSiteMovement[]>([]);
@@ -117,12 +118,13 @@ export default function EngineerMobileDashboard() {
     );
   }
 
-  const portfolioFinancials = useMemo(() => {
-    const totalWorks = projects.reduce((sum, p) => sum + (p.totalWorks ?? 0), 0);
-    const totalPayments = projects.reduce((sum, p) => sum + (p.totalPayments ?? 0), 0);
-    const cashBalance = projects.some(p => p.historicalFundingUnknown) ? null : totalPayments - totalWorks;
-    return { totalWorks, totalPayments, cashBalance };
-  }, [projects]);
+  if (failed) return <Alert severity="error">تعذر تحميل الملخص المالي للمشروعات.</Alert>;
+  const funding = portfolioFunding(projects);
+  const portfolioFinancials = {
+    totalWorks: projects.reduce((sum, p) => sum + p.totalWorks, 0),
+    totalPayments: funding.amount,
+    cashBalance: funding.partial ? null : projects.reduce((sum, p) => sum + (p.cashBalance ?? 0), 0)
+  };
 
   return (
     <Box sx={{ pb: 4, maxWidth: 960, mx: 'auto', width: '100%' }}>
@@ -131,7 +133,7 @@ export default function EngineerMobileDashboard() {
         <Box sx={{ mb: 2 }}>
           <FinancialSummary
             title="نظرة عامة على المشروعات"
-            subtitle="إجماليات المشروعات المسندة لحسابك."
+            subtitle={funding.caption}
             totalWorks={portfolioFinancials.totalWorks}
             totalPayments={portfolioFinancials.totalPayments}
             cashBalance={portfolioFinancials.cashBalance}

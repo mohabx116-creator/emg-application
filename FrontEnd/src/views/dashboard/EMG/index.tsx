@@ -1,3 +1,4 @@
+import { portfolioFunding, ForeignCurrencySummaries } from 'Modules/EMG/PortfolioFinancials';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -412,14 +413,14 @@ export default function EmgDashboard() {
       ? 'تعذر تحميل بعض المؤشرات المالية. راجع صلاحيات الحساب أو افتح المشاريع مباشرة.'
       : null;
 
+  const funding = portfolioFunding(projects);
   const totals = useMemo(
     () => ({
       due: projects.reduce((sum,p) => sum + Math.max(0, -(p.cashBalance ?? 0)), 0),
       supplierRemaining: suppliers.reduce((x, s) => x + s.remaining, 0),
         activeProjects: projects.filter((p) => p.status === 'نشط').length,
         totalWorks: projects.reduce((x, p) => x + (p.totalWorks || 0), 0),
-        totalPayments: projects.reduce((x, p) => x + (p.totalPayments || 0), 0),
-        cashBalance: projects.reduce((x, p) => x + (p.cashBalance || 0), 0)
+          cashBalance: projects.reduce((x, p) => x + (p.cashBalance || 0), 0)
     }),
     [suppliers, projects]
   );
@@ -594,13 +595,13 @@ export default function EmgDashboard() {
         </Alert>
       )}
 
-      {canReadProjects && (
+      {canReadProjects && !projectsError && (
         <Box sx={{ mb: 2.5 }}>
           <FinancialSummary
             title="نظرة عامة على المشروعات"
-            subtitle="نظرة مالية شاملة للشركة حسب صلاحيات المستخدم."
+            subtitle={funding.caption}
             totalWorks={totals.totalWorks}
-            totalPayments={totals.totalPayments}
+            totalPayments={funding.amount}
             cashBalance={projects.some(p => p.historicalFundingUnknown) ? null : totals.cashBalance}
             cashBalanceStatus={totals.cashBalance > 0 ? 'العميل له فلوس' : totals.cashBalance < 0 ? 'لنا مستحقات لدى العميل' : 'الحساب متوازن'}
           />
@@ -619,12 +620,12 @@ export default function EmgDashboard() {
           {/* Left/Right Half 1: Two Tall Gradient Berry Hero Cards */}
           <Grid size={{ xs: 12, lg: 6 }}>
             <Grid container spacing={2} sx={{ height: '100%' }}>
-              {hasFinancialAccess && canReadAdvances ? (
+              {hasFinancialAccess && canReadProjects && !projectsError && canReadAdvances ? (
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <BerryGradientHeroCard
                     title="دفعات تحت الحساب"
-                    value={fmt(totals.totalPayments)}
-                    subtitle="الدفعات المثبتة بالجنيه المصري"
+                    value={funding.amount == null ? 'غير محدد' : fmt(funding.amount)}
+                    subtitle={funding.caption}
                     icon={<IconCash size={22} />}
                     variant="purple"
                   />
@@ -647,7 +648,7 @@ export default function EmgDashboard() {
           {/* Half 2: 2x2 Compact Stacked White Metric Cards */}
           <Grid size={{ xs: 12, lg: 6 }}>
             <Grid container spacing={2} sx={{ height: '100%' }}>
-              {hasFinancialAccess && canReadSuppliers && (
+              {hasFinancialAccess && !suppliersError && canReadSuppliers && (
                 <Grid size={{ xs: 6 }}>
                   <StackedMetricCard
                     title="متبقي الموردين"
@@ -657,10 +658,10 @@ export default function EmgDashboard() {
                   />
                 </Grid>
               )}
-              {hasFinancialAccess && canReadAdvances && (
+              {hasFinancialAccess && canReadProjects && !projectsError && canReadAdvances && (
                 <Grid size={{ xs: 6 }}>
                   <StackedMetricCard
-                    title="الأرصدة المدينة المثبتة"
+                    title={funding.partial ? 'الأرصدة المدينة المعلومة فقط' : 'الأرصدة المدينة المثبتة'}
                     value={fmt(totals.due)}
                     icon={<IconReceipt size={20} />}
                     tone="error"
@@ -781,6 +782,7 @@ export default function EmgDashboard() {
                               cashBalance={project.historicalFundingUnknown ? null : project.cashBalance}
                               cashBalanceStatus={project.cashBalanceStatus}
                             />
+                            <ForeignCurrencySummaries accounts={project.currencies} />
                           </Box>
                         )}
 

@@ -1,3 +1,4 @@
+import { portfolioFunding } from '../PortfolioFinancials';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -110,6 +111,9 @@ export default function EmgReports() {
     return <Alert severity="error">ليس لديك صلاحية عرض التقارير.</Alert>;
   }
 
+  const funding = portfolioFunding(projects);
+  if (error) return <Alert severity="error" action={<Button onClick={load}>إعادة المحاولة</Button>}>{error}</Alert>;
+
   return (
     <Box sx={{ pb: 4 }}>
       {/* Executive Header */}
@@ -139,11 +143,7 @@ export default function EmgReports() {
         </Button>
       </Stack>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+
 
       {/* Tier 1: Financial Totals (Berry Signature Gradient Cards) + Report Hub Shortcuts */}
       <Grid container spacing={2} sx={{ mb: 2.5 }}>
@@ -191,10 +191,10 @@ export default function EmgReports() {
                     </Box>
                     <Box>
                       <Typography variant="h2" sx={{ color: '#ffffff', fontWeight: 800, fontSize: '1.5rem', fontVariantNumeric: 'tabular-nums' }}>
-                        {loading ? '...' : formatMoney(totals.received)}
+                        {loading ? '...' : funding.amount == null ? 'غير محدد' : formatMoney(funding.amount)}
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.88)', fontWeight: 600, mt: 0.25 }}>
-                        إجمالي الوارد المثبت ({projects.length} مشروع)
+                        {funding.caption}
                       </Typography>
                     </Box>
                   </Stack>
@@ -505,7 +505,7 @@ export default function EmgReports() {
                             <Chip size="small" label={project.status} color={project.status === 'نشط' ? 'success' : 'warning'} />
                           </TableCell>
                           <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', color: 'success.dark', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                            {project.historicalFundingUnknown ? 'غير محدد' : formatMoney(project.totalReceived)}
+                            {project.totalPayments == null ? 'غير محدد' : formatMoney(project.totalPayments)}
                           </TableCell>
                           <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }}>
                             {formatMoney(project.totalIssued)}
@@ -622,7 +622,7 @@ export default function EmgReports() {
                                 وارد
                               </Typography>
                               <Typography variant="subtitle2" fontWeight={700} color="success.dark">
-                                {project.historicalFundingUnknown ? 'غير محدد' : formatMoney(project.totalReceived)}
+                                {project.totalPayments == null ? 'غير محدد' : formatMoney(project.totalPayments)}
                               </Typography>
                             </Grid>
                             <Grid size={{ xs: 4 }}>

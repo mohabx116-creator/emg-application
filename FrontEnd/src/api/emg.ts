@@ -9,6 +9,7 @@ export type EmgProject = {
   status: string;
   engineerName: string;
   sections?: EmgFinalAccount['sections'];
+  currencies?: EmgFinalAccount['currencies'];
   financialWarnings?: string[];
   historicalFundingUnknown?: boolean;
   historicalFundingBasis?: string;
@@ -51,6 +52,7 @@ export type EmgWorkbookMigrationPlan = {
 };
 
 export type EmgFinalAccount = {
+  currencies?: Array<{ currency: string; works: number; payments: number | null; cashBalance: number | null; officeFee: number; officePayments: number; officeOutstanding: number; referenceTransfers: number }>;
   sections?: Array<{ sectionKey?: string; fundingUnknown?: boolean; category: string; currency: string; works: number; allocatedFunding: number; fundingLessWorks: number }>;
   financialWarnings?: string[];
   historicalFundingUnknown?: boolean;
@@ -90,6 +92,7 @@ export type EmgProjectReport = {
     type: string;
     description: string;
     supplierName: string;
+    currency: string;
     amount: number;
     status: string;
     reference: string;
@@ -99,6 +102,7 @@ export type EmgProjectReport = {
     date: string;
     clientName: string;
     payerName: string;
+    currency: string;
     amount: number;
     allocated: number;
     remaining: number;
@@ -167,6 +171,7 @@ export type EmgStatementDimension = {
 };
 
 export type EmgConsolidatedStatementRow = {
+  currencies?: EmgFinalAccount['currencies'];
   totalWorks: number;
   totalPayments: number | null;
   cashBalance: number | null;
@@ -922,7 +927,9 @@ export type EmgAdvanceLedger = {
   warnings: string[];
 };
 export async function getEmgAdvanceLedger(projectId?: number): Promise<EmgAdvanceLedger> {
-  return (await axios.get<EmgAdvanceLedger>('/api/advances/ledger', { params: { projectId } })).data;
+  const { data } = await axios.get<EmgAdvanceLedger>('/api/advances/ledger', { params: { projectId } });
+  if (!Array.isArray(data.fundingEntries) || !Array.isArray(data.allocationEntries)) throw new Error('تعذر تحميل دفتر الدفعات المحدث.');
+  return data;
 }
 export async function getEmgAdvances(projectId?: number): Promise<EmgAdvance[]> {
   return (await axios.get<EmgAdvance[]>('/api/advances', { params: projectId ? { projectId } : undefined })).data;

@@ -10,8 +10,8 @@ const arCompactFormatter = new Intl.NumberFormat('ar-EG', {
 });
 
 export function formatEmgMoney(value: number | null | undefined, suffix = 'ج.م'): string {
-  const safe = typeof value === 'number' && Number.isFinite(value) ? value : 0;
-  return suffix ? `${arCurrencyFormatter.format(safe)} ${suffix}` : arCurrencyFormatter.format(safe);
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'غير محدد';
+  return suffix ? `${arCurrencyFormatter.format(value)} ${suffix}` : arCurrencyFormatter.format(value);
 }
 
 export function formatEmgNumber(value: number | null | undefined): string {

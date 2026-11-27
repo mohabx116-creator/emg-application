@@ -44,6 +44,7 @@ public sealed class ProjectsService(IProjectsRepository repository, IFinalAccoun
             CashBalance = account.CashBalance,
             CashBalanceStatus = account.CashBalanceStatus,
             Sections = account.Sections,
+            Currencies = account.Currencies,
             HistoricalFundingBasis = account.HistoricalFundingBasis,
             FinancialWarnings = account.FinancialWarnings,
             HistoricalFundingUnknown = account.HistoricalFundingUnknown,

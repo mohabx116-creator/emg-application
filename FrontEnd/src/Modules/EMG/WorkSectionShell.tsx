@@ -313,6 +313,12 @@ export default function WorkSectionShell({
           cashBalanceStatus={effectiveSectionSummary.cashBalanceStatus}
           unresolved={effectiveSectionSummary.unresolved}
         />
+        {project.currencies?.filter(row => row.currency !== 'EGP').map(row => {
+          const section = extractSectionFinancialSummary(project, activeSection, row.currency);
+          return section.source === 'unavailable' ? null : <FinancialSummary key={row.currency}
+            layout="compact" currency={row.currency} totalWorks={section.totalWorks}
+            totalPayments={section.totalPayments} cashBalance={section.cashBalance} />;
+        })}
       </Box>
 
       {/* Tier 2: Full-Width Records Table Card */}
