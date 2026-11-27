@@ -43,7 +43,7 @@ def indexed_rows(path):
     return result
 
 
-def work_lines(package, mapping):
+def work_lines(package, mapping, account_reader=None):
     directory = mapping.parent
     candidates = indexed_rows(directory / "08_work_component_candidates.csv")
     checks = indexed_rows(directory / "09_work_control_checks.csv")
@@ -62,6 +62,7 @@ def work_lines(package, mapping):
         book = load_workbook(path, data_only=True)
         expressions = load_workbook(path, data_only=False)
         try:
+            project_start = len(results)
             inputs = {}
             boundaries = defaultdict(list)
             for check in checks[project["id"]]:
@@ -166,9 +167,11 @@ def work_lines(package, mapping):
                 elif "خرسان" in sheet_name and category == "المحطة":
                     family = "concrete"
                     # The net amount, narrative and station columns shift together.
-                    narrative = " — ".join(filter(None, (wording(at(3)), wording(at(col + 1)))))
+                    date_col = next((i for i in range(1, col) if norm(sheet.cell(7,i).value) == "التاريخ"), None)
+                    type_col = next((i for i in range(1, col) if norm(sheet.cell(7,i).value) == "النوع"), None)
+                    narrative = " — ".join(filter(None, (wording(at(type_col)), wording(at(col + 1)))))
                     party, role = wording(at(col + 2)), "supplier"
-                    rate, unit, work_date = amount(at(col - 1)), "م3", at(2)
+                    rate, unit, work_date = amount(at(col - 1)), "م3", at(date_col)
                     qcol = next((i for i in range(1, col) if "مورد" in norm(sheet.cell(8, i).value)), None)
                     quantity = amount(at(qcol))
                 elif "خرسان" in sheet_name and category == "المقاول":
@@ -187,7 +190,8 @@ def work_lines(package, mapping):
                             if h8 in ("الاجمالي","الكميه"): quantity = amount(at(i))
                     for i in range(max(1,anchor-1), col + 1):
                         if "كشفحسابالمقاول" in norm(sheet.cell(5,i).value):
-                            party = wording(sheet.cell(6,i).value)
+                            label = wording(sheet.cell(5,i).value)
+                            party = (label.split(":", 1)[1].strip() if ":" in label else "") or wording(sheet.cell(6,i).value)
                         if "تاريخاصدار" in norm(sheet.cell(5,i).value):
                             work_date = sheet.cell(6,i).value
                         match = re.search(r"مصنعي[ةه] المقاول\s*[:：]\s*(.+)", wording(sheet.cell(7,i).value))
@@ -210,6 +214,8 @@ def work_lines(package, mapping):
                                     description=narrative,unit=unit,quantity=quantity,rate=rate,progress=progress,party=party,role=role,
                                     source=dict(control=control, checks=boundaries[sheet_name, control], role=role,
                                                 formula=actual_formula, formulas=formulas, values=details)))
+            if account_reader:
+                results[project_start:] = account_reader(project, book, expressions, results[project_start:])
         finally:
             book.close()
             expressions.close()

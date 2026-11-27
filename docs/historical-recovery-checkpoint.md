@@ -22,6 +22,10 @@ The work ledger migration has been applied on the approved local database. The v
 
 Run `works.py` with the same package, mapping and local container arguments as the funding pass. The rollback rehearsal validated 3,644 work lines across 36 nonempty project workbooks and linked all 2,134 earlier operational work postings by their recorded target and exact original coordinate. The extractor checked all 38 workbook identities. Two acceptance workbooks match their complete work controls. The ledger retains formula and cached-control evidence, including the known stale site control and repeated control reference. Ordinary replay checks the stored payload against the source.
 
-Next, resolve counterparty work and settlement evidence, integrate the ledger with financial summaries and exports, then apply and replay on the approved database. The rehearsal committed no work rows.
+### Counterparty rehearsal
+
+Commit `aa392dc` contains the work posting mechanism. The account settlement schema is applied. A combined rollback rehearsal linked 2,047 supplier and 407 contractor work lines, preserved 279 settlement components and assigned 130 of them to evidenced parties. Unassigned payments remain outside named account balances. The separate statement workbook identifies a plot without an exact matching project code. The original account and funding schedules remain independent. The backend builds successfully.
+
+Run `accounts.py` with the same arguments after `works.py`. Replays check the source and existing links. The historical-account routes under suppliers and contractors project the same work lines and identified settlements by project and currency. Next integrate project financials and exports, apply and replay the ledgers, and reconcile all application surfaces. Both financial rehearsals rolled back.
 
 Complete work-family posting, counterparty obligations and settlements, categorized exports and 38-project source/DB/API/UI/XLSX reconciliation. Review unresolved funding bases individually, including allocation-only workbooks. The operational historical balances have not passed acceptance. Keep the existing project identities and the independent visual-design changes. The final-account API exposes per-section works, allocated funding and their difference by currency.

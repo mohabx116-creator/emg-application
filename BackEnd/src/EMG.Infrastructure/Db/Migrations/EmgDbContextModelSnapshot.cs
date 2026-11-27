@@ -1156,6 +1156,70 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.ToTable("historical_posted_entries", (string)null);
                 });
 
+            modelBuilder.Entity("EMG.Domain.Entities.HistoricalSettlement", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(22, 6)
+                        .HasColumnType("numeric(22,6)");
+
+                    b.Property<int>("BatchId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Cell")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("ContractorId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Narrative")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Party")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("SettlementDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Sheet")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractorId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.HasIndex("BatchId", "Sheet", "Cell")
+                        .IsUnique();
+
+                    b.ToTable("historical_settlements", (string)null);
+                });
+
             modelBuilder.Entity("EMG.Domain.Entities.HistoricalWorkLine", b =>
                 {
                     b.Property<long>("Id")
@@ -2526,6 +2590,27 @@ namespace EMG.Infrastructure.Db.Migrations
                     b.Navigation("HistoricalRecord");
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("EMG.Domain.Entities.HistoricalSettlement", b =>
+                {
+                    b.HasOne("EMG.Domain.Entities.HistoricalImportBatch", "Batch")
+                        .WithMany()
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("EMG.Domain.Entities.Contractor", null)
+                        .WithMany()
+                        .HasForeignKey("ContractorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("EMG.Domain.Entities.Supplier", null)
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Batch");
                 });
 
             modelBuilder.Entity("EMG.Domain.Entities.HistoricalWorkLine", b =>
