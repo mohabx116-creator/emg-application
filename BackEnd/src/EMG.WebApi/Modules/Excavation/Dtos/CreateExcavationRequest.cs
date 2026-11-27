@@ -14,4 +14,5 @@ public sealed record CreateExcavationRequest(
     string Description,
     DateTime? ExcavationDate,
     string? Notes,
-    string? AccountCategory = "العرب");
+    string? AccountCategory = "العرب",
+    [EgpOnly] string? Currency = null);

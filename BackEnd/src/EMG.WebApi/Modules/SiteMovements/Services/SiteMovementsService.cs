@@ -103,6 +103,10 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
 
     public async Task<SiteMovementSummary?> UpdateAsync(int id, CreateSiteMovementRequest request, int? userId, bool isAdmin, CancellationToken cancellationToken, bool hasOverridePermission)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        if (db.Database.IsNpgsql())
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtext('emg.advance-allocation'), {request.ProjectId})", cancellationToken);
         if (await HistoricalWorkReader.IsLinkedAsync(db, "site-movement", id, cancellationToken) ||
             await db.SupplierInvoices.AnyAsync(item => item.SiteMovementId == id, cancellationToken)) return null;
         var movement = await db.SiteMovements.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
@@ -112,12 +116,17 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
 
         var amount = request.Amount ?? (request.Quantity ?? 0) * (request.UnitPrice ?? 0);
         if (amount < 0) return null;
+        var currency = request.Currency is null ? movement.Currency : NormalizeCurrency(request.Currency);
+        var allocated = await db.AdvanceAllocations.Where(a => a.SiteMovementId == id).SumAsync(a => (decimal?)a.Amount, cancellationToken);
+        if (allocated is > 0 && (currency != movement.Currency || decimal.Round(amount, 2) < allocated.Value)) return null;
+        if (currency != movement.Currency && await db.ContractorStatementLines.AnyAsync(
+            line => line.SourceEntityType == "site-movement" && line.SourceEntityId == id, cancellationToken)) return null;
         var previousStatus = movement.Status;
         var previousValues = JsonSerializer.Serialize(new { movement.Description, movement.Quantity, movement.UnitPrice, movement.TotalAmount, movement.MovementDate, movement.SupplierId });
         movement.SupplierId = request.SupplierId;
         movement.ContractorId = request.ContractorId;
         movement.CounterpartyType = NormalizeCounterparty(request);
-        movement.Currency = request.Currency is null ? movement.Currency : NormalizeCurrency(request.Currency);
+        movement.Currency = currency;
         movement.FundingSource = request.FundingSource?.Trim();
         movement.Recipient = request.Recipient?.Trim();
         movement.WorkCategory = request.WorkCategory?.Trim();
@@ -137,6 +146,7 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
         var updatedValues = JsonSerializer.Serialize(new { movement.Description, movement.Quantity, movement.UnitPrice, movement.TotalAmount, movement.MovementDate, movement.SupplierId });
         db.WorkflowActions.Add(new WorkflowAction { EntityType = "site-movement", EntityId = id, Action = "تصحيح", FromStatus = previousStatus, ToStatus = previousStatus, UserId = userId, Notes = $"قبل={previousValues};بعد={updatedValues}" });
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return await db.SiteMovements.AsNoTracking().Where(item => item.Id == id).Select(ToSummary()).FirstAsync(cancellationToken);
     }
 
@@ -180,7 +190,7 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
             ? request.SupplierId.HasValue ? "مورد" : request.ContractorId.HasValue ? "مقاول" : "بدون طرف"
             : request.CounterpartyType.Trim();
 
-    private static string NormalizeCurrency(string? currency) => string.IsNullOrWhiteSpace(currency) ? "EGP" : currency.Trim().ToUpperInvariant();
+    private static string NormalizeCurrency(string? currency) => currency?.Trim().ToUpperInvariant() ?? "EGP";
 
     private Expression<Func<SiteMovement, SiteMovementSummary>> ToSummary() => item => new SiteMovementSummary(
         item.Id, item.ProjectId, item.Project.Name, item.SupplierId, item.Supplier == null ? string.Empty : item.Supplier.Name,

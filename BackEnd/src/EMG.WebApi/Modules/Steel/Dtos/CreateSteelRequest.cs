@@ -14,4 +14,5 @@ public sealed record CreateSteelRequest(
     string? DeliveryNoteNumber,
     string Description,
     string? Notes,
-    string? AccountCategory = "الحديد");
+    string? AccountCategory = "الحديد",
+    [EgpOnly] string? Currency = null);

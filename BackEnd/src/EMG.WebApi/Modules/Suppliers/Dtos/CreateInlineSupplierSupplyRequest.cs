@@ -14,6 +14,7 @@ public sealed record CreateInlineSupplierSupplyRequest(
     decimal UnitPrice,
     DateTime? SupplyDate,
     string? InvoiceNumber,
-    string? Notes);
+    string? Notes,
+    [EgpOnly] string? Currency = null);
 
 public sealed record InlineSupplierSupplySummary(SupplierSummary Supplier, SupplySummary Supply);

@@ -11,4 +11,5 @@ public sealed record CreateFinishingRequest(
     DateTime? WorkDate,
     string Description,
     string? Notes,
-    string? AccountCategory = "غير محدد");
+    string? AccountCategory = "غير محدد",
+    [EgpOnly] string? Currency = null);

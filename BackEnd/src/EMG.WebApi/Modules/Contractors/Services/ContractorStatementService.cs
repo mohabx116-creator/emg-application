@@ -61,6 +61,7 @@ public sealed class ContractorStatementService(EmgDbContext db) : IContractorSta
     {
         var contract = await db.ContractorContracts.AsNoTracking().SingleOrDefaultAsync(item => item.Id == contractId, cancellationToken);
         if (contract is null || !await CanAccessProjectAsync(contract.ProjectId, userId, globalAccess, cancellationToken) || string.IsNullOrWhiteSpace(request.Description) || string.IsNullOrWhiteSpace(request.Unit) || request.ApprovedQuantity <= 0 || request.UnitRate < 0) return null;
+        if (request.Currency is not null && !string.Equals(contract.Currency, request.Currency.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
         var item = new ContractorContractItem { ContractId = contractId, Description = request.Description.Trim(), Unit = request.Unit.Trim(), ApprovedQuantity = request.ApprovedQuantity, UnitRate = request.UnitRate, SourceReference = request.SourceReference?.Trim() };
         db.ContractorContractItems.Add(item);
         await db.SaveChangesAsync(cancellationToken);
@@ -137,6 +138,7 @@ public sealed class ContractorStatementService(EmgDbContext db) : IContractorSta
         foreach (var requestLine in request.Lines)
         {
             if (!EligibleTypes.Contains(requestLine.SourceEntityType, StringComparer.OrdinalIgnoreCase) || requestLine.Quantity <= 0 || string.IsNullOrWhiteSpace(requestLine.SourceReference) || !items.TryGetValue(requestLine.ContractItemId, out var item)) return null;
+            if (requestLine.Currency is not null && !string.Equals(contract.Currency, requestLine.Currency.Trim(), StringComparison.OrdinalIgnoreCase)) return null;
             var source = await ReadSourceAsync(requestLine.SourceEntityType, requestLine.SourceEntityId, request.ProjectId, cancellationToken);
             if (source is null || source.Quantity is null || source.Quantity <= 0 || source.Status is not ("معتمد" or "مرحّل") || requestLine.Quantity > source.Quantity || requestLine.UnitRate != item.UnitRate || requestLine.UnitRate < 0) return null;
             if (sourceKeys.Contains($"{requestLine.SourceEntityType}:{requestLine.SourceEntityId}")) throw new InvalidOperationException("تم استخدام حركة العمل المعتمدة في كشف سابق ولا يمكن اعتمادها مرة أخرى.");
@@ -205,6 +207,7 @@ public sealed class ContractorStatementService(EmgDbContext db) : IContractorSta
         sheet.Cell("A4").Value = "العقد"; sheet.Cell("B4").Value = statement.Contract.ContractNumber;
         sheet.Cell("A5").Value = "الفترة"; sheet.Cell("B5").Value = $"{statement.PeriodFrom:yyyy-MM-dd} - {statement.PeriodTo:yyyy-MM-dd}";
         sheet.Cell("A6").Value = "الحالة"; sheet.Cell("B6").Value = statement.Status;
+        sheet.Cell("A7").Value = "العملة"; sheet.Cell("B7").Value = statement.Currency;
         var row = 8;
         foreach (var header in new[] { "البيان", "مصدر العمل", "معرف المصدر", "الكمية", "الوحدة", "السعر", "الإجمالي", "مرجع المصدر" }) sheet.Cell(row, Array.IndexOf(new[] { "البيان", "مصدر العمل", "معرف المصدر", "الكمية", "الوحدة", "السعر", "الإجمالي", "مرجع المصدر" }, header) + 1).Value = header;
         foreach (var line in statement.Lines)

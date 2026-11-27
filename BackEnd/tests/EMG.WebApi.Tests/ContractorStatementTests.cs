@@ -26,6 +26,28 @@ public sealed class ContractorStatementTests
         Assert.Contains(await fixture.Db.WorkflowActions.ToListAsync(), row => row.EntityType == "contractor-statement" && row.EntityId == draft.Id && row.ToStatus == "مسودة");
     }
 
+    [Fact]
+    public async Task ForeignStatementKeepsContractCurrencyOnLinesPaymentsAndExport()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var contract = await fixture.Db.ContractorContracts.SingleAsync();
+        contract.Currency = "EUR";
+        await fixture.Db.SaveChangesAsync();
+        var service = new ContractorStatementService(fixture.Db);
+        var request = fixture.Request(1m, 100m, 1) with { Currency = "EUR" };
+        Assert.Null(await service.AddItemAsync(contract.Id, new("Item", "m", 1, 100, null, "EGP"), fixture.UserId, false, default));
+        Assert.Null(await service.CreateDraftAsync(request with { Lines = [request.Lines[0] with { Currency = "EGP" }] }, fixture.UserId, false, default));
+        var statement = await service.CreateDraftAsync(request, fixture.UserId, false, default);
+        Assert.NotNull(statement);
+        var payment = new CreateContractorPaymentRequest(fixture.ProjectId, statement.Id, 30, "EGP", null, null, null, null, "مكتب");
+        Assert.Null(await service.AddPaymentAsync(contract.ContractorId, payment, fixture.UserId, false, default));
+        Assert.Equal("EUR", (await service.AddPaymentAsync(contract.ContractorId, payment with { Currency = null }, fixture.UserId, false, default))!.Currency);
+        var bytes = await service.ExportDraftAsync(statement.Id, fixture.UserId, false, default);
+        using var stream = new MemoryStream(bytes!);
+        using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
+        Assert.Equal("EUR", workbook.Worksheet(1).Cell("B7").GetString());
+    }
+
     [Theory]
     [InlineData("مكتب", 0)]
     [InlineData("مالك مباشر", 100)]

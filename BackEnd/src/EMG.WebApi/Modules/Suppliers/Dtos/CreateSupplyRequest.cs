@@ -9,4 +9,5 @@ public sealed record CreateSupplyRequest(
     decimal UnitPrice,
     DateTime? SupplyDate,
     string? InvoiceNumber,
-    string? Notes);
+    string? Notes,
+    [EgpOnly] string? Currency = null);

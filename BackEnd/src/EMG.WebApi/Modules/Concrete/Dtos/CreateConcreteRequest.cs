@@ -13,4 +13,5 @@ public sealed record CreateConcreteRequest(
     string? DeliveryNoteNumber,
     string Description,
     string? Notes,
-    string? AccountCategory = "المقاول");
+    string? AccountCategory = "المقاول",
+    [EgpOnly] string? Currency = null);

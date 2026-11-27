@@ -33,6 +33,13 @@ public sealed class AdvanceAllocationTargetsTests
         Assert.NotNull(created);
         Assert.Equal("USD", (await movements.UpdateAsync(created.Id, movement with { Currency = null, Amount = 30 },
             null, true, default, true))!.Currency);
+        var receipt = await db.AdvancePayments.SingleAsync();
+        var allocation = new AllocateAdvanceRequest(created.Id, null, 15, null, null, "الموقع", "EGP");
+        Assert.Null(await advances.AllocateAsync(receipt.Id, allocation, null, true, default));
+        Assert.NotNull(await advances.AllocateAsync(receipt.Id, allocation with { Currency = "usd" }, null, true, default));
+        Assert.Null(await movements.UpdateAsync(created.Id, movement with { Currency = "EGP" }, null, true, default, true));
+        Assert.Null(await movements.UpdateAsync(created.Id, movement with { Amount = 10 }, null, true, default, true));
+        Assert.Null(await movements.CreateAsync(movement with { Currency = " " }, null, true, default));
         var account = await new EMG.Api.Modules.FinalAccounts.Services.FinalAccountsService(db).GetAsync(project.Id, null, true, default);
         Assert.Equal(0m, account!.TotalPayments);
         var usd = Assert.Single(account.Currencies, row => row.Currency == "USD");

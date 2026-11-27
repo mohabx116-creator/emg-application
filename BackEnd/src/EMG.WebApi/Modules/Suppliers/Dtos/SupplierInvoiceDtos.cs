@@ -1,6 +1,6 @@
 namespace EMG.Api.Modules.Suppliers.Dtos;
 
-public sealed record SupplierInvoiceLineRequest(string Description, string Unit, decimal Quantity, decimal UnitPrice, string? SupplyType);
+public sealed record SupplierInvoiceLineRequest(string Description, string Unit, decimal Quantity, decimal UnitPrice, string? SupplyType, [EgpOnly] string? Currency = null);
 
 public sealed record CreateSupplierInvoiceRequest(
     int SupplierId,
@@ -18,7 +18,7 @@ public sealed record CreateSupplierInvoiceRequest(
     string? Details = null,
     string? PaymentSource = null, string? Currency = null);
 
-public sealed record UpdateSupplierInvoiceRequest(IReadOnlyList<SupplierInvoiceLineRequest> Lines, DateTime? InvoiceDate, string? Notes);
+public sealed record UpdateSupplierInvoiceRequest(IReadOnlyList<SupplierInvoiceLineRequest> Lines, DateTime? InvoiceDate, string? Notes, [EgpOnly] string? Currency = null);
 
 public sealed record SupplierInvoiceLineSummary(int Id, int SupplyId, string Description, string Unit, decimal Quantity, decimal UnitPrice, decimal TotalAmount);
 

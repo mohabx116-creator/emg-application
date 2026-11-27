@@ -462,7 +462,7 @@ export default function EmgSiteMovements() {
   };
 
   const availableStatuses = useMemo(() => Array.from(new Set(movements.map((m) => m.status).filter(Boolean))), [movements]);
-  const totalAmount = useMemo(() => movements.reduce((sum, m) => sum + (m.totalAmount || 0), 0), [movements]);
+  const totalAmount = useMemo(() => movements.filter(m => m.currency === 'EGP').reduce((sum, m) => sum + m.totalAmount, 0), [movements]);
   const approvedCount = useMemo(() => movements.filter((m) => m.status === 'معتمد' || m.status === 'مرحّل').length, [movements]);
   const pendingCount = movements.length - approvedCount;
 
@@ -720,7 +720,7 @@ export default function EmgSiteMovements() {
                     <Chip size="small" label={`بند #${index + 1}`} color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Typography variant="subtitle2" color="primary.main" sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                        {formatEmgMoney(computeLineTotal(line))}
+                        {formatEmgMoney(computeLineTotal(line), header.currency)}
                       </Typography>
                       {lines.length > 1 && (
                         <IconButton size="small" color="error" onClick={() => removeLine(line.id)} aria-label="حذف البند">
@@ -840,7 +840,7 @@ export default function EmgSiteMovements() {
                 إجمالي الفاتورة ({lines.length} {lines.length === 1 ? 'بند' : 'بنود'})
               </Typography>
               <Typography variant="h3" color="primary.main" sx={{ fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>
-                {formatEmgMoney(grandTotal)}
+                {formatEmgMoney(grandTotal, header.currency)}
               </Typography>
             </Box>
           </Grid>
@@ -1008,7 +1008,7 @@ export default function EmgSiteMovements() {
                             </Stack>
                           </Box>
                           <Typography variant="subtitle1" color="primary.main" sx={{ fontWeight: 900, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                            {formatEmgMoney(movement.totalAmount)}
+                            {formatEmgMoney(movement.totalAmount, movement.currency)}
                           </Typography>
                         </Stack>
 
@@ -1113,7 +1113,7 @@ export default function EmgSiteMovements() {
                         </Typography>
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                        {formatEmgMoney(movement.totalAmount)}
+                        {formatEmgMoney(movement.totalAmount, movement.currency)}
                       </TableCell>
                       <TableCell align="center">
                         <WorkStatusChip status={movement.status} />
@@ -1174,7 +1174,7 @@ export default function EmgSiteMovements() {
                 إجمالي الحركة
               </Typography>
               <Typography variant="h2" color="primary.main" sx={{ fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>
-                {formatEmgMoney(drawerMovement.totalAmount)}
+                {formatEmgMoney(drawerMovement.totalAmount, drawerMovement.currency)}
               </Typography>
               <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
                 <WorkStatusChip status={drawerMovement.status} />

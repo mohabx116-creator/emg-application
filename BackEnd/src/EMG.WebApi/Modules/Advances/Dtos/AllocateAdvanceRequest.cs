@@ -6,4 +6,5 @@ public sealed record AllocateAdvanceRequest(
     decimal Amount,
     DateTime? AllocationDate,
     string? Notes,
-    string? AccountCategory = null);
+    string? AccountCategory = null,
+    string? Currency = null);

@@ -72,6 +72,7 @@ public sealed partial class AdvancesService(EmgDbContext db) : IAdvancesService
             // prevents two requests from both spending the same remaining balance.
             var advance = await LockAdvanceAsync(advanceId, userId, isAdmin, cancellationToken);
             if (advance is null || advance.Status is not ("معتمد" or "مرحّل")) return null;
+            if (request.Currency is not null && !string.Equals(request.Currency.Trim(), advance.Currency, StringComparison.OrdinalIgnoreCase)) return null;
 
             var alreadyAllocatedToAdvance = await db.AdvanceAllocations.Where(item => item.AdvancePaymentId == advanceId).SumAsync(item => item.Amount, cancellationToken);
             if (request.Amount > advance.Amount - alreadyAllocatedToAdvance) return null;

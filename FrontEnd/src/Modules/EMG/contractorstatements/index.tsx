@@ -257,8 +257,11 @@ export default function ContractorStatements() {
     }
   };
 
+  const contractCurrency = selectedAccount?.contracts.find(c => c.id === selectedContractId)?.currency;
+  const paymentStatement = selectedAccount?.statements.find(s => s.id === paymentStatementId && s.projectId === paymentProjectId);
+
   const openPayment = () => {
-    const firstProject = selectedAccount?.contracts[0]?.projectId ?? selectedAccount?.statements[0]?.projectId ?? '';
+    const firstProject = selectedAccount?.statements[0]?.projectId ?? selectedAccount?.contracts[0]?.projectId ?? '';
     setPaymentProjectId(firstProject);
     setPaymentStatementId(selectedAccount?.statements[0]?.id ?? '');
     setPaymentAmount('');
@@ -266,14 +269,14 @@ export default function ContractorStatements() {
   };
 
   const handlePayment = async () => {
-    if (!selectedAccount || !paymentProjectId || !paymentAmount || Number(paymentAmount) <= 0) return;
+    if (!selectedAccount || !paymentStatement || !paymentProjectId || !paymentAmount || Number(paymentAmount) <= 0) return;
     setSaving(true);
     try {
       await createEmgContractorPayment(selectedAccount.contractor.id, {
         projectId: paymentProjectId,
-        contractorStatementId: paymentStatementId || null,
+        contractorStatementId: paymentStatement.id,
         amount: Number(paymentAmount),
-        currency: 'EGP',
+        currency: paymentStatement.currency,
         paymentSource: 'مالك مباشر',
         notes: 'تخليص حساب'
       });
@@ -393,7 +396,7 @@ export default function ContractorStatements() {
         contractId: contract.id,
         periodFrom: new Date(stmtPeriodFrom).toISOString(),
         periodTo: new Date(stmtPeriodTo).toISOString(),
-        currency: contract.currency || 'EGP',
+        currency: contract.currency,
         sourceReference: `كشف مقاول · ${preparedLines.length} بنود`,
         lines: preparedLines
       });
@@ -604,8 +607,8 @@ export default function ContractorStatements() {
                               <Chip size="small" label={`${stmt.lines.length} بنود`} color="primary" variant="outlined" />
                             </Stack>
                             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                              الإجمالي: <b>{formatEmgMoney(stmt.grossAmount)}</b> · مدفوع سابق: <b>{formatEmgMoney(stmt.previousPaymentsAmount)}</b> · صافي:{' '}
-                              <b>{formatEmgMoney(stmt.netAmount)}</b>
+                              الإجمالي: <b>{formatEmgMoney(stmt.grossAmount, stmt.currency)}</b> · مدفوع سابق: <b>{formatEmgMoney(stmt.previousPaymentsAmount, stmt.currency)}</b> · صافي:{' '}
+                              <b>{formatEmgMoney(stmt.netAmount, stmt.currency)}</b>
                             </Typography>
                           </Box>
                           <Button size="small" variant="outlined" startIcon={<IconDownload size={16} />} onClick={() => void downloadStatement(stmt.id)} sx={{ borderRadius: 2, fontWeight: 700 }}>
@@ -653,7 +656,7 @@ export default function ContractorStatements() {
                             <TextField fullWidth size="small" type="number" label="الكمية" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} />
                           </Grid>
                           <Grid size={{ xs: 4, sm: 2 }}>
-                            <TextField fullWidth size="small" type="number" label="السعر" value={newItemRate} onChange={(e) => setNewItemRate(e.target.value)} />
+                            <TextField fullWidth size="small" type="number" label={contractCurrency ? `السعر (${contractCurrency})` : 'السعر'} value={newItemRate} onChange={(e) => setNewItemRate(e.target.value)} />
                           </Grid>
                           <Grid size={{ xs: 12, sm: 2 }}>
                             <Button
@@ -702,7 +705,7 @@ export default function ContractorStatements() {
                                   {item.remainingQuantity} {item.unit}
                                 </TableCell>
                                 <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                                  {formatEmgMoney(item.unitRate)}
+                                  {formatEmgMoney(item.unitRate, contractCurrency ?? '')}
                                 </TableCell>
                               </TableRow>
                             ))
@@ -750,16 +753,16 @@ export default function ContractorStatements() {
                             <TableCell sx={{ fontWeight: 700 }}>#{stmt.id}</TableCell>
                             <TableCell>{stmt.projectName}</TableCell>
                             <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                              {formatEmgMoney(stmt.grossAmount)}
+                              {formatEmgMoney(stmt.grossAmount, stmt.currency)}
                             </TableCell>
                             <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', color: 'success.main', fontWeight: 700 }}>
-                              {formatEmgMoney(stmt.previousPaymentsAmount)}
+                              {formatEmgMoney(stmt.previousPaymentsAmount, stmt.currency)}
                             </TableCell>
                             <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                              {formatEmgMoney(stmt.deductionsAmount)}
+                              {formatEmgMoney(stmt.deductionsAmount, stmt.currency)}
                             </TableCell>
                             <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 800 }}>
-                              {formatEmgMoney(stmt.netAmount)}
+                              {formatEmgMoney(stmt.netAmount, stmt.currency)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -774,7 +777,7 @@ export default function ContractorStatements() {
 
         {/* Dialog: Create Contract */}
         <Dialog open={addContractOpen} onClose={() => setAddContractOpen(false)} fullWidth maxWidth="xs" fullScreen={downSM}>
-          <DialogTitle>إنشاء عقد جديد للمقاول</DialogTitle>
+          <DialogTitle>إنشاء عقد جديد للمقاول (EGP)</DialogTitle>
           <DialogContent dividers>
             <Stack spacing={2} sx={{ pt: 1 }}>
               <FormControl fullWidth size="small">
@@ -1109,24 +1112,24 @@ export default function ContractorStatements() {
           <Stack spacing={2} sx={{ pt: 1 }}>
             <FormControl fullWidth size="small">
               <InputLabel>المشروع</InputLabel>
-              <Select value={paymentProjectId} label="المشروع" onChange={(e) => setPaymentProjectId(Number(e.target.value))}>
+              <Select value={paymentProjectId} label="المشروع" onChange={(e) => { setPaymentProjectId(Number(e.target.value)); setPaymentStatementId(''); setPaymentAmount(''); }}>
                 {allContracts.filter((contract) => contract.contractorId === selectedContractorId).map((contract) => <MenuItem key={contract.projectId} value={contract.projectId}>{contract.projectName}</MenuItem>)}
               </Select>
             </FormControl>
             <FormControl fullWidth size="small">
               <InputLabel>كشف المقاول</InputLabel>
-              <Select value={paymentStatementId} label="كشف المقاول" onChange={(e) => setPaymentStatementId(e.target.value ? Number(e.target.value) : '')}>
+              <Select value={paymentStatementId} label="كشف المقاول" onChange={(e) => { setPaymentStatementId(e.target.value ? Number(e.target.value) : ''); setPaymentAmount(''); }}>
                 <MenuItem value="">اختر كشف المقاول</MenuItem>
                 {statements.filter((statement) => statement.contractorId === selectedContractorId && (!paymentProjectId || statement.projectId === paymentProjectId)).map((statement) => <MenuItem key={statement.id} value={statement.id}>كشف #{statement.id} — {statement.projectName}</MenuItem>)}
               </Select>
             </FormControl>
-            <TextField fullWidth required size="small" type="number" label="المبلغ بالجنيه" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} inputProps={{ min: 0, step: 0.01 }} />
+            <TextField fullWidth required size="small" type="number" label={paymentStatement ? `المبلغ (${paymentStatement.currency})` : 'المبلغ'} value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} inputProps={{ min: 0, step: 0.01 }} />
             <Alert severity="info">سيظهر الدفع كـ«تخليص حساب»، ويزيد دفعات العميل دون إضافة رصيد إلى عهدة المهندس أو المكتب.</Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPaymentOpen(false)}>إلغاء</Button>
-          <Button variant="contained" color="success" disabled={saving || !paymentProjectId || !paymentStatementId || !paymentAmount} onClick={() => void handlePayment()}>حفظ الدفع</Button>
+          <Button variant="contained" color="success" disabled={saving || !paymentProjectId || !paymentStatement || !paymentAmount} onClick={() => void handlePayment()}>حفظ الدفع</Button>
         </DialogActions>
       </Dialog>
 
