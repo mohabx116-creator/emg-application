@@ -16,4 +16,12 @@ On an execution error PostgreSQL rolls back the transaction. For recovery after 
 
 ## Remaining acceptance
 
+### Work extraction and posting rehearsal
+
+The work ledger migration has been applied on the approved local database. The verified pre-change custom-format archive and checksum are under the authorized backup root in `historical-works-20261127-021333`. PostgreSQL read the archive inventory and extracted its entire SQL stream successfully.
+
+Run `works.py` with the same package, mapping and local container arguments as the funding pass. The rollback rehearsal validated 3,644 work lines across 36 nonempty project workbooks and linked all 2,134 earlier operational work postings by their recorded target and exact original coordinate. The extractor checked all 38 workbook identities. Two acceptance workbooks match their complete work controls. The ledger retains formula and cached-control evidence, including the known stale site control and repeated control reference. Ordinary replay checks the stored payload against the source.
+
+Next, resolve counterparty work and settlement evidence, integrate the ledger with financial summaries and exports, then apply and replay on the approved database. The rehearsal committed no work rows.
+
 Complete work-family posting, counterparty obligations and settlements, categorized exports and 38-project source/DB/API/UI/XLSX reconciliation. Review unresolved funding bases individually, including allocation-only workbooks. The operational historical balances have not passed acceptance. Keep the existing project identities and the independent visual-design changes. The final-account API exposes per-section works, allocated funding and their difference by currency.
