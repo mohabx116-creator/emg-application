@@ -51,10 +51,10 @@ import { hasAnyPermission } from 'Modules/EMG/roleAccess';
 import { withAlpha } from 'utils/colorUtils';
 import { EmgProject, getEmgProjects } from 'api/emg';
 
-const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const formatMoney = (value: number) => `${money.format(value || 0)} ج.م`;
 
-type StatusFilter = 'all' | 'active' | 'review_status' | 'has_open_movements';
+type StatusFilter = 'all' | 'active';
 
 export default function EmgReports() {
   const { user } = useAuth();
@@ -89,18 +89,14 @@ export default function EmgReports() {
   const totals = useMemo(() => {
     const received = projects.reduce((sum, p) => sum + (p.totalReceived || 0), 0);
     const issued = projects.reduce((sum, p) => sum + (p.totalIssued || 0), 0);
-    const openMovements = projects.reduce((sum, p) => sum + (p.openMovements || 0), 0);
-    const withReviews = projects.filter((p) => (p.openMovements || 0) > 0).length;
     const active = projects.filter((p) => p.status === 'نشط').length;
-    return { received, issued, net: received - issued, openMovements, withReviews, active };
+    return { received, issued, net: received - issued, active };
   }, [projects]);
 
   const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
     return projects.filter((p) => {
       if (statusFilter === 'active' && p.status !== 'نشط') return false;
-      if (statusFilter === 'review_status' && p.status !== 'تحت المراجعة') return false;
-      if (statusFilter === 'has_open_movements' && !(p.openMovements > 0)) return false;
       if (!q) return true;
       return `${p.name} ${p.code} ${p.engineerName || ''} ${p.location || ''}`.toLowerCase().includes(q);
     });
@@ -198,7 +194,7 @@ export default function EmgReports() {
                         {loading ? '...' : formatMoney(totals.received)}
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.88)', fontWeight: 600, mt: 0.25 }}>
-                        إجمالي الوارد ({projects.length} مشروع)
+                        إجمالي الوارد المثبت ({projects.length} مشروع)
                       </Typography>
                     </Box>
                   </Stack>
@@ -250,7 +246,7 @@ export default function EmgReports() {
                         {loading ? '...' : formatMoney(totals.issued)}
                       </Typography>
                       <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.88)', fontWeight: 600, mt: 0.25 }}>
-                        إجمالي الصادر · صافي: {loading ? '...' : formatMoney(totals.net)}
+                        إجمالي الصادر · صافي: {loading ? '...' : projects.some(p => p.historicalFundingUnknown) ? 'غير محدد' : formatMoney(totals.net)}
                       </Typography>
                     </Box>
                   </Stack>
@@ -428,16 +424,6 @@ export default function EmgReports() {
                 setPage(1);
               }}
             />
-            <Chip
-              clickable
-              label={`حركات للمراجعة (${totals.withReviews})`}
-              color={statusFilter === 'has_open_movements' ? 'warning' : 'default'}
-              variant={statusFilter === 'has_open_movements' ? 'filled' : 'outlined'}
-              onClick={() => {
-                setStatusFilter('has_open_movements');
-                setPage(1);
-              }}
-            />
           </Stack>
         </Stack>
 
@@ -494,7 +480,6 @@ export default function EmgReports() {
                       <TableCell align="right">وارد</TableCell>
                       <TableCell align="right">صادر</TableCell>
                       <TableCell align="right">الصافي</TableCell>
-                      <TableCell align="center">مراجعة</TableCell>
                       <TableCell align="center">التقرير</TableCell>
                     </TableRow>
                   </TableHead>
@@ -520,7 +505,7 @@ export default function EmgReports() {
                             <Chip size="small" label={project.status} color={project.status === 'نشط' ? 'success' : 'warning'} />
                           </TableCell>
                           <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', color: 'success.dark', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                            {formatMoney(project.totalReceived)}
+                            {project.historicalFundingUnknown ? 'غير محدد' : formatMoney(project.totalReceived)}
                           </TableCell>
                           <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, whiteSpace: 'nowrap' }}>
                             {formatMoney(project.totalIssued)}
@@ -534,16 +519,7 @@ export default function EmgReports() {
                               color: net >= 0 ? 'primary.dark' : 'error.dark'
                             }}
                           >
-                            {formatMoney(net)}
-                          </TableCell>
-                          <TableCell align="center">
-                            {project.openMovements > 0 ? (
-                              <Chip size="small" label={project.openMovements} color="warning" sx={{ fontWeight: 700 }} />
-                            ) : (
-                              <Typography variant="caption" color="text.secondary">
-                                0
-                              </Typography>
-                            )}
+                            {project.historicalFundingUnknown ? 'غير محدد' : formatMoney(net)}
                           </TableCell>
                           <TableCell align="center">
                             <Stack direction="row" spacing={0.75} justifyContent="center">
@@ -609,7 +585,6 @@ export default function EmgReports() {
                             </Box>
                             <Stack direction="row" spacing={0.75}>
                               <Chip size="small" label={project.status} color={project.status === 'نشط' ? 'success' : 'warning'} />
-                              {project.openMovements > 0 && <Chip size="small" label={`${project.openMovements} مراجعة`} color="error" />}
                             </Stack>
                           </Stack>
 
@@ -647,7 +622,7 @@ export default function EmgReports() {
                                 وارد
                               </Typography>
                               <Typography variant="subtitle2" fontWeight={700} color="success.dark">
-                                {formatMoney(project.totalReceived)}
+                                {project.historicalFundingUnknown ? 'غير محدد' : formatMoney(project.totalReceived)}
                               </Typography>
                             </Grid>
                             <Grid size={{ xs: 4 }}>
@@ -663,7 +638,7 @@ export default function EmgReports() {
                                 الصافي
                               </Typography>
                               <Typography variant="subtitle2" fontWeight={700} color={net >= 0 ? 'primary.dark' : 'error.dark'}>
-                                {formatMoney(net)}
+                                {project.historicalFundingUnknown ? 'غير محدد' : formatMoney(net)}
                               </Typography>
                             </Grid>
                           </Grid>

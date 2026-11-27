@@ -58,9 +58,9 @@ import {
   getEmgProjectReport
 } from 'api/emg';
 
-const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const formatMoney = (value: number) => `${money.format(value || 0)} ج.م`;
-const formatDate = (value: string) => (value ? new Date(value).toLocaleDateString('ar-EG') : '—');
+const formatDate = (value: string) => (value ? new Date(value).toLocaleDateString('ar-EG-u-nu-latn') : '—');
 
 function GradientKpiCard({
   title,
@@ -337,7 +337,7 @@ export default function EmgReportsDetails() {
   }
 
   const account = report.finalAccount;
-  const verifiedBalance = (amount: number) => account.hasUnresolvedImportRecords ? 'قيد المطابقة' : formatMoney(amount);
+  const verifiedBalance = (value?: number | null) => value == null ? 'غير محدد' : formatMoney(value);
   const auditItems = [
     { label: 'أعمال الحفر', value: audit.excavationTotal, color: theme.vars.palette.secondary.main, icon: <IconHammer size={18} /> },
     { label: 'الخرسانات', value: audit.concreteTotal, color: theme.vars.palette.primary.main, icon: <IconChartDonut size={18} /> },
@@ -350,20 +350,20 @@ export default function EmgReportsDetails() {
   const statementRows: Array<{ label: string; value: string; tone?: 'error' | 'success' | 'primary' }> = [
     { label: 'العميل', value: account.clientName || '—' },
     { label: 'الدافع', value: account.payerName || '—' },
-    { label: 'إجمالي الوارد', value: formatMoney(account.totalIncoming), tone: 'success' },
+    { label: 'إجمالي الوارد', value: verifiedBalance(account.historicalFundingUnknown && !account.totalIncoming ? null : account.totalIncoming), tone: 'success' },
     { label: 'إجمالي الصادر', value: formatMoney(account.totalOutgoing ?? account.totalExpenses) },
     { label: 'الرصيد قبل نصيب المكتب', value: verifiedBalance(account.netBeforeOfficeShare) },
     { label: `نصيب المكتب (${account.officeSharePercentage}%)`, value: verifiedBalance(account.officeShareAmount) },
     { label: 'دفعات المكتب المسددة', value: formatMoney(account.officePaid ?? 0) },
     {
       label: 'صافي المستحق للمكتب',
-      value: verifiedBalance(account.officeNetDue ?? 0),
+      value: verifiedBalance(account.officeNetDue),
       tone: (account.officeNetDue ?? 0) > 0 ? 'error' : 'success'
     },
     { label: 'المتبقي للموردين', value: formatMoney(account.supplierOutstanding), tone: account.supplierOutstanding > 0 ? 'error' : 'success' },
     {
       label: 'رصيد الدافع',
-      value: `${verifiedBalance(account.payerBalance)}${account.balanceStatus ? ` · ${account.balanceStatus}` : ''}`,
+      value: `${verifiedBalance(account.historicalFundingUnknown ? null : account.payerBalance)}${account.balanceStatus ? ` · ${account.balanceStatus}` : ''}`,
       tone: account.payerBalance > 0 ? 'error' : 'success'
     }
   ];
@@ -372,6 +372,7 @@ export default function EmgReportsDetails() {
 
   return (
     <Box sx={{ pb: 4, minWidth: 0, maxWidth: '100%' }}>
+      {account.financialWarnings?.map(warning => <Alert key={warning} severity="warning" sx={{ mb: 1 }}>{warning}</Alert>)}
       {/* Breadcrumbs */}
       <Breadcrumbs sx={{ mb: 1.5 }}>
         <MuiLink component={Link} to="/emg/reports" underline="hover" color="text.secondary">
@@ -445,8 +446,8 @@ export default function EmgReportsDetails() {
       <Grid container spacing={2} sx={{ mb: 2.5 }}>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <GradientKpiCard
-            title="إجمالي الداخل"
-            value={formatMoney(account.totalIncoming)}
+            title="إجمالي الدفعات"
+            value={verifiedBalance(account.historicalFundingUnknown && !account.totalIncoming ? null : account.totalIncoming)}
             subtitle={`${report.advances.length} دفعة تحت الحساب`}
             icon={<IconTrendingUp size={20} />}
             variant="blue"
@@ -454,18 +455,18 @@ export default function EmgReportsDetails() {
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <GradientKpiCard
-            title="صافي المشروع"
-            value={verifiedBalance(account.netAfterOfficeShare)}
-            subtitle={account.balanceStatus ? `الحالة: ${account.balanceStatus}` : 'بعد نصيب المكتب'}
+            title="الرصيد النقدي"
+            value={verifiedBalance(account.historicalFundingUnknown ? null : account.cashBalance)}
+            subtitle="الدفعات ناقص الأعمال"
             icon={<IconCash size={20} />}
             variant="purple"
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <SolidIconKpiCard
-            title="إجمالي المصروفات"
-            value={formatMoney(account.totalExpenses)}
-            subtitle={`${report.movements.length} حركة موقع`}
+            title="إجمالي الأعمال"
+            value={verifiedBalance(account.totalWorks ?? account.totalOutgoing)}
+            subtitle="جميع أقسام المشروع"
             icon={<IconCoin size={20} />}
             tone="error"
           />
@@ -474,7 +475,7 @@ export default function EmgReportsDetails() {
           <SolidIconKpiCard
             title={`نصيب المكتب (${account.officeSharePercentage}%)`}
             value={verifiedBalance(account.officeShareAmount)}
-            subtitle={`المستحق: ${verifiedBalance(account.officeNetDue ?? 0)}`}
+            subtitle={`المستحق: ${verifiedBalance(account.officeNetDue)}`}
             icon={<IconChartDonut size={20} />}
             tone="warning"
           />

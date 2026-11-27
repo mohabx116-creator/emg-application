@@ -47,7 +47,7 @@ import {
 import { EmgNotification, getEmgNotifications } from 'api/emg';
 import FinancialSummary from 'Modules/EMG/FinancialSummary';
 
-const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const fmt = (value: number) => `${money.format(value || 0)} ج.م`;
 
 type AccentTone = 'primary' | 'secondary' | 'success' | 'warning' | 'error';
@@ -567,7 +567,7 @@ export default function EmgDashboard() {
     timelineItems.push({
       label: attendance ? 'تم تسجيل حضور اليوم بنجاح' : 'لم يتم تسجيل الحضور اليوم بعد',
       time: attendance
-        ? new Date(attendance.checkInAtUtc).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+        ? new Date(attendance.checkInAtUtc).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' })
         : 'اليوم',
       color: attendance ? theme.vars.palette.success.dark : theme.vars.palette.warning.main
     });
@@ -624,9 +624,11 @@ export default function EmgDashboard() {
       {canReadProjects && (
         <Box sx={{ mb: 2.5 }}>
           <FinancialSummary
+            title="نظرة عامة على المشروعات"
+            subtitle="نظرة مالية شاملة للشركة حسب صلاحيات المستخدم."
             totalWorks={totals.totalWorks}
             totalPayments={totals.totalPayments}
-            cashBalance={totals.cashBalance}
+            cashBalance={projects.some(p => p.historicalFundingUnknown) ? null : totals.cashBalance}
             cashBalanceStatus={totals.cashBalance > 0 ? 'العميل له فلوس' : totals.cashBalance < 0 ? 'لنا مستحقات لدى العميل' : 'الحساب متوازن'}
           />
         </Box>
@@ -654,17 +656,7 @@ export default function EmgDashboard() {
                     variant="purple"
                   />
                 </Grid>
-              ) : (
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <BerryGradientHeroCard
-                    title="حركات مشاريعك"
-                    value={String(totals.openMovements)}
-                    subtitle="حركات قيد المتابعة"
-                    icon={<IconReceipt size={22} />}
-                    variant="purple"
-                  />
-                </Grid>
-              )}
+              ) : null}
               {canReadProjects && (
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <BerryGradientHeroCard
@@ -699,16 +691,6 @@ export default function EmgDashboard() {
                     value={fmt(totals.due)}
                     icon={<IconReceipt size={20} />}
                     tone="error"
-                  />
-                </Grid>
-              )}
-              {canReadProjects && !engineerView && (
-                <Grid size={{ xs: 6 }}>
-                  <StackedMetricCard
-                    title="حركات تحتاج مراجعة"
-                    value={String(totals.openMovements)}
-                    icon={<IconChecklist size={20} />}
-                    tone={totals.openMovements > 0 ? 'error' : 'success'}
                   />
                 </Grid>
               )}
@@ -814,7 +796,7 @@ export default function EmgDashboard() {
                           </Box>
                           <Stack direction="row" spacing={0.75} alignItems="center" flexShrink={0}>
                             <Chip size="small" label={project.status} color={project.status === 'نشط' ? 'success' : 'warning'} />
-                            {project.openMovements > 0 && <Chip size="small" label={`${project.openMovements} مراجعة`} color="error" />}
+
                           </Stack>
                         </Stack>
 
@@ -822,8 +804,8 @@ export default function EmgDashboard() {
                           <Box sx={{ mt: 1.25 }}>
                             <FinancialSummary
                               totalWorks={project.totalWorks}
-                              totalPayments={project.totalPayments}
-                              cashBalance={project.cashBalance}
+                              totalPayments={project.historicalFundingUnknown && !project.totalPayments ? null : project.totalPayments}
+                              cashBalance={project.historicalFundingUnknown ? null : project.cashBalance}
                               cashBalanceStatus={project.cashBalanceStatus}
                             />
                           </Box>

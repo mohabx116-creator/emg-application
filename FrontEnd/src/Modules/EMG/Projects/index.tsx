@@ -65,11 +65,11 @@ import { hasPermission } from '../roleAccess';
 import FinancialSummary from '../FinancialSummary';
 
 // currency formatter
-const numberFormat = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const numberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const formatMoney = (amount: number) => `${numberFormat.format(amount)} ج.م`;
 
-type StatusFilter = 'all' | 'active' | 'review' | 'has_movements';
-type SortOption = 'default' | 'movements_desc' | 'issued_desc' | 'received_desc' | 'name_asc';
+type StatusFilter = 'all' | 'active';
+type SortOption = 'default' | 'issued_desc' | 'received_desc' | 'name_asc';
 type CreateResult = { kind: 'unassigned' } | { kind: 'assigned' | 'assignment-failed'; name: string };
 
 const defaultProjectForm = {
@@ -212,24 +212,18 @@ export default function EmgProjects() {
   const kpis = useMemo(() => {
     const total = projects.length;
     const active = projects.filter((p) => p.status === 'نشط').length;
-    const review = projects.filter((p) => p.status === 'تحت المراجعة').length;
-    const openMovementsTotal = projects.reduce((sum, p) => sum + (p.openMovements || 0), 0);
     const totalIssued = projects.reduce((sum, p) => sum + (p.totalIssued || 0), 0);
     const totalReceived = projects.reduce((sum, p) => sum + (p.totalReceived || 0), 0);
     const totalWorks = projects.reduce((sum, p) => sum + (p.totalWorks || 0), 0);
     const totalPayments = projects.reduce((sum, p) => sum + (p.totalPayments || 0), 0);
-    const projectsWithMovements = projects.filter((p) => (p.openMovements || 0) > 0).length;
 
     return {
       total,
       active,
-      review,
-      openMovementsTotal,
       totalIssued,
       totalReceived,
       totalWorks,
       totalPayments,
-      projectsWithMovements
     };
   }, [projects]);
 
@@ -253,16 +247,10 @@ export default function EmgProjects() {
     // Status filter
     if (statusFilter === 'active') {
       result = result.filter((p) => p.status === 'نشط');
-    } else if (statusFilter === 'review') {
-      result = result.filter((p) => p.status === 'تحت المراجعة');
-    } else if (statusFilter === 'has_movements') {
-      result = result.filter((p) => (p.openMovements || 0) > 0);
     }
 
     // Sorting
-    if (sortBy === 'movements_desc') {
-      result.sort((a, b) => (b.openMovements || 0) - (a.openMovements || 0));
-    } else if (sortBy === 'issued_desc') {
+    if (sortBy === 'issued_desc') {
       result.sort((a, b) => (b.totalIssued || 0) - (a.totalIssued || 0));
     } else if (sortBy === 'received_desc') {
       result.sort((a, b) => (b.totalReceived || 0) - (a.totalReceived || 0));
@@ -378,7 +366,7 @@ export default function EmgProjects() {
       {/* 2. Compact Project Summary / KPI Strip */}
       <Grid container spacing={gridSpacing} sx={{ mb: 3, display: loadError ? 'none' : undefined }}>
         {/* Total Projects */}
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 6 }}>
           <SubCard
             sx={{
               height: '100%',
@@ -425,7 +413,7 @@ export default function EmgProjects() {
         </Grid>
 
         {/* Active Projects */}
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 6 }}>
           <SubCard
             sx={{
               height: '100%',
@@ -470,113 +458,6 @@ export default function EmgProjects() {
           </SubCard>
         </Grid>
 
-        {/* Under Review */}
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <SubCard
-            sx={{
-              height: '100%',
-              bgcolor: 'background.paper',
-              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-              '&:hover': { transform: 'translateY(-2px)' }
-            }}
-            contentSX={{ p: 2.25 }}
-          >
-            {loading ? (
-              <Stack spacing={1}>
-                <Skeleton variant="circular" width={40} height={40} />
-                <Skeleton variant="text" width="60%" height={32} />
-                <Skeleton variant="text" width="40%" height={20} />
-              </Stack>
-            ) : (
-              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
-                <Box>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase' }}>
-                    تحت المراجعة
-                  </Typography>
-                  <Typography variant="h2" sx={{ fontWeight: 700, mt: 0.5, mb: 0.25, color: 'warning.main' }}>
-                    {kpis.review}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                    مشاريع قيد الفحص والاعتماد
-                  </Typography>
-                </Box>
-                <Avatar
-                  variant="rounded"
-                  sx={{
-                    width: 48,
-                    height: 48,
-                    bgcolor: withAlpha(theme.vars.palette.warning.main, 0.1),
-                    color: theme.vars.palette.warning.main
-                  }}
-                >
-                  <IconClock size={26} stroke={1.75} />
-                </Avatar>
-              </Stack>
-            )}
-          </SubCard>
-        </Grid>
-
-        {/* Review Movements Attention Strip */}
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <SubCard
-            sx={{
-              height: '100%',
-              bgcolor: kpis.openMovementsTotal > 0 ? withAlpha(theme.vars.palette.warning.light, 0.15) : 'background.paper',
-              borderColor: kpis.openMovementsTotal > 0 ? withAlpha(theme.vars.palette.warning.main, 0.4) : 'divider',
-              transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-              '&:hover': { transform: 'translateY(-2px)' }
-            }}
-            contentSX={{ p: 2.25 }}
-          >
-            {loading ? (
-              <Stack spacing={1}>
-                <Skeleton variant="circular" width={40} height={40} />
-                <Skeleton variant="text" width="60%" height={32} />
-                <Skeleton variant="text" width="40%" height={20} />
-              </Stack>
-            ) : (
-              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
-                <Box>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: kpis.openMovementsTotal > 0 ? 'warning.dark' : 'text.secondary',
-                      fontWeight: 600,
-                      textTransform: 'uppercase'
-                    }}
-                  >
-                    حركات تحتاج مراجعة
-                  </Typography>
-                  <Typography
-                    variant="h2"
-                    sx={{
-                      fontWeight: 700,
-                      mt: 0.5,
-                      mb: 0.25,
-                      color: kpis.openMovementsTotal > 0 ? 'warning.dark' : 'text.primary'
-                    }}
-                  >
-                    {kpis.openMovementsTotal}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                    موزعة عبر {kpis.projectsWithMovements} مشاريع
-                  </Typography>
-                </Box>
-                <Avatar
-                  variant="rounded"
-                  sx={{
-                    width: 48,
-                    height: 48,
-                    bgcolor: kpis.openMovementsTotal > 0 ? withAlpha(theme.vars.palette.warning.main, 0.15) : withAlpha(theme.vars.palette.secondary.main, 0.1),
-                    color: kpis.openMovementsTotal > 0 ? theme.vars.palette.warning.dark : theme.vars.palette.secondary.main
-                  }}
-                >
-                  <IconAlertTriangle size={26} stroke={1.75} />
-                </Avatar>
-              </Stack>
-            )}
-          </SubCard>
-        </Grid>
       </Grid>
 
       {/* 3. Search and Filter Affordance */}
@@ -647,26 +528,6 @@ export default function EmgProjects() {
                 clickable
                 sx={{ fontWeight: 600 }}
               />
-              <Chip
-                label={`تحت المراجعة (${kpis.review})`}
-                color={statusFilter === 'review' ? 'warning' : 'default'}
-                variant={statusFilter === 'review' ? 'filled' : 'outlined'}
-                onClick={() => setStatusFilter('review')}
-                size="medium"
-                clickable
-                sx={{ fontWeight: 600 }}
-              />
-              {kpis.projectsWithMovements > 0 && (
-                <Chip
-                  label={`تحتاج مراجعة (${kpis.projectsWithMovements})`}
-                  color={statusFilter === 'has_movements' ? 'error' : 'default'}
-                  variant={statusFilter === 'has_movements' ? 'filled' : 'outlined'}
-                  onClick={() => setStatusFilter('has_movements')}
-                  size="medium"
-                  clickable
-                  sx={{ fontWeight: 600 }}
-                />
-              )}
             </Stack>
 
             <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
@@ -682,7 +543,6 @@ export default function EmgProjects() {
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
               >
                 <MenuItem value="default">الترتيب الافتراضي</MenuItem>
-                <MenuItem value="movements_desc">الأكثر حركات مراجعة</MenuItem>
                 <MenuItem value="issued_desc">الأعلى صادر</MenuItem>
                 <MenuItem value="received_desc">الأعلى وارد</MenuItem>
                 <MenuItem value="name_asc">اسم المشروع (أ-ي)</MenuItem>
@@ -826,10 +686,9 @@ export default function EmgProjects() {
         </MainCard>
       ) : (
         <>
-        {/* 7. Redesigned Project Cards Grid (3 cols wide desktop, 2 cols tablet, 1 col mobile) */}
-        <Grid container spacing={gridSpacing}>
+        {/* 7. Compact Approved Project Cards Grid (matches owner-approved reference) */}
+        <Grid container spacing={2}>
           {paginatedProjects.map((project) => {
-            const hasOpenMovements = (project.openMovements || 0) > 0;
             const isProjectActive = project.status === 'نشط';
 
             return (
@@ -845,16 +704,15 @@ export default function EmgProjects() {
                     height: '100%',
                     display: 'flex',
                     flexDirection: 'column',
-                    borderRadius: `${borderRadius}px`,
+                    borderRadius: 3,
                     borderColor: 'divider',
                     color: 'inherit',
                     textDecoration: 'none',
                     bgcolor: 'background.paper',
-                    position: 'relative',
-                    overflow: 'visible',
+                    transition: 'border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease',
                     '&:hover': {
-                      borderColor: withAlpha(theme.vars.palette.primary.main, 0.35),
-                      transform: 'translateY(-3px)'
+                      borderColor: withAlpha(theme.vars.palette.primary.main, 0.55),
+                      transform: 'translateY(-2px)'
                     },
                     '&:focus-within': {
                       outline: `2px solid ${theme.vars.palette.primary.main}`,
@@ -864,168 +722,77 @@ export default function EmgProjects() {
                 >
                   <CardContent
                     sx={{
-                      p: 2.75,
+                      p: { xs: 2, sm: 2.25 },
                       flexGrow: 1,
                       display: 'flex',
                       flexDirection: 'column',
-                      '&:last-child': { pb: 2.75 }
+                      '&:last-child': { pb: { xs: 2, sm: 2.25 } }
                     }}
                   >
-                    {/* Card Top: Code & Status Chip */}
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1.5} sx={{ mb: 1.5 }}>
-                      <Box
-                        component="span"
-                        sx={{
-                          px: 1.25,
-                          py: 0.35,
-                          borderRadius: 1,
-                          fontSize: '0.75rem',
-                          fontFamily: 'monospace',
-                          fontWeight: 700,
-                          letterSpacing: 0.5,
-                          color: 'text.secondary',
-                          bgcolor: withAlpha(theme.vars.palette.grey[500], 0.1),
-                          border: '1px solid',
-                          borderColor: withAlpha(theme.vars.palette.divider, 0.8)
-                        }}
-                      >
-                        {project.code}
-                      </Box>
-                      <Chip
-                        label={project.status}
-                        size="small"
-                        color={isProjectActive ? 'success' : 'warning'}
-                        variant="filled"
-                        icon={isProjectActive ? <IconCircleCheck size={14} /> : <IconClock size={14} />}
-                        sx={{
-                          fontWeight: 700,
-                          fontSize: '0.75rem',
-                          height: 24,
-                          '& .MuiChip-label': { px: 0.75 }
-                        }}
-                      />
-                    </Stack>
-
-                    {/* Project Name */}
-                    <Tooltip title={project.name} enterDelay={500} placement="top">
-                      <Typography
-                        variant="h3"
-                        component="h2"
-                        sx={{
-                          fontWeight: 700,
-                          fontSize: '1.15rem',
-                          lineHeight: 1.45,
-                          mb: 0.75,
-                          color: 'text.primary',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          minHeight: '2.9em'
-                        }}
-                      >
-                        {project.name}
-                      </Typography>
-                    </Tooltip>
-
-                    {/* Location & Client metadata */}
-                    <Stack direction="row" alignItems="center" gap={0.75} sx={{ mb: 2, color: 'text.secondary' }}>
-                      <IconMapPin size={16} stroke={1.75} style={{ flexShrink: 0 }} />
-                      <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.825rem' }} noWrap>
-                        {project.location}
-                        {project.clientName && project.clientName !== project.name && ` · ${project.clientName}`}
-                      </Typography>
-                    </Stack>
-
-                    {/* Responsible Engineer */}
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      spacing={1.25}
-                      sx={{
-                        p: 1.25,
-                        mb: 2,
-                        borderRadius: 1.5,
-                        bgcolor: withAlpha(theme.vars.palette.grey[500], 0.05),
-                        border: '1px solid',
-                        borderColor: withAlpha(theme.vars.palette.divider, 0.5)
-                      }}
-                    >
-                      <Avatar
-                        sx={{
-                          width: 32,
-                          height: 32,
-                          fontSize: '0.85rem',
-                          fontWeight: 600,
-                          bgcolor: withAlpha(theme.vars.palette.primary.main, 0.12),
-                          color: theme.vars.palette.primary.dark
-                        }}
-                      >
-                        <IconUser size={18} />
-                      </Avatar>
-                      <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.2 }}>
-                          المهندس المسؤول
-                        </Typography>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.primary' }} noWrap>
-                          {project.engineerName}
-                        </Typography>
-                      </Box>
-                    </Stack>
-
-                    <Box sx={{ mb: 2 }}>
-                      <FinancialSummary
-                        totalWorks={project.totalWorks}
-                        totalPayments={project.totalPayments}
-                        cashBalance={project.cashBalance}
-                        cashBalanceStatus={project.cashBalanceStatus}
-                      />
-                    </Box>
-
-                    {/* Footer Area: Attention Indicator & Action Button */}
-                    <Box sx={{ mt: 'auto', pt: 1.5, borderTop: '1px solid', borderColor: withAlpha(theme.vars.palette.divider, 0.7) }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1.25}>
-                        {/* Review Movements Attention Indicator */}
+                    {/* Header Row: Building Icon + Project Name + Status/Code + Chevron */}
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.25}>
+                      <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
                         <Box
                           sx={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 0.75,
-                            px: 1.2,
-                            py: 0.6,
-                            borderRadius: 1,
-                            bgcolor: hasOpenMovements
-                              ? withAlpha(theme.vars.palette.warning.main, 0.1)
-                              : withAlpha(theme.vars.palette.success.main, 0.08),
-                            color: hasOpenMovements ? 'warning.dark' : 'success.dark',
-                            border: '1px solid',
-                            borderColor: hasOpenMovements
-                              ? withAlpha(theme.vars.palette.warning.main, 0.25)
-                              : withAlpha(theme.vars.palette.success.main, 0.2)
+                            width: 38,
+                            height: 38,
+                            borderRadius: 2,
+                            display: 'grid',
+                            placeItems: 'center',
+                            bgcolor: withAlpha(theme.vars.palette.primary.main, 0.12),
+                            color: theme.vars.palette.primary.main,
+                            flexShrink: 0
                           }}
                         >
-                          {hasOpenMovements ? (
-                            <IconAlertCircle size={16} stroke={2} />
-                          ) : (
-                            <IconCircleCheck size={16} stroke={2} />
-                          )}
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              fontWeight: 700,
-                              fontSize: '0.785rem',
-                              lineHeight: 1
-                            }}
-                          >
-                            {hasOpenMovements
-                              ? `حركات تحتاج مراجعة: ${project.openMovements}`
-                              : 'لا حركات معلقة'}
-                          </Typography>
+                          <IconBuilding size={20} stroke={1.9} />
                         </Box>
-
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Tooltip title={project.name} enterDelay={500} placement="top">
+                            <Typography
+                              variant="h4"
+                              component="h2"
+                              sx={{
+                                fontWeight: 800,
+                                fontSize: '1.02rem',
+                                lineHeight: 1.35,
+                                color: 'text.primary'
+                              }}
+                              noWrap
+                            >
+                              {project.name}
+                            </Typography>
+                          </Tooltip>
+                          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.2 }}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontWeight: 700,
+                                color: isProjectActive ? 'success.main' : 'text.secondary'
+                              }}
+                            >
+                              {isProjectActive ? 'مشروع نشط' : project.status}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', fontWeight: 600 }} noWrap>
+                              · {project.code}
+                            </Typography>
+                          </Stack>
+                        </Box>
                       </Stack>
-                    </Box>
+                      <Box sx={{ color: 'text.secondary', display: 'flex', flexShrink: 0 }}>
+                        {isRtl ? <IconChevronLeft size={18} /> : <IconChevronRight size={18} />}
+                      </Box>
+                    </Stack>
+
+                    <Divider sx={{ my: 1.5 }} />
+
+                    {/* Compact 3-Column Financial Strip (Works / Payments / Cash Balance) */}
+                    <FinancialSummary
+                      layout="compact"
+                      totalWorks={project.totalWorks}
+                      totalPayments={project.historicalFundingUnknown && !project.totalPayments ? null : project.totalPayments}
+                      cashBalance={project.historicalFundingUnknown ? null : project.cashBalance}
+                      cashBalanceStatus={project.cashBalanceStatus}
+                    />
                   </CardContent>
                 </Card>
               </Grid>

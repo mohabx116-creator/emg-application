@@ -194,12 +194,15 @@ export default function ContractorStatements() {
         const cStatements = statements.filter(
           (s) => s.contractorId === contractor.id && (!projectFilter || s.projectId === projectFilter)
         );
+        const historical = (contractor.historicalBalances ?? []).filter(b => b.currency === 'EGP' && (!projectFilter || b.projectId === projectFilter));
+        const historicalWorks = historical.reduce((sum, b) => sum + b.works, 0);
+        const historicalPaid = historical.reduce((sum, b) => sum + b.settlements, 0);
         const projectNames = Array.from(
-          new Set([...cContracts.map((c) => c.projectName), ...cStatements.map((s) => s.projectName)].filter(Boolean))
+          new Set([...historical.map(b => b.projectName), ...cContracts.map((c) => c.projectName), ...cStatements.map((s) => s.projectName)].filter(Boolean))
         );
-        const totalEntitlement = cStatements.reduce((sum, s) => sum + (s.grossAmount || 0), 0);
-        const totalPaid = cStatements.reduce((sum, s) => sum + (s.previousPaymentsAmount || 0), 0);
-        const outstandingBalance = cStatements.reduce((sum, s) => sum + (s.netAmount || 0), 0);
+        const totalEntitlement = historicalWorks + cStatements.filter(s => s.currency === 'EGP').reduce((sum, s) => sum + (s.grossAmount || 0), 0);
+        const totalPaid = historicalPaid + cStatements.filter(s => s.currency === 'EGP').reduce((sum, s) => sum + (s.previousPaymentsAmount || 0), 0);
+        const outstandingBalance = historicalWorks - historicalPaid + cStatements.filter(s => s.currency === 'EGP').reduce((sum, s) => sum + (s.netAmount || 0), 0);
         return {
           contractor,
           contracts: cContracts,
@@ -211,7 +214,7 @@ export default function ContractorStatements() {
         };
       })
       .filter((row) => {
-        if (projectFilter && row.contracts.length === 0 && row.statements.length === 0) return false;
+        if (projectFilter && row.projectNames.length === 0) return false;
         if (!q) return true;
         return `${row.contractor.name} ${row.projectNames.join(' ')} ${row.contractor.phone || ''}`.toLowerCase().includes(q);
       });

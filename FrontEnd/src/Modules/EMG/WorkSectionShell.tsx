@@ -33,11 +33,12 @@ import {
 import MainCard from 'ui-component/cards/MainCard';
 import { EmgProject } from 'api/emg';
 import FinancialSummary from './FinancialSummary';
+import { extractSectionFinancialSummary, SectionFinancialSummary } from './sectionFinancials';
 import { useActiveProject } from 'contexts/ActiveProjectContext';
 import useAuth from 'hooks/useAuth';
 import { hasPermission } from './roleAccess';
 
-const moneyFmt = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const moneyFmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 export const formatWorkMoney = (value: number) => `${moneyFmt.format(value || 0)} ج.م`;
 
 export const WORK_SECTION_TABS = [
@@ -104,6 +105,10 @@ type WorkSectionShellProps = {
   createModalTitle: string;
   onCloseCreateModal: () => void;
   createModalContent: ReactNode;
+  /** Optional typed section-specific financial summary (from backend section endpoint). Never falls back to project totals. */
+  sectionSummary?: SectionFinancialSummary | null;
+  /** Allows specialized modals (e.g. New Transaction Modal) to render their own custom header & spacing */
+  customModalLayout?: boolean;
 };
 
 export default function WorkSectionShell({
@@ -137,7 +142,9 @@ export default function WorkSectionShell({
   createModalOpen,
   createModalTitle,
   onCloseCreateModal,
-  createModalContent
+  createModalContent,
+  sectionSummary = null,
+  customModalLayout = false
 }: WorkSectionShellProps) {
   void totalAmount;
   void approvedCount;
@@ -148,10 +155,11 @@ export default function WorkSectionShell({
   const { user } = useAuth();
   const { projects, setActiveProjectId } = useActiveProject();
   const canAdvances = hasPermission(user, 'advances.view') || hasPermission(user, 'advances.manage');
-
   useEffect(() => {
     if (project?.id) setActiveProjectId(project.id);
   }, [project?.id, setActiveProjectId]);
+
+  const effectiveSectionSummary = sectionSummary ?? extractSectionFinancialSummary(project, activeSection);
 
   return (
     <Box sx={{ pb: 5 }}>
@@ -280,10 +288,11 @@ export default function WorkSectionShell({
 
       <Box sx={{ mb: 2.5 }}>
         <FinancialSummary
-          totalWorks={project.totalWorks}
-          totalPayments={project.totalPayments}
-          cashBalance={project.cashBalance}
-          cashBalanceStatus={project.cashBalanceStatus}
+          totalWorks={effectiveSectionSummary.totalWorks}
+          totalPayments={effectiveSectionSummary.totalPayments}
+          cashBalance={effectiveSectionSummary.cashBalance}
+          cashBalanceStatus={effectiveSectionSummary.cashBalanceStatus}
+          unresolved={effectiveSectionSummary.unresolved}
         />
       </Box>
 
@@ -329,7 +338,7 @@ export default function WorkSectionShell({
                   onClick={() => onStatusFilterChange('all')}
                   sx={{ fontWeight: 700 }}
                 />
-                {availableStatuses.map((status) => (
+                {availableStatuses.filter(status => !['للمراجعة', 'تحت المراجعة', 'معتمد', 'بانتظار الاعتماد'].includes(status)).map((status) => (
                   <Chip
                     key={status}
                     clickable
@@ -387,25 +396,38 @@ export default function WorkSectionShell({
         onClose={onCloseCreateModal}
         fullWidth
         fullScreen={downSM}
-        maxWidth="md"
-        PaperProps={{ sx: { borderRadius: downSM ? 0 : 3 } }}
+        maxWidth={customModalLayout ? 'sm' : 'md'}
+        sx={{ zIndex: (t) => t.zIndex.modal + 2 }}
+        PaperProps={{
+          sx: {
+            borderRadius: downSM ? 0 : 3.5,
+            maxWidth: !downSM && customModalLayout ? 720 : undefined,
+            overflow: 'hidden'
+          }
+        }}
       >
-        <DialogTitle sx={{ px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box>
-            <Typography variant="h3" sx={{ fontWeight: 800 }}>
-              {createModalTitle}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {project.name} · كود {project.code}
-            </Typography>
-          </Box>
-          <IconButton onClick={onCloseCreateModal} aria-label="إغلاق" size="small">
-            <IconX size={20} />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent dividers sx={{ p: 3 }}>
-          {createModalContent}
-        </DialogContent>
+        {customModalLayout ? (
+          <DialogContent sx={{ p: 0 }}>{createModalContent}</DialogContent>
+        ) : (
+          <>
+            <DialogTitle sx={{ px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography variant="h3" sx={{ fontWeight: 800 }}>
+                  {createModalTitle}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {project.name} · كود {project.code}
+                </Typography>
+              </Box>
+              <IconButton onClick={onCloseCreateModal} aria-label="إغلاق" size="small">
+                <IconX size={20} />
+              </IconButton>
+            </DialogTitle>
+            <DialogContent dividers sx={{ p: 3 }}>
+              {createModalContent}
+            </DialogContent>
+          </>
+        )}
       </Dialog>
     </Box>
   );

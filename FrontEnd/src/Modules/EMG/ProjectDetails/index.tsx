@@ -7,10 +7,6 @@ import {
   Breadcrumbs,
   Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   Grid,
   InputAdornment,
@@ -30,14 +26,19 @@ import {
   IconArrowRight,
   IconBuilding,
   IconChartBar,
+  IconChevronLeft,
+  IconClipboardList,
   IconDownload,
+  IconHammer,
   IconMapPin,
+  IconPaint,
   IconSearch,
-  IconUser
+  IconShovel,
+  IconUser,
+  IconWall
 } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import {
-  approveEmgProjectImport,
   downloadEmgProjectWorkbook,
   EmgOperationalAudit,
   EmgProject,
@@ -45,7 +46,6 @@ import {
   getEmgProject,
   getEmgProjectAudit,
   getEmgProjectReport,
-  rejectEmgProjectImport
 } from 'api/emg';
 import useAuth from 'hooks/useAuth';
 import useConfig from 'hooks/useConfig';
@@ -53,9 +53,10 @@ import { useActiveProject } from 'contexts/ActiveProjectContext';
 import { formatEmgMoney } from 'utils/emgFormatting';
 import { hasPermission } from '../roleAccess';
 import FinancialSummary from '../FinancialSummary';
+import { extractSectionFinancialSummary, WorkSectionKey } from '../sectionFinancials';
 
 const formatMoney = (value: number | null | undefined) => formatEmgMoney(value);
-const formatDate = (value: string) => new Intl.DateTimeFormat('ar-EG', { dateStyle: 'medium' }).format(new Date(value));
+const formatDate = (value: string | null) => value ? new Intl.DateTimeFormat('ar-EG-u-nu-latn', { dateStyle: 'medium' }).format(new Date(value)) : '—';
 
 const workSections = [
   { path: 'movements', permission: 'site-movements.view', ar: 'حركة الموقع اليومية', en: 'Site Movements' },
@@ -104,18 +105,12 @@ function ProjectDetails({ id }: { id: number }) {
   const isArabic = i18n === 'ar';
   const canViewReports = hasPermission(user, 'reports.view');
   const canExport = hasPermission(user, 'reports.export');
-  const canApproveImport = hasPermission(user, 'project-imports.approve');
-  const canRejectImport = hasPermission(user, 'project-imports.reject');
   const allowedSections = workSections.filter(({ permission }) => hasPermission(user, permission));
   const invalidId = !Number.isInteger(id) || id <= 0;
 
   const [project, setProject] = useState<EmgProject | null>(null);
   const [projectError, setProjectError] = useState<'unavailable' | 'request' | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const [decisionBusy, setDecisionBusy] = useState(false);
-  const [rejectOpen, setRejectOpen] = useState(false);
-  const [rejectNotes, setRejectNotes] = useState('');
-  const [decisionMessage, setDecisionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (invalidId) return;
@@ -141,37 +136,6 @@ function ProjectDetails({ id }: { id: number }) {
       await downloadEmgProjectWorkbook(id);
     } finally {
       setDownloading(false);
-    }
-  };
-
-  const approveImport = async () => {
-    setDecisionBusy(true);
-    setDecisionMessage(null);
-    try {
-      const updated = await approveEmgProjectImport(id, 'تمت مراجعة الترحيل من صفحة المشروع');
-      setProject(updated);
-      setDecisionMessage('تم تفعيل المشروع بنجاح. الحركات المسودة تستكمل دورة الاعتماد الخاصة بها.');
-    } catch {
-      setDecisionMessage('تعذر اعتماد الترحيل. راجع الصلاحيات وحالة المشروع.');
-    } finally {
-      setDecisionBusy(false);
-    }
-  };
-
-  const rejectImport = async () => {
-    if (!rejectNotes.trim()) return;
-    setDecisionBusy(true);
-    setDecisionMessage(null);
-    try {
-      const updated = await rejectEmgProjectImport(id, rejectNotes.trim());
-      setProject(updated);
-      setRejectOpen(false);
-      setRejectNotes('');
-      setDecisionMessage('تم رفض ترحيل المشروع وتسجيل السبب في سجل المراجعة.');
-    } catch {
-      setDecisionMessage('تعذر رفض الترحيل. راجع الصلاحيات وحالة المشروع.');
-    } finally {
-      setDecisionBusy(false);
     }
   };
 
@@ -313,70 +277,40 @@ function ProjectDetails({ id }: { id: number }) {
           </>
         )}
 
-        {project.status === 'تحت المراجعة' && (canApproveImport || canRejectImport) && (
-          <>
-            <Divider sx={{ my: 2 }} />
-            <Alert severity="warning" sx={{ mb: 1.5, borderRadius: 2 }}>
-              هذا المشروع ناتج عن ترحيل ملف Excel وينتظر قرار الاعتماد قبل تفعيله.
-            </Alert>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-              {canApproveImport && (
-                <Button variant="contained" color="success" disabled={decisionBusy} onClick={approveImport} sx={{ borderRadius: 2, fontWeight: 700 }}>
-                  تفعيل المشروع
-                </Button>
-              )}
-              {canRejectImport && (
-                <Button variant="outlined" color="error" disabled={decisionBusy} onClick={() => setRejectOpen(true)} sx={{ borderRadius: 2, fontWeight: 700 }}>
-                  رفض الترحيل
-                </Button>
-              )}
-            </Stack>
-          </>
-        )}
-
-        {decisionMessage && (
-          <Alert severity={decisionMessage.includes('بنجاح') || decisionMessage.includes('تم رفض') ? 'success' : 'error'} sx={{ mt: 1.5, borderRadius: 2 }}>
-            {decisionMessage}
-          </Alert>
-        )}
       </MainCard>
 
-      <Dialog open={rejectOpen} onClose={() => !decisionBusy && setRejectOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>رفض ترحيل المشروع</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            multiline
-            minRows={4}
-            label="سبب الرفض"
-            value={rejectNotes}
-            onChange={(event) => setRejectNotes(event.target.value)}
-            sx={{ mt: 1 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRejectOpen(false)} disabled={decisionBusy}>
-            إلغاء
-          </Button>
-          <Button onClick={rejectImport} disabled={decisionBusy || !rejectNotes.trim()} color="error" variant="contained">
-            تأكيد الرفض
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {canViewReports && <FinancialPanels projectId={id} isArabic={isArabic} />}
+      <FinancialPanels project={project} canViewReports={canViewReports} isArabic={isArabic} allowedSections={allowedSections} />
     </Box>
   );
 }
 
-function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic: boolean }) {
+const SECTION_CARDS_META: Record<WorkSectionKey, { icon: React.ReactNode; color: string }> = {
+  movements: { icon: <IconClipboardList size={18} />, color: '#2563eb' },
+  excavation: { icon: <IconShovel size={18} />, color: '#d97706' },
+  concrete: { icon: <IconWall size={18} />, color: '#7c3aed' },
+  steel: { icon: <IconHammer size={18} />, color: '#0d9488' },
+  finishing: { icon: <IconPaint size={18} />, color: '#ea580c' }
+};
+
+function FinancialPanels({
+  project,
+  canViewReports,
+  isArabic,
+  allowedSections
+}: {
+  project: EmgProject;
+  canViewReports: boolean;
+  isArabic: boolean;
+  allowedSections: typeof workSections;
+}) {
+  const projectId = project.id;
   const [report, setReport] = useState<EmgProjectReport | 'failed' | null>(null);
   const [audit, setAudit] = useState<EmgOperationalAudit | 'failed' | null>(null);
   const [movementSearch, setMovementSearch] = useState('');
 
   useEffect(() => {
     let active = true;
+    if (!canViewReports) return;
     getEmgProjectReport(projectId)
       .then((data) => {
         if (active) setReport(data);
@@ -394,10 +328,10 @@ function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic:
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, canViewReports]);
 
   const account = report && report !== 'failed' ? report.finalAccount : null;
-  const verifiedBalance = (amount: number) => account?.hasUnresolvedImportRecords ? 'قيد المطابقة' : formatMoney(amount);
+  const verifiedBalance = (amount?: number | null) => amount == null ? 'غير محدد' : formatMoney(amount);
   const filteredMovements = useMemo(() => {
     if (!report || report === 'failed') return [];
     const q = movementSearch.trim().toLowerCase();
@@ -409,31 +343,97 @@ function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic:
 
   return (
     <>
-      {report === null ? (
-        <Grid container spacing={2} sx={{ mt: 1.5 }}>
-          {[0, 1, 2, 3].map((i) => (
-            <Grid key={i} size={{ xs: 12, sm: 6, md: 3 }}>
-              <Skeleton variant="rounded" height={106} sx={{ borderRadius: 3 }} />
-            </Grid>
-          ))}
-        </Grid>
-      ) : (
-        account && (
-          <Stack spacing={1.5} sx={{ mt: 1.5 }}>
+          <Stack spacing={2} sx={{ mt: 2 }}>
             <FinancialSummary
-              totalWorks={account.totalWorks ?? account.totalOutgoing ?? 0}
-              totalPayments={account.totalPayments ?? account.totalIncoming ?? 0}
-              cashBalance={account.cashBalance ?? 0}
-              cashBalanceStatus={account.cashBalanceStatus ?? 'الحساب متوازن'}
+              title={isArabic ? 'الملخص المالي للمشروع' : 'Project Financial Summary'}
+              totalWorks={project.totalWorks}
+              totalPayments={project.historicalFundingUnknown && !project.totalPayments ? null : project.totalPayments}
+              cashBalance={project.historicalFundingUnknown ? null : project.cashBalance}
+              cashBalanceStatus={project.cashBalanceStatus}
+
             />
 
-            <MainCard sx={{ borderRadius: 3 }} content={false}>
+            {project.financialWarnings?.map(warning => <Alert key={warning} severity="warning">{warning}</Alert>)}
+            {/* Clickable Project Section Financial Cards (Works / Payments / Balance before entering) */}
+            {allowedSections.some((s) => s.path !== 'advances') && (
+              <Box>
+                <Typography variant="h4" sx={{ fontWeight: 850, mb: 1.25 }}>
+                  {isArabic ? 'أقسام الأعمال والملخص المالي لكل قسم' : 'Work Sections Financial Overview'}
+                </Typography>
+                <Grid container spacing={1.5}>
+                  {allowedSections
+                    .filter((s): s is (typeof workSections)[number] & { path: WorkSectionKey } => s.path !== 'advances')
+                    .map((sec) => {
+                      const summary = extractSectionFinancialSummary(project, sec.path);
+                      const meta = SECTION_CARDS_META[sec.path];
+                      return (
+                        <Grid key={sec.path} size={{ xs: 12, sm: 6, lg: 4 }}>
+                          <Box
+                            component={Link}
+                            to={`/emg/projects/${projectId}/${sec.path}`}
+                            sx={{
+                              display: 'block',
+                              textDecoration: 'none',
+                              color: 'inherit',
+                              p: 2,
+                              borderRadius: 2.5,
+                              border: '1px solid',
+                              borderColor: 'divider',
+                              bgcolor: 'background.paper',
+                              transition: 'border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease',
+                              '&:hover': {
+                                borderColor: meta.color,
+                                transform: 'translateY(-2px)',
+                                boxShadow: 2
+                              }
+                            }}
+                          >
+                            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                              <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                                <Box
+                                  sx={{
+                                    width: 34,
+                                    height: 34,
+                                    borderRadius: 1.75,
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    bgcolor: `${meta.color}1a`,
+                                    color: meta.color,
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  {meta.icon}
+                                </Box>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 800 }} noWrap>
+                                  {isArabic ? sec.ar : sec.en}
+                                </Typography>
+                              </Stack>
+                              <IconChevronLeft size={18} style={{ opacity: 0.6 }} />
+                            </Stack>
+                            <Divider sx={{ my: 1.25 }} />
+                            <FinancialSummary
+                              layout="compact"
+                              totalWorks={summary.totalWorks}
+                              totalPayments={summary.totalPayments}
+                              cashBalance={summary.cashBalance}
+                              cashBalanceStatus={summary.cashBalanceStatus}
+                              unresolved={summary.unresolved}
+                            />
+                          </Box>
+                        </Grid>
+                      );
+                    })}
+                </Grid>
+              </Box>
+            )}
+
+            {account && <MainCard sx={{ borderRadius: 3 }} content={false}>
               <Grid container sx={{ p: 1.5 }} spacing={1.5}>
                 {[
                   { label: 'نسبة المكتب', value: `${account.officeSharePercentage}%` },
                   { label: 'أتعاب المكتب', value: verifiedBalance(account.officeShareAmount) },
-                  { label: 'المدفوع للمكتب', value: formatMoney(account.officePaid ?? 0) },
-                  { label: 'المستحق للمكتب', value: verifiedBalance(account.officeNetDue ?? 0) }
+                  { label: 'المدفوع للمكتب', value: verifiedBalance(account.officePaid) },
+                  { label: 'المستحق للمكتب', value: verifiedBalance(account.officeNetDue) }
                 ].map((metric) => (
                   <Grid key={metric.label} size={{ xs: 6, md: 3 }}>
                     <Box sx={{ px: 1.25, py: 0.75, borderRadius: 2, bgcolor: 'background.default' }}>
@@ -447,12 +447,10 @@ function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic:
                   </Grid>
                 ))}
               </Grid>
-            </MainCard>
+            </MainCard>}
           </Stack>
-        )
-      )}
 
-      <Grid container spacing={2} sx={{ mt: 1.5, minWidth: 0, maxWidth: '100%' }}>
+      {canViewReports && <Grid container spacing={2} sx={{ mt: 1.5, minWidth: 0, maxWidth: '100%' }}>
         <Grid size={{ xs: 12, md: 7 }}>
           <MainCard
             sx={{ borderRadius: 3, height: '100%' }}
@@ -597,7 +595,7 @@ function FinancialPanels({ projectId, isArabic }: { projectId: number; isArabic:
             )}
           </MainCard>
         </Grid>
-      </Grid>
+      </Grid>}
     </>
   );
 }

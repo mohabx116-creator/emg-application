@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -38,6 +38,7 @@ import { useTodayAttendanceCache } from 'hooks/useEmgData';
 import { hasAnyPermission } from 'Modules/EMG/roleAccess';
 import { formatEmgMoney } from 'utils/emgFormatting';
 import { WorkStatusChip } from 'Modules/EMG/WorkSectionShell';
+import FinancialSummary from 'Modules/EMG/FinancialSummary';
 
 export default function EngineerMobileDashboard() {
   const navigate = useNavigate();
@@ -116,8 +117,28 @@ export default function EngineerMobileDashboard() {
     );
   }
 
+  const portfolioFinancials = useMemo(() => {
+    const totalWorks = projects.reduce((sum, p) => sum + (p.totalWorks ?? 0), 0);
+    const totalPayments = projects.reduce((sum, p) => sum + (p.totalPayments ?? 0), 0);
+    const cashBalance = projects.some(p => p.historicalFundingUnknown) ? null : totalPayments - totalWorks;
+    return { totalWorks, totalPayments, cashBalance };
+  }, [projects]);
+
   return (
     <Box sx={{ pb: 4, maxWidth: 960, mx: 'auto', width: '100%' }}>
+      {/* Approved Financial Summary across accessible projects */}
+      {projects.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <FinancialSummary
+            title="نظرة عامة على المشروعات"
+            subtitle="إجماليات المشروعات المسندة لحسابك."
+            totalWorks={portfolioFinancials.totalWorks}
+            totalPayments={portfolioFinancials.totalPayments}
+            cashBalance={portfolioFinancials.cashBalance}
+          />
+        </Box>
+      )}
+
       {/* Active Project Hero Card + Fast Switcher */}
       <Card
         sx={{
@@ -317,7 +338,7 @@ export default function EngineerMobileDashboard() {
                       </Stack>
                       <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <Typography variant="caption" color="text.secondary">
-                          {new Date(movement.movementDate).toLocaleDateString('ar-EG')} · {movement.isPaid ? movement.paymentMethod || 'نقدي' : 'آجل'}
+                          {new Date(movement.movementDate).toLocaleDateString('ar-EG-u-nu-latn')} · {movement.isPaid ? movement.paymentMethod || 'نقدي' : 'آجل'}
                         </Typography>
                         <WorkStatusChip status={movement.status} />
                       </Stack>

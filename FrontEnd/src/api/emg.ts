@@ -8,6 +8,10 @@ export type EmgProject = {
   location: string;
   status: string;
   engineerName: string;
+  sections?: EmgFinalAccount['sections'];
+  financialWarnings?: string[];
+  historicalFundingUnknown?: boolean;
+  historicalFundingBasis?: string;
   openMovements: number;
   totalIssued: number;
   totalReceived: number;
@@ -47,7 +51,10 @@ export type EmgWorkbookMigrationPlan = {
 };
 
 export type EmgFinalAccount = {
-  sections?: Array<{ category: string; currency: string; works: number; allocatedFunding: number; fundingLessWorks: number }>;
+  sections?: Array<{ sectionKey?: string; fundingUnknown?: boolean; category: string; currency: string; works: number; allocatedFunding: number; fundingLessWorks: number }>;
+  financialWarnings?: string[];
+  historicalFundingUnknown?: boolean;
+  historicalFundingBasis?: string;
   historicalFundingAdjustments?: number;
   projectId: number;
   projectName: string;
@@ -120,7 +127,7 @@ export type EmgHistoricalProjectReport = {
   entries: Array<{ id: number; batchId: number; sourceFileName: string; sourceSha256: string; sheetName: string; sourceCoordinate: string; mappingFamily: string; businessEventType: string; ledgerStream: string; amount: number; currency: string; postedAtUtc: string; provenanceJson: string }>;
 };
 
-export type EmgContractor = { id: number; name: string; phone: string; taxNumber: string; notes: string; isActive: boolean };
+export type EmgContractor = { historicalBalances?: Array<{ projectId: number; projectName: string; currency: string; works: number; settlements: number }>; id: number; name: string; phone: string; taxNumber: string; notes: string; isActive: boolean };
 export type EmgContract = { id: number; projectId: number; projectName: string; contractorId: number; contractorName: string; contractNumber: string; currency: string; status: string; itemCount: number };
 export type EmgContractItem = { id: number; contractId: number; description: string; unit: string; approvedQuantity: number; unitRate: number; sourceReference: string; usedQuantity: number; remainingQuantity: number };
 export type EmgContractorStatement = { id: number; projectId: number; projectName: string; contractorId: number; contractorName: string; contractId: number; contractNumber: string; periodFrom: string; periodTo: string; currency: string; status: string; grossAmount: number; previousPaymentsAmount: number; deductionsAmount: number; netAmount: number; sourceReference: string; lines: Array<{ id: number; contractItemId: number; description: string; sourceEntityType: string; sourceEntityId: number; quantity: number; unit: string; unitRate: number; grossAmount: number; sourceReference: string }> };
