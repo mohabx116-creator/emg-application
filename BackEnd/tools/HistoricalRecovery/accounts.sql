@@ -67,6 +67,26 @@ CREATE TEMP TABLE expected_settlements ON COMMIT DROP AS
 SELECT batch_id AS "BatchId",sheet AS "Sheet",cell AS "Cell",category AS "Category",amount AS "Amount",currency AS "Currency",
     date::timestamp AT TIME ZONE 'UTC' AS "SettlementDate",party AS "Party",narrative AS "Narrative",source::text AS "SourceJson",
     supplier_id AS "SupplierId",contractor_id AS "ContractorId" FROM resolved_accounts WHERE kind='settlement';
+-- The source remains immutable. Accept a subsequent beneficiary only when the
+-- existing settlement and its authentic correction event agree on every key.
+UPDATE expected_settlements e
+SET "SupplierId" = s."SupplierId", "ContractorId" = s."ContractorId"
+FROM historical_settlements s
+JOIN historical_import_batches b ON b."Id" = s."BatchId"
+WHERE (e."BatchId", e."Sheet", e."Cell") = (s."BatchId", s."Sheet", s."Cell")
+  AND e."SupplierId" IS NULL AND e."ContractorId" IS NULL
+  AND num_nonnulls(s."SupplierId", s."ContractorId") = 1
+  AND EXISTS (
+      SELECT FROM historical_import_audit_events a
+      WHERE a."BatchId" = s."BatchId" AND a."Action" = 'HISTORICAL_SETTLEMENT_BENEFICIARY_LINKED'
+        AND a."DetailsJson"::jsonb #>> '{preview,ProposalSha256}' ~ '^[0-9A-F]{64}$'
+        AND a."DetailsJson"::jsonb ->> 'BackupSha256' ~ '^[0-9A-F]{64}$'
+        AND a."DetailsJson"::jsonb #> '{preview,Change}' @> jsonb_build_object(
+            'BatchId', s."BatchId", 'ProjectId', b."ProjectId", 'SettlementId', s."Id",
+            'WorkbookSha256', b."SourceSha256", 'Sheet', s."Sheet", 'Cell', s."Cell",
+            'Amount', s."Amount", 'Currency', s."Currency",
+            'Role', CASE WHEN s."SupplierId" IS NULL THEN 'contractor' ELSE 'supplier' END,
+            'AccountId', coalesce(s."SupplierId", s."ContractorId")));
 INSERT INTO historical_settlements ("BatchId","Sheet","Cell","Category","Amount","Currency","SettlementDate","Party","Narrative","SourceJson","SupplierId","ContractorId")
 SELECT e.* FROM expected_settlements e WHERE NOT EXISTS (SELECT FROM historical_settlements s
     WHERE (s."BatchId",s."Sheet",s."Cell")=(e."BatchId",e."Sheet",e."Cell"));

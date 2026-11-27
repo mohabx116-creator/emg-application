@@ -105,3 +105,7 @@ Invoice corrections synchronize their linked site movement and check payment lim
 ### Operational currency entry
 
 The ordinary USD receipt and site movement test created a 100 USD receipt, corrected 25 USD of works to 30 with currency omitted, and read 70 USD cash and zero EGP receipts. Unsupported advance currencies were rejected. Supplier invoices and payments require EGP, with a currency check on linked site work. Existing callers may omit the currency when entering EGP. Local UI data integration passed TypeScript.
+
+### Source exceptions and beneficiary correction
+
+The local private exception register records each archived range and unresolved funding and beneficiary decision. A named-account correction preview checks the immutable workbook, signed cell, table heading, party and same-project work. An actual change requires the configured owner, a confirmed proposal fingerprint and a verified pinned backup. The source-layout regression test passed. No correction was applied. Source exceptions, independent event candidates and owner confirmation requirements are itemized in the local closure report.
