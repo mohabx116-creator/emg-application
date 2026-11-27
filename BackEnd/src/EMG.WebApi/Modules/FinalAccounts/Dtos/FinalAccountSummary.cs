@@ -20,6 +20,9 @@ public sealed record FinalAccountSummary(
     public string OwnerName { get; init; } = string.Empty;
     public decimal HistoricalFundingAdjustments { get; init; }
     public bool HasRecoveredWork { get; init; }
+    public string HistoricalFundingBasis { get; init; } = "operational";
+    public bool HistoricalFundingUnknown { get; init; }
+    public IReadOnlyList<string> FinancialWarnings { get; init; } = [];
     public IReadOnlyList<CurrencyFinancialSummary> Currencies { get; init; } = [];
     public IReadOnlyList<SectionFinancialSummary> Sections { get; init; } = [];
     public decimal TotalOutgoing { get; init; }
@@ -35,7 +38,11 @@ public sealed record FinalAccountSummary(
 }
 
 public sealed record SectionFinancialSummary(string Category, string Currency, decimal Works,
-    decimal AllocatedFunding, decimal FundingLessWorks);
+    decimal AllocatedFunding, decimal FundingLessWorks)
+{
+    public bool FundingUnknown { get; init; }
+    public string? SectionKey { get; init; }
+}
 
 public sealed record CurrencyFinancialSummary(string Currency, decimal Works, decimal Payments, decimal CashBalance,
     decimal OfficeFee, decimal OfficePayments, decimal OfficeOutstanding, decimal ReferenceTransfers);

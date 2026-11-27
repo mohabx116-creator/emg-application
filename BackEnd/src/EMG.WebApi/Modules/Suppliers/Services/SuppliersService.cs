@@ -19,15 +19,22 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
             .Where(item => (item.Status == "معتمد" || item.Status == "مرحّل") && (globalAccess || item.ProjectId.HasValue && projectIds.Contains(item.ProjectId.Value)))
             .ToListAsync(cancellationToken);
 
+        var historicalWorks = await db.HistoricalWorkLines.Where(w => w.SupplierId != null && w.Currency == "EGP" &&
+            (globalAccess || projectIds.Contains(w.Batch.ProjectId))).GroupBy(w => w.SupplierId!.Value)
+            .Select(g => new { Id = g.Key, Count = g.Count(), Amount = g.Sum(w => w.Amount) }).ToDictionaryAsync(g => g.Id,cancellationToken);
+        var settled = await db.HistoricalSettlements.Where(w => w.SupplierId != null && w.Currency == "EGP" &&
+            (globalAccess || projectIds.Contains(w.Batch.ProjectId))).GroupBy(w => w.SupplierId!.Value)
+            .Select(g => new { Id = g.Key, Amount = g.Sum(w => w.Amount) }).ToDictionaryAsync(g => g.Id,g => g.Amount,cancellationToken);
         return suppliers.Select(item =>
         {
             var supplierSupplies = supplies.Where(supply => supply.SupplierId == item.Id).ToList();
             var supplierPayments = payments.Where(payment => payment.SupplierId == item.Id).ToList();
-            var totalSupplies = supplierSupplies.Sum(supply => supply.TotalAmount);
-            var totalPaid = supplierPayments.Sum(payment => payment.Amount);
+            var historical = historicalWorks.GetValueOrDefault(item.Id);
+            var totalSupplies = supplierSupplies.Sum(supply => supply.TotalAmount) + (historical?.Amount ?? 0m);
+            var totalPaid = supplierPayments.Sum(payment => payment.Amount) + settled.GetValueOrDefault(item.Id);
             return new SupplierSummary(item.Id, item.Name, item.SupplierType, item.Phone ?? string.Empty,
                 item.TaxNumber ?? string.Empty, item.Notes ?? string.Empty, item.IsActive,
-                supplierSupplies.Count, totalSupplies, totalPaid, totalSupplies - totalPaid);
+                supplierSupplies.Count + (historical?.Count ?? 0), totalSupplies, totalPaid, totalSupplies - totalPaid);
         }).ToList();
     }
 

@@ -2,6 +2,12 @@ using ClosedXML.Excel;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
 
+if (args is ["--historical-reports", var mapping])
+{
+    await HistoricalReportChecks.RunAsync(mapping);
+    return;
+}
+
 if (args.Length != 2 || !int.TryParse(args[1], out var projectId) || projectId <= 0)
     throw new ArgumentException("Supply a workbook path and a positive project ID.");
 var source = args[0];

@@ -141,10 +141,13 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
             .Select(item => new { item.TotalAmount, Description = item.Description + " " + item.OperationType, item.Notes }).ToListAsync(cancellationToken);
         var finishingRows = await db.FinishingRecords.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل"))
             .Select(item => new { item.TotalAmount, item.Description, item.Notes }).ToListAsync(cancellationToken);
-        var excavation = excavationRows.Sum(item => item.TotalAmount);
-        var concrete = concreteRows.Sum(item => item.TotalAmount);
-        var steel = steelRows.Sum(item => item.TotalAmount);
-        var finishing = finishingRows.Sum(item => item.TotalAmount);
+        var recovered = await db.HistoricalWorkLines.Where(w => w.Batch.ProjectId == projectId && w.OperationalId == null && w.Currency == "EGP")
+            .GroupBy(w => w.Family).Select(g => new { Family = g.Key, Amount = g.Sum(w => w.Amount) })
+            .ToDictionaryAsync(g => g.Family,g => g.Amount,cancellationToken);
+        var excavation = excavationRows.Sum(item => item.TotalAmount) + recovered.GetValueOrDefault("excavation");
+        var concrete = concreteRows.Sum(item => item.TotalAmount) + recovered.GetValueOrDefault("concrete") + recovered.GetValueOrDefault("workmanship");
+        var steel = steelRows.Sum(item => item.TotalAmount) + recovered.GetValueOrDefault("steel");
+        var finishing = finishingRows.Sum(item => item.TotalAmount) + recovered.GetValueOrDefault("finishing") + recovered.GetValueOrDefault("building");
         var supplies = await db.SupplierSupplies.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.TotalAmount, cancellationToken);
         var payments = await db.SupplierPayments.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
         var checks = new List<AuditCheck>

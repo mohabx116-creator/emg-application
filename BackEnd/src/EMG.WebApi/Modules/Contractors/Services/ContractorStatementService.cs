@@ -14,9 +14,20 @@ public sealed class ContractorStatementService(EmgDbContext db) : IContractorSta
     public async Task<IReadOnlyList<ContractorSummary>> GetContractorsAsync(int? userId, bool globalAccess, CancellationToken cancellationToken)
     {
         var query = db.Contractors.AsNoTracking().Where(item => item.IsActive);
+        var assigned = db.UserProjectAssignments.Where(a => a.IsActive && a.UserId == userId).Select(a => a.ProjectId);
+        var works = db.HistoricalWorkLines.Where(w => w.ContractorId != null && w.Currency == "EGP" && (globalAccess || assigned.Contains(w.Batch.ProjectId)));
+        var settlements = db.HistoricalSettlements.Where(s => s.ContractorId != null && s.Currency == "EGP" && (globalAccess || assigned.Contains(s.Batch.ProjectId)));
         if (!globalAccess)
-            query = query.Where(item => userId.HasValue && db.ContractorContracts.Any(contract => contract.ContractorId == item.Id && db.UserProjectAssignments.Any(assignment => assignment.ProjectId == contract.ProjectId && assignment.UserId == userId && assignment.IsActive)));
-        return await query.OrderBy(item => item.Name).Select(ToContractorSummary()).ToListAsync(cancellationToken);
+            query = query.Where(item => db.ContractorContracts.Any(c => c.ContractorId == item.Id && assigned.Contains(c.ProjectId))
+                || works.Any(w => w.ContractorId == item.Id) || settlements.Any(s => s.ContractorId == item.Id));
+        var lines = await works.Select(w => new { Id = w.ContractorId!.Value, w.Batch.ProjectId, ProjectName = w.Batch.Project.Name, w.Currency, Works = w.Amount, Settled = 0m })
+            .Concat(settlements.Select(s => new { Id = s.ContractorId!.Value, s.Batch.ProjectId, ProjectName = s.Batch.Project.Name, s.Currency, Works = 0m, Settled = s.Amount }))
+            .GroupBy(v => new { v.Id,v.ProjectId,v.ProjectName,v.Currency })
+            .Select(g => new { g.Key.Id, Balance = new ContractorHistoricalBalance(g.Key.ProjectId,g.Key.ProjectName,g.Key.Currency,g.Sum(v => v.Works),g.Sum(v => v.Settled)) })
+            .ToListAsync(cancellationToken);
+        var balances = lines.ToLookup(l => l.Id,l => l.Balance);
+        var contractors = await query.OrderBy(c => c.Name).Select(ToContractorSummary()).ToListAsync(cancellationToken);
+        return contractors.Select(c => c with { HistoricalBalances = balances[c.Id].ToList() }).ToList();
     }
 
     public async Task<ContractorSummary?> CreateContractorAsync(CreateContractorRequest request, CancellationToken cancellationToken)

@@ -1,7 +1,11 @@
 namespace EMG.Api.Modules.Contractors.Dtos;
 
 public sealed record CreateContractorRequest(string Name, string? Phone, string? TaxNumber, string? Notes);
-public sealed record ContractorSummary(int Id, string Name, string Phone, string TaxNumber, string Notes, bool IsActive);
+public sealed record ContractorSummary(int Id, string Name, string Phone, string TaxNumber, string Notes, bool IsActive)
+{
+    public IReadOnlyList<ContractorHistoricalBalance> HistoricalBalances { get; init; } = [];
+}
+public sealed record ContractorHistoricalBalance(int ProjectId, string ProjectName, string Currency, decimal Works, decimal Settlements);
 public sealed record CreateContractRequest(int ProjectId, string ContractNumber, string Currency, DateTime? StartsOn, DateTime? EndsOn, string? Terms);
 public sealed record ContractorContractSummary(int Id, int ProjectId, string ProjectName, int ContractorId, string ContractorName, string ContractNumber, string Currency, string Status, int ItemCount);
 public sealed record CreateContractItemRequest(string Description, string Unit, decimal ApprovedQuantity, decimal UnitRate, string? SourceReference);

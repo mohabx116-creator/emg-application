@@ -22,7 +22,9 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             + await db.ContractorPayments.Where(item => item.ProjectId == projectId && item.PaymentSource != "مالك مباشر" && item.Currency == "EGP").SumAsync(item => item.Amount, cancellationToken);
         var supplierSupplies = await db.SupplierSupplies.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.TotalAmount, cancellationToken);
         var supplierPaid = await db.SupplierPayments.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
-        var supplierOutstanding = supplierSupplies - supplierPaid;
+        var historicalSupplierWorks = await db.HistoricalWorkLines.Where(w => w.Batch.ProjectId == projectId && w.SupplierId != null && w.Currency == "EGP").SumAsync(w => w.Amount,cancellationToken);
+        var historicalSupplierPaid = await db.HistoricalSettlements.Where(s => s.Batch.ProjectId == projectId && s.SupplierId != null && s.Currency == "EGP").SumAsync(s => s.Amount,cancellationToken);
+        var supplierOutstanding = supplierSupplies + historicalSupplierWorks - supplierPaid - historicalSupplierPaid;
         var outgoingByCategory = new Dictionary<string, decimal>(StringComparer.Ordinal);
         var history = db.HistoricalWorkLines.AsNoTracking().Where(w => w.Batch.ProjectId == projectId);
         var unlinked = await history.Where(w => w.OperationalId == null)
@@ -54,7 +56,13 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             .Where(line => line.Batch.ProjectId == projectId && line.Currency == "EGP" && line.Basis == "project_allocation")
             .GroupBy(line => line.Category).Select(group => new { Category = group.Key, Amount = group.Sum(line => line.Amount) })
             .ToListAsync(cancellationToken);
-        foreach (var line in historicalAllocations)
+        var funding = db.HistoricalFundingLines.Where(f => f.Batch.ProjectId == projectId && f.Currency == "EGP");
+        var qualifications = await funding.Where(f => f.Stream == "funding_qualification")
+            .Select(f => new { f.Basis, f.Amount }).ToListAsync(cancellationToken);
+        var ownershipConflict = qualifications.Any(f => f.Basis == "conflicting_ownership");
+        var disputedCategories = ownershipConflict
+            ? historicalAllocations.Select(f => FundingCategory(f.Category)).ToHashSet() : new HashSet<string>();
+        foreach (var line in historicalAllocations.Where(_ => !ownershipConflict))
         {
             var category = FundingCategory(line.Category);
             incomingByCategory[category] = incomingByCategory.GetValueOrDefault(category) + line.Amount;
@@ -71,6 +79,11 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         var fundingAdjustments = await db.HistoricalFundingLines.AsNoTracking()
             .Where(line => line.Batch.ProjectId == projectId && line.Currency == "EGP" && line.Basis == "signed_schedule_adjustment")
             .SumAsync(line => line.Amount, cancellationToken);
+        var sourceControl = await funding.Where(f => f.Stream == "source_control")
+            .Select(f => new { f.Basis, f.Amount }).SingleOrDefaultAsync(cancellationToken);
+        // The source control references the existing allocations. No extra receipt or allocation is posted.
+        if (!ownershipConflict && sourceControl?.Basis == "verified_allocation_total")
+            totalIncoming += sourceControl.Amount + qualifications.Where(f => f.Basis == "verified_office_supplement").Sum(f => f.Amount);
         totalIncoming += fundingAdjustments;
         var totalOutgoing = outgoingByCategory.Values.Sum();
         var officePaid = incomingByCategory.GetValueOrDefault("المكتب");
@@ -86,9 +99,27 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         var status = incomplete ? "غير مكتمل: توجد سجلات استيراد قيد المراجعة" :
             payerBalance > 0 ? "مستحق على الدافع" : payerBalance < 0 ? "رصيد زائد لدى الدافع" : "متزن";
         var cashBalance = decimal.Round(totalIncoming - totalOutgoing, 2);
+        var warnings = new List<string>();
+        var unknownFunding = ownershipConflict || sourceControl == null && await db.HistoricalImportBatches.AnyAsync(b => b.ProjectId == projectId && b.Status == "POSTED" && b.MappingVersion == "universal-v1.1", cancellationToken)
+            && !await funding.AnyAsync(f => f.Basis == "main_schedule_entry" || f.Basis == "signed_schedule_adjustment", cancellationToken);
+        if (ownershipConflict)
+            warnings.Add($"ورد توزيع بمبلغ {sourceControl?.Amount:N2} ج.م في كشف مطابق لدفعات عميل آخر. لم تتأكد ملكية الدفعة لهذا المشروع.");
+        else if (unknownFunding) warnings.Add("لم تثبت قيمة الدفعات التاريخية. تظهر التوزيعات المثبتة لكل بند.");
+        var pendingFunding = await funding.Where(f => f.Basis == "formula_settlement_review" || f.Basis == "settlement_funding_unconfirmed" || f.Basis == "unresolved_source_note")
+            .SumAsync(f => f.Amount,cancellationToken);
+        if (pendingFunding != 0) warnings.Add($"يشمل جدول المصدر {pendingFunding:N2} ج.م لم يثبت استلامها مستقلة عن التسويات.");
+        var pendingParties = await db.HistoricalSettlements.CountAsync(s => s.Batch.ProjectId == projectId && s.SupplierId == null && s.ContractorId == null,cancellationToken);
+        if (pendingParties > 0) warnings.Add($"توجد {pendingParties} تسويات لم يتحدد حساب الطرف المستفيد منها.");
+        var workFamilies = await history.Select(w => new { w.Category,w.Family }).Distinct().ToListAsync(cancellationToken);
+        var sectionKeys = workFamilies.GroupBy(w => w.Category).ToDictionary(g => g.Key,g => g.Select(w => w.Family switch
+        {
+            "site" => "movements", "workmanship" or "concrete" => "concrete", "building" or "finishing" => "finishing",
+            _ => w.Family
+        }).Distinct().SingleOrDefault());
         var sections = outgoingByCategory.Keys.Union(incomingByCategory.Keys).Where(category => category != "المكتب")
             .Select(category => new SectionFinancialSummary(category, "EGP", outgoingByCategory.GetValueOrDefault(category),
-                incomingByCategory.GetValueOrDefault(category), incomingByCategory.GetValueOrDefault(category) - outgoingByCategory.GetValueOrDefault(category)))
+                incomingByCategory.GetValueOrDefault(category), incomingByCategory.GetValueOrDefault(category) - outgoingByCategory.GetValueOrDefault(category))
+                { FundingUnknown = disputedCategories.Contains(category), SectionKey = sectionKeys.GetValueOrDefault(category) })
             .OrderBy(item => item.Category).ToList();
         var transfers = await db.HistoricalFundingLines.Where(f => f.Batch.ProjectId == projectId && f.Basis == "transfer_breakdown")
             .GroupBy(f => f.Currency).Select(g => new { Currency = g.Key, Amount = g.Sum(f => f.Amount) }).ToDictionaryAsync(g => g.Currency,g => g.Amount,cancellationToken);
@@ -130,11 +161,15 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             Sections = sections,
             Currencies = currencies,
             HasRecoveredWork = await history.AnyAsync(cancellationToken),
+            HistoricalFundingUnknown = unknownFunding,
+            HistoricalFundingBasis = ownershipConflict ? "conflicting_ownership" : sourceControl?.Basis ?? (unknownFunding ? "unknown" :
+                await funding.AnyAsync(f => f.Stream == "main_schedule", cancellationToken) ? "main_schedule" : "operational"),
+            FinancialWarnings = warnings,
             TotalOutgoing = totalOutgoing,
             TotalWorks = totalOutgoing,
             TotalPayments = totalIncoming,
             CashBalance = cashBalance,
-            CashBalanceStatus = cashBalance > 0 ? "العميل له فلوس" : cashBalance < 0 ? "لنا مستحقات لدى العميل" : "الحساب متوازن",
+            CashBalanceStatus = unknownFunding ? "الرصيد غير محدد" : cashBalance > 0 ? "العميل له فلوس" : cashBalance < 0 ? "لنا مستحقات لدى العميل" : "الحساب متوازن",
             OfficePaid = officePaid,
             OfficeNetDue = office.Outstanding,
             HasUnresolvedImportRecords = incomplete,
