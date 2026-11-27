@@ -81,3 +81,7 @@ The scoped ledger returns fundingEntries and allocationEntries. Recognized sourc
 ### Primary workbook schedules
 
 The approved template expands work, receipt and allocation rows with original references, dates, currencies and signed amounts. The independent primary table check reopened all 38 generated workbooks and matched their source work identities, signed values, receipt and allocation schedules, finishing controls and printed category totals. Twenty active XLSX integrity tests passed. One optional private legacy fixture was skipped. Disputed ownership remains excluded from recognized schedules.
+
+### Project card performance
+
+The read-only 38-card service benchmark used a cold process followed by three warm requests on each version. SQL commands fell from 1,094 to 866. Cold service time fell from 4,317 to 3,585 ms and median warm time from 2,393 to 1,878 ms. The digest of all pre-existing card fields matched. Separate currency projections are additive. Twenty-one focused tests passed. The project loop remains sequential and these measurements exclude browser rendering.

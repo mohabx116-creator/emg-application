@@ -18,11 +18,18 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         // Draft and review rows remain visible in workflow screens and cannot
         // affect the financial truth until an authorized approval occurs.
         var postedSite = db.SiteMovements.Where(item => item.ProjectId == projectId && item.Currency == "EGP" && (item.Status == "معتمد" || item.Status == "مرحّل"));
-        var totalExpenses = await postedSite.Where(item => item.MovementType != "وارد").SumAsync(item => item.TotalAmount, cancellationToken)
-            + await db.SupplierPayments.Where(item => item.ProjectId == projectId && item.PaymentSource != "مالك مباشر" && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken)
-            + await db.ContractorPayments.Where(item => item.ProjectId == projectId && item.PaymentSource != "مالك مباشر" && item.Currency == "EGP").SumAsync(item => item.Amount, cancellationToken);
+        var siteTotals = await postedSite.GroupBy(item => item.MovementType == "وارد")
+            .Select(group => new { Incoming = group.Key, Amount = group.Sum(item => item.TotalAmount) })
+            .ToDictionaryAsync(row => row.Incoming, row => row.Amount, cancellationToken);
+        var supplierPayments = await db.SupplierPayments.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل"))
+            .GroupBy(item => item.PaymentSource == "مالك مباشر").Select(group => new { Direct = group.Key, Amount = group.Sum(item => item.Amount) })
+            .ToDictionaryAsync(row => row.Direct, row => row.Amount, cancellationToken);
+        var contractorPayments = await db.ContractorPayments.Where(item => item.ProjectId == projectId && item.Currency == "EGP")
+            .GroupBy(item => item.PaymentSource == "مالك مباشر").Select(group => new { Direct = group.Key, Amount = group.Sum(item => item.Amount) })
+            .ToDictionaryAsync(row => row.Direct, row => row.Amount, cancellationToken);
+        var totalExpenses = siteTotals.GetValueOrDefault(false) + supplierPayments.GetValueOrDefault(false) + contractorPayments.GetValueOrDefault(false);
         var supplierSupplies = await db.SupplierSupplies.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.TotalAmount, cancellationToken);
-        var supplierPaid = await db.SupplierPayments.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
+        var supplierPaid = supplierPayments.Values.Sum();
         var historicalSupplierWorks = await db.HistoricalWorkLines.Where(w => w.Batch.ProjectId == projectId && w.SupplierId != null && w.Currency == "EGP").SumAsync(w => w.Amount,cancellationToken);
         var historicalSupplierPaid = await db.HistoricalSettlements.Where(s => s.Batch.ProjectId == projectId && s.SupplierId != null && s.Currency == "EGP").SumAsync(s => s.Amount,cancellationToken);
         var supplierOutstanding = supplierSupplies + historicalSupplierWorks - supplierPaid - historicalSupplierPaid;
@@ -32,7 +39,7 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             .GroupBy(w => new { w.Currency, w.Category })
             .Select(g => new { g.Key.Currency, g.Key.Category, Amount = g.Sum(w => w.Amount) }).ToListAsync(cancellationToken);
         void AddOutgoing(string category, decimal amount) => outgoingByCategory[category] = outgoingByCategory.GetValueOrDefault(category) + amount;
-        AddOutgoing("الموقع", await postedSite.Where(item => item.MovementType != "وارد").SumAsync(item => item.TotalAmount, cancellationToken));
+        AddOutgoing("الموقع", siteTotals.GetValueOrDefault(false));
         // Canonical financial buckets are independent from the detailed
         // operational section.  In particular, imported concrete and
         // finishing rows historically entered with the entity default
@@ -69,9 +76,7 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         var totalIncoming = await db.AdvancePayments
             .Where(item => item.ProjectId == projectId && item.Currency == "EGP" && (item.Status == "معتمد" || item.Status == "مرحّل"))
             .SumAsync(item => item.Amount, cancellationToken);
-        totalIncoming += await postedSite.Where(item => item.MovementType == "وارد").SumAsync(item => item.TotalAmount, cancellationToken);
-        totalIncoming += await db.SupplierPayments.Where(item => item.ProjectId == projectId && item.PaymentSource == "مالك مباشر" && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
-        totalIncoming += await db.ContractorPayments.Where(item => item.ProjectId == projectId && item.PaymentSource == "مالك مباشر" && item.Currency == "EGP").SumAsync(item => item.Amount, cancellationToken);
+        totalIncoming += siteTotals.GetValueOrDefault(true) + supplierPayments.GetValueOrDefault(true) + contractorPayments.GetValueOrDefault(true);
         var fundingAdjustments = funding.Where(f => f.Basis == "signed_schedule_adjustment").Sum(f => f.Amount);
         var sourceControl = funding.FirstOrDefault(f => f.Stream == "source_control");
         totalIncoming += funding.Where(basis.AdditionalFunding).Sum(f => f.Amount);
@@ -150,7 +155,7 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             HistoricalFundingAdjustments = fundingAdjustments,
             Sections = sections,
             Currencies = currencies,
-            HasRecoveredWork = await history.AnyAsync(cancellationToken),
+            HasRecoveredWork = workFamilies.Count > 0,
             HistoricalFundingUnknown = unknownFunding,
             HistoricalFundingBasis = ownershipConflict ? "conflicting_ownership" : sourceControl?.Basis ?? (unknownFunding ? "unknown" :
                 funding.Any(f => f.Stream == "main_schedule") ? "main_schedule" : "operational"),
