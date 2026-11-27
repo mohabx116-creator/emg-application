@@ -28,4 +28,8 @@ Commit `aa392dc` contains the work posting mechanism. The account settlement sch
 
 Run `accounts.py` with the same arguments after `works.py`. Replays check the source and existing links. The historical-account routes under suppliers and contractors project the same work lines and identified settlements by project and currency. Next integrate project financials and exports, apply and replay the ledgers, and reconcile all application surfaces. Both financial rehearsals rolled back.
 
+### Financial projections and workbook exports
+
+Commit `cb98058` preserves the counterparty rehearsal. Final accounts now aggregate new work with the existing operational rows, use the recovered categories for linked finishing work, and report currency-specific cash, reference transfers, office balances and section allocations. The project report includes original work and settlement rows with their coordinates. Both XLSX export paths include uncapped historical detail. The standard template also populates the separate station and workmanship blocks. The backend built, and all 18 active XLSX integrity tests passed. Next apply the verified work and account passes, replay both, and compare source rows, project totals, live API, UI and exported workbooks.
+
 Complete work-family posting, counterparty obligations and settlements, categorized exports and 38-project source/DB/API/UI/XLSX reconciliation. Review unresolved funding bases individually, including allocation-only workbooks. The operational historical balances have not passed acceptance. Keep the existing project identities and the independent visual-design changes. The final-account API exposes per-section works, allocated funding and their difference by currency.

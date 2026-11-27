@@ -72,8 +72,34 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
             .Select(item => new ProjectWorkRow(item.Id, item.OperationDate, item.Supplier == null ? string.Empty : item.Supplier.Name, item.AccountCategory, item.SteelType ?? item.OperationType, item.Description, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.BarDiameter ?? string.Empty, item.Grade ?? string.Empty, item.DeliveryNoteNumber ?? string.Empty, item.Status, item.Notes ?? string.Empty)).ToListAsync(cancellationToken);
         var finishings = await db.FinishingRecords.AsNoTracking().Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).OrderBy(item => item.Id)
             .Select(item => new ProjectWorkRow(item.Id, item.WorkDate, item.Supplier == null ? string.Empty : item.Supplier.Name, item.AccountCategory, item.WorkType, item.Description, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.AreaName ?? string.Empty, string.Empty, string.Empty, item.Status, item.Notes ?? string.Empty)).ToListAsync(cancellationToken);
+        var recovered = await db.HistoricalWorkLines.AsNoTracking().Where(w => w.Batch.ProjectId == projectId)
+            .OrderBy(w => w.Sheet).ThenBy(w => w.SourceRow).ThenBy(w => w.Cell).ToListAsync(cancellationToken);
+        foreach (var w in recovered.Where(w => w.OperationalId == null))
+        {
+            var reference = $"{w.Sheet}!{w.Cell}";
+            if (w.Family == "site")
+            {
+                movements.Add(new(w.Id, w.WorkDate, "أعمال الموقع", w.Description, w.Party, w.Unit, w.Quantity,
+                    w.Rate, w.Amount, w.Category, "مرحّل", reference, w.Currency));
+                continue;
+            }
+            var list = w.Family switch
+            {
+                "concrete" or "workmanship" => concretes,
+                "steel" => steels,
+                "excavation" => excavations,
+                _ => finishings
+            };
+            list.Add(new(w.Id, w.WorkDate, w.Party, w.Category, w.Description, w.Description, w.Unit,
+                w.Quantity, w.Rate, w.Amount, "", "", "", "مرحّل", reference, w.Family, w.Progress));
+        }
         return new ProjectReportSummary(finalAccount, movements, advances, supplies, payments, excavations, concretes, steels, finishings) {
             ContractorPayments = contractorPayments,
+            HistoricalWorks = recovered.Select(w => new HistoricalWorkDetail(w.Sheet,w.Cell,w.Family,w.Category,w.Currency,w.Amount,w.WorkDate,
+                w.Description,w.Party,w.Unit,w.Quantity,w.Rate,w.Progress)).ToList(),
+            HistoricalSettlements = await db.HistoricalSettlements.AsNoTracking().Where(s => s.Batch.ProjectId == projectId)
+                .OrderBy(s => s.Id).Select(s => new HistoricalSettlementDetail(s.Sheet,s.Cell,s.Category,s.Currency,s.Amount,
+                    s.SettlementDate,s.Narrative,s.Party,s.SupplierId != null || s.ContractorId != null)).ToListAsync(cancellationToken),
             HistoricalFunding = await db.HistoricalFundingLines.AsNoTracking()
                 .Where(item => item.Batch.ProjectId == projectId)
                 .OrderBy(item => item.SourceRow).ThenBy(item => item.Cell)
@@ -91,7 +117,7 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
         builder.Append('\uFEFF');
         builder.AppendLine("التاريخ,نوع الحركة,الوصف,الطرف,المبلغ,العملة,الحالة,المرجع");
         foreach (var row in report.Movements)
-            builder.AppendLine(string.Join(',', Csv(row.Date.ToString("yyyy-MM-dd")), Csv(row.Type), Csv(row.Description), Csv(string.IsNullOrWhiteSpace(row.SupplierName) ? row.CounterpartyName : row.SupplierName), row.Amount.ToString("0.00", CultureInfo.InvariantCulture), Csv(row.Currency), Csv(row.Status), Csv(row.Reference)));
+            builder.AppendLine(string.Join(',', Csv(row.Date?.ToString("yyyy-MM-dd") ?? string.Empty), Csv(row.Type), Csv(row.Description), Csv(string.IsNullOrWhiteSpace(row.SupplierName) ? row.CounterpartyName : row.SupplierName), row.Amount.ToString("0.00", CultureInfo.InvariantCulture), Csv(row.Currency), Csv(row.Status), Csv(row.Reference)));
         return builder.ToString();
     }
 

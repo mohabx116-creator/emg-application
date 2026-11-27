@@ -19,6 +19,8 @@ public sealed record FinalAccountSummary(
     public string ProjectCode { get; init; } = string.Empty;
     public string OwnerName { get; init; } = string.Empty;
     public decimal HistoricalFundingAdjustments { get; init; }
+    public bool HasRecoveredWork { get; init; }
+    public IReadOnlyList<CurrencyFinancialSummary> Currencies { get; init; } = [];
     public IReadOnlyList<SectionFinancialSummary> Sections { get; init; } = [];
     public decimal TotalOutgoing { get; init; }
     public decimal OfficePaid { get; init; }
@@ -34,3 +36,6 @@ public sealed record FinalAccountSummary(
 
 public sealed record SectionFinancialSummary(string Category, string Currency, decimal Works,
     decimal AllocatedFunding, decimal FundingLessWorks);
+
+public sealed record CurrencyFinancialSummary(string Currency, decimal Works, decimal Payments, decimal CashBalance,
+    decimal OfficeFee, decimal OfficePayments, decimal OfficeOutstanding, decimal ReferenceTransfers);

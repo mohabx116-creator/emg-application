@@ -24,6 +24,10 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         var supplierPaid = await db.SupplierPayments.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
         var supplierOutstanding = supplierSupplies - supplierPaid;
         var outgoingByCategory = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        var history = db.HistoricalWorkLines.AsNoTracking().Where(w => w.Batch.ProjectId == projectId);
+        var unlinked = await history.Where(w => w.OperationalId == null)
+            .GroupBy(w => new { w.Currency, w.Category })
+            .Select(g => new { g.Key.Currency, g.Key.Category, Amount = g.Sum(w => w.Amount) }).ToListAsync(cancellationToken);
         void AddOutgoing(string category, decimal amount) => outgoingByCategory[category] = outgoingByCategory.GetValueOrDefault(category) + amount;
         AddOutgoing("الموقع", await postedSite.Where(item => item.MovementType != "وارد").SumAsync(item => item.TotalAmount, cancellationToken));
         // Canonical financial buckets are independent from the detailed
@@ -40,16 +44,21 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             AddOutgoing(CanonicalCategory("الخرسانات", item.AccountCategory, item.Notes), item.TotalAmount);
         foreach (var item in await db.SteelRecords.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).GroupBy(item => item.AccountCategory).Select(group => new { Category = group.Key, Amount = group.Sum(item => item.TotalAmount) }).ToListAsync(cancellationToken)) AddOutgoing(item.Category, item.Amount);
         var finishingRows = await db.FinishingRecords.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل"))
-            .Select(item => new { item.AccountCategory, item.TotalAmount, item.Notes }).ToListAsync(cancellationToken);
+            .Select(item => new { item.AccountCategory, item.TotalAmount, item.Notes, RecoveredCategory = history
+                .Where(w => w.OperationalTable == "FinishingRecord" && w.OperationalId == item.Id).Select(w => w.Category).FirstOrDefault() }).ToListAsync(cancellationToken);
         foreach (var item in finishingRows)
-            AddOutgoing(CanonicalCategory("التشطيبات", item.AccountCategory, item.Notes), item.TotalAmount);
+            AddOutgoing(item.RecoveredCategory ?? CanonicalCategory("التشطيبات", item.AccountCategory, item.Notes), item.TotalAmount);
+        foreach (var work in unlinked.Where(w => w.Currency == "EGP")) AddOutgoing(work.Category, work.Amount);
         var incomingByCategory = await db.AdvanceAllocations.Where(item => item.AdvancePayment.ProjectId == projectId && item.AdvancePayment.Currency == "EGP" && (item.AdvancePayment.Status == "معتمد" || item.AdvancePayment.Status == "مرحّل")).GroupBy(item => item.AccountCategory).Select(group => new { Category = group.Key, Amount = group.Sum(item => item.Amount) }).ToDictionaryAsync(item => item.Category, item => item.Amount, StringComparer.Ordinal, cancellationToken);
         var historicalAllocations = await db.HistoricalFundingLines.AsNoTracking()
             .Where(line => line.Batch.ProjectId == projectId && line.Currency == "EGP" && line.Basis == "project_allocation")
             .GroupBy(line => line.Category).Select(group => new { Category = group.Key, Amount = group.Sum(line => line.Amount) })
             .ToListAsync(cancellationToken);
         foreach (var line in historicalAllocations)
-            incomingByCategory[line.Category] = incomingByCategory.GetValueOrDefault(line.Category) + line.Amount;
+        {
+            var category = FundingCategory(line.Category);
+            incomingByCategory[category] = incomingByCategory.GetValueOrDefault(category) + line.Amount;
+        }
         // إجمالي الدفعات تحت الحساب هو ما تم دفعه فعليًا، وليس مجموع التوزيعات
         // على البنود. قد تكون الدفعة موزعة جزئيًا أو يزيد مبلغها عن التوزيع
         // الحالي، وفي الحالتين يجب ألا نفقد قيمتها من كشف الحساب.
@@ -77,6 +86,38 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         var status = incomplete ? "غير مكتمل: توجد سجلات استيراد قيد المراجعة" :
             payerBalance > 0 ? "مستحق على الدافع" : payerBalance < 0 ? "رصيد زائد لدى الدافع" : "متزن";
         var cashBalance = decimal.Round(totalIncoming - totalOutgoing, 2);
+        var sections = outgoingByCategory.Keys.Union(incomingByCategory.Keys).Where(category => category != "المكتب")
+            .Select(category => new SectionFinancialSummary(category, "EGP", outgoingByCategory.GetValueOrDefault(category),
+                incomingByCategory.GetValueOrDefault(category), incomingByCategory.GetValueOrDefault(category) - outgoingByCategory.GetValueOrDefault(category)))
+            .OrderBy(item => item.Category).ToList();
+        var transfers = await db.HistoricalFundingLines.Where(f => f.Batch.ProjectId == projectId && f.Basis == "transfer_breakdown")
+            .GroupBy(f => f.Currency).Select(g => new { Currency = g.Key, Amount = g.Sum(f => f.Amount) }).ToDictionaryAsync(g => g.Currency,g => g.Amount,cancellationToken);
+        var currencies = new List<CurrencyFinancialSummary> { new("EGP", totalOutgoing, totalIncoming, cashBalance,
+            office.Fee, officePaid, office.Outstanding, transfers.GetValueOrDefault("EGP")) };
+        var foreignReceipts = db.AdvancePayments.Where(p => p.ProjectId == projectId && p.Currency != "EGP" && (p.Status == "معتمد" || p.Status == "مرحّل"));
+        var receipts = await foreignReceipts.Select(p => new { p.Currency, p.Amount })
+            .Concat(db.ContractorPayments.Where(p => p.ProjectId == projectId && p.Currency != "EGP" && p.PaymentSource == "مالك مباشر").Select(p => new { p.Currency,p.Amount }))
+            .ToListAsync(cancellationToken);
+        var site = await db.SiteMovements.Where(p => p.ProjectId == projectId && p.Currency != "EGP" && (p.Status == "معتمد" || p.Status == "مرحّل"))
+            .Select(p => new { p.Currency, p.MovementType, p.TotalAmount }).ToListAsync(cancellationToken);
+        var allocations = await db.AdvanceAllocations.Where(a => foreignReceipts.Any(p => p.Id == a.AdvancePaymentId))
+            .Select(a => new { a.AdvancePayment.Currency, Category = a.AccountCategory, a.Amount })
+            .Concat(db.HistoricalFundingLines.Where(f => f.Batch.ProjectId == projectId && f.Currency != "EGP" && f.Basis == "project_allocation")
+                .Select(f => new { f.Currency, f.Category, f.Amount })).ToListAsync(cancellationToken);
+        foreach (var currency in receipts.Select(p => p.Currency).Union(site.Select(p => p.Currency)).Union(allocations.Select(p => p.Currency))
+            .Union(unlinked.Select(p => p.Currency)).Union(transfers.Keys).Where(c => c != "EGP"))
+        {
+            var costs = unlinked.Where(w => w.Currency == currency).ToDictionary(w => w.Category,w => w.Amount);
+            costs["الموقع"] = costs.GetValueOrDefault("الموقع") + site.Where(p => p.Currency == currency && p.MovementType != "وارد").Sum(p => p.TotalAmount);
+            var paid = allocations.Where(a => a.Currency == currency).GroupBy(a => FundingCategory(a.Category)).ToDictionary(g => g.Key,g => g.Sum(a => a.Amount));
+            var payments = receipts.Where(p => p.Currency == currency).Sum(p => p.Amount) + site.Where(p => p.Currency == currency && p.MovementType == "وارد").Sum(p => p.TotalAmount);
+            var works = costs.Values.Sum();
+            var officePayments = paid.GetValueOrDefault("المكتب");
+            var accrual = OfficeFeeCalculation.Calculate(works,project.OfficeSharePercentage,officePayments);
+            currencies.Add(new(currency,works,payments,payments-works,accrual.Fee,officePayments,accrual.Outstanding,transfers.GetValueOrDefault(currency)));
+            foreach (var category in costs.Keys.Union(paid.Keys).Where(c => c != "المكتب"))
+                sections.Add(new(category,currency,costs.GetValueOrDefault(category),paid.GetValueOrDefault(category),paid.GetValueOrDefault(category)-costs.GetValueOrDefault(category)));
+        }
 
         return new FinalAccountSummary(
             project.Id, project.Name, project.ClientName ?? string.Empty, project.PayerName ?? string.Empty,
@@ -86,10 +127,9 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             ProjectCode = project.Code,
             OwnerName = project.OwnerName ?? string.Empty,
             HistoricalFundingAdjustments = fundingAdjustments,
-            Sections = outgoingByCategory.Keys.Union(incomingByCategory.Keys).Where(category => category != "المكتب")
-                .Select(category => new SectionFinancialSummary(category, "EGP", outgoingByCategory.GetValueOrDefault(category),
-                    incomingByCategory.GetValueOrDefault(category), incomingByCategory.GetValueOrDefault(category) - outgoingByCategory.GetValueOrDefault(category)))
-                .OrderBy(item => item.Category).ToList(),
+            Sections = sections,
+            Currencies = currencies,
+            HasRecoveredWork = await history.AnyAsync(cancellationToken),
             TotalOutgoing = totalOutgoing,
             TotalWorks = totalOutgoing,
             TotalPayments = totalIncoming,
@@ -101,6 +141,12 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
             OutgoingByCategory = outgoingByCategory,
             IncomingByCategory = incomingByCategory
         };
+    }
+
+    private static string FundingCategory(string label)
+    {
+        var account = System.Text.RegularExpressions.Regex.Replace(label.Trim(), @"^(?:دفعات|دفات|دفعه)\s+(?:تحت\s+)?(?:ال)?حساب\s+", "");
+        return account.StartsWith("لل", StringComparison.Ordinal) ? "ال" + account[2..] : account;
     }
 
     private static string CanonicalCategory(string section, string? storedCategory, string? notes)
