@@ -23,7 +23,15 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
         if (request.SiteMovementId is int sourceMovement && await db.SupplierInvoices.AnyAsync(item => item.SiteMovementId == sourceMovement, cancellationToken))
             throw new DuplicateSupplierTransactionException("تم ربط فاتورة مورد بالفعل بحركة الموقع المحددة.");
 
-        var total = decimal.Round(request.Lines.Sum(line => line.Quantity * line.UnitPrice), 2);
+        var total = request.Lines.Sum(line => decimal.Round(line.Quantity * line.UnitPrice, 2));
+        if (request.SiteMovementId is int linkedId)
+        {
+            var target = await db.SiteMovements.SingleAsync(m => m.Id == linkedId, cancellationToken);
+            if (target.MovementType == "وارد" || target.SupplierId.HasValue && target.SupplierId != supplier.Id ||
+                target.TotalAmount != total || target.Status is not ("مرحّل" or "معتمد") ||
+                await EMG.Api.Modules.Projects.Services.HistoricalWorkReader.IsLinkedAsync(db, "site-movement", linkedId, cancellationToken))
+                throw new InvalidOperationException("حركة الموقع المرتبطة يجب أن تطابق الفاتورة والمورد وقيمة الأعمال.");
+        }
         if (request.InitialPayment > total) throw new DuplicateSupplierTransactionException("الدفعة الأولية تتجاوز إجمالي الفاتورة.");
         var paymentSource = request.PaymentSource?.Trim() == "مالك مباشر" ? "مالك مباشر" : "مكتب";
         var invoiceNumber = GenerateInvoiceNumber(request.ProjectId, request.SupplierId);
@@ -104,18 +112,29 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
     {
         ValidateLines(request.Lines);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var invoice = await db.SupplierInvoices.Include(item => item.Lines).ThenInclude(line => line.SupplierSupply)
+        var invoice = await db.SupplierInvoices.Include(item => item.SiteMovement).Include(item => item.Lines).ThenInclude(line => line.SupplierSupply)
             .Include(item => item.Payments).SingleOrDefaultAsync(item => item.Id == invoiceId, cancellationToken);
         if (invoice is null || !await CanManage(invoice.ProjectId, invoice.CreatedByUserId, userId, globalAccess,
                 invoice.Lines.Sum(item => item.SupplierSupply.TotalAmount), "transactions.correct", cancellationToken)) return null;
         var paid = invoice.Payments.Where(payment => payment.Status is "معتمد" or "مرحّل").Sum(payment => payment.Amount);
-        var total = decimal.Round(request.Lines.Sum(line => line.Quantity * line.UnitPrice), 2);
+        var total = request.Lines.Sum(line => decimal.Round(line.Quantity * line.UnitPrice, 2));
         if (paid > total) throw new InvalidOperationException("لا يمكن خفض إجمالي الفاتورة عن الدفعات المسجلة.");
         if (request.Lines.Count != invoice.Lines.Count)
             throw new InvalidOperationException("تعديل عدد بنود الفاتورة غير مدعوم بعد تسجيلها؛ أنشئ فاتورة جديدة عند الحاجة.");
-        for (var index = 0; index < invoice.Lines.Count; index++)
+        if (invoice.SiteMovement is { } movement)
         {
-            var line = invoice.Lines.OrderBy(item => item.LineNumber).ElementAt(index);
+            var allocated = await db.AdvanceAllocations.Where(a => a.SiteMovementId == movement.Id)
+                .SumAsync(a => a.Amount, cancellationToken);
+            if (total < allocated || total != movement.TotalAmount && await db.ContractorStatementLines.AnyAsync(
+                    l => l.SourceEntityType == "site-movement" && l.SourceEntityId == movement.Id, cancellationToken))
+                throw new InvalidOperationException("القيمة الجديدة تتعارض مع توزيع أو مستخلص مرتبط بحركة الموقع.");
+            movement.TotalAmount = total;
+            movement.IsPaid = total > 0 && paid == total;
+        }
+        var ordered = invoice.Lines.OrderBy(item => item.LineNumber).ToList();
+        for (var index = 0; index < ordered.Count; index++)
+        {
+            var line = ordered[index];
             var input = request.Lines[index];
             line.SupplierSupply.ItemName = input.Description.Trim();
             line.SupplierSupply.Unit = input.Unit.Trim();
@@ -126,7 +145,12 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
             line.SupplierSupply.Notes = request.Notes?.Trim();
         }
         if (request.InvoiceDate is not null)
+        {
             invoice.InvoiceDate = DateTime.SpecifyKind(request.InvoiceDate.Value.Date, DateTimeKind.Utc);
+            foreach (var line in ordered) line.SupplierSupply.SupplyDate = invoice.InvoiceDate;
+            if (invoice.SiteMovement is { } dated && dated.Reference == invoice.InvoiceNumber)
+                dated.MovementDate = invoice.InvoiceDate;
+        }
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return await GetAsync(invoiceId, userId, globalAccess, cancellationToken);
@@ -135,12 +159,22 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
     public async Task<bool> DeleteAsync(int invoiceId, int? userId, bool globalAccess, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var invoice = await db.SupplierInvoices.Include(item => item.Lines).ThenInclude(line => line.SupplierSupply)
+        var invoice = await db.SupplierInvoices.Include(item => item.SiteMovement).Include(item => item.Lines).ThenInclude(line => line.SupplierSupply)
             .Include(item => item.Payments).SingleOrDefaultAsync(item => item.Id == invoiceId, cancellationToken);
         if (invoice is null || !await CanManage(invoice.ProjectId, invoice.CreatedByUserId, userId, globalAccess,
                 invoice.Lines.Sum(item => item.SupplierSupply.TotalAmount), "transactions.cancel", cancellationToken)) return false;
         if (invoice.Payments.Any(payment => payment.Status is "معتمد" or "مرحّل"))
             throw new InvalidOperationException("لا يمكن حذف فاتورة عليها دفعات؛ عالج الدفعات المرتبطة أولاً.");
+        // Invoice-created movements carry the generated invoice number. An independently
+        // recorded movement supplied by ID survives detaching the invoice.
+        if (invoice.SiteMovement is { } movement && movement.Reference == invoice.InvoiceNumber)
+        {
+            if (await db.AdvanceAllocations.AnyAsync(a => a.SiteMovementId == movement.Id, cancellationToken) ||
+                await db.ContractorStatementLines.AnyAsync(l => l.SourceEntityType == "site-movement" && l.SourceEntityId == movement.Id, cancellationToken) ||
+                await db.Attachments.AnyAsync(a => a.EntityType == "site-movement" && a.EntityId == movement.Id, cancellationToken))
+                throw new InvalidOperationException("حركة الموقع مرتبطة بتوزيع أو مستخلص أو مستند يمنع حذفها.");
+            db.SiteMovements.Remove(movement);
+        }
         var supplyIds = invoice.Lines.Select(item => item.SupplierSupplyId).ToList();
         var attachmentPaths = await db.Attachments.Where(item => item.EntityType == "supplier-invoice" && item.EntityId == invoiceId)
             .Select(item => item.RelativePath).ToListAsync(cancellationToken);

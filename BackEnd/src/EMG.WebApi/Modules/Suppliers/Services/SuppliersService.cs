@@ -223,6 +223,16 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
             if (duplicateReference) throw new DuplicateSupplierTransactionException("مرجع الدفع مستخدم بالفعل لنفس المورد والقيمة والمشروع.");
         }
 
+        if (invoiceId is int linkedInvoice)
+        {
+            var invoice = await db.SupplierInvoices.Include(i => i.SiteMovement).SingleAsync(i => i.Id == linkedInvoice, cancellationToken);
+            var total = await db.SupplierSupplies.Where(s => s.InvoiceId == linkedInvoice).SumAsync(s => s.TotalAmount, cancellationToken);
+            var paid = await db.SupplierPayments.Where(p => p.InvoiceId == linkedInvoice && (p.Status == "معتمد" || p.Status == "مرحّل"))
+                .SumAsync(p => p.Amount, cancellationToken);
+            if (request.Amount > total - paid)
+                throw new DuplicateSupplierTransactionException("قيمة الدفع تتجاوز المتبقي على الفاتورة بعد جميع دفعاتها.");
+            if (invoice.SiteMovement != null) invoice.SiteMovement.IsPaid = request.Amount == total - paid;
+        }
         var payment = new SupplierPayment
         {
             SupplierId = supplierId, ProjectId = request.ProjectId, SupplyId = request.SupplyId, InvoiceId = invoiceId, Amount = request.Amount,

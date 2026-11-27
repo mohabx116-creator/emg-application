@@ -97,3 +97,7 @@ Project and consolidated account DTOs expose currency-specific summaries. Report
 ### Project allocation targets
 
 The allocation permission grants a scoped read of eligible targets. Currency must match, and recorded owner payments and linked allocations reduce the eligible amount. Two focused allocation tests passed, including a partial direct-owner payment and allocations from two receipts. No live allocations were written.
+
+### Supplier invoices and section access
+
+Invoice corrections synchronize their linked site movement and check payment limits across the invoice. Deletion preserves independently linked movements. Nine focused tests passed for new and historical project accounting, named party balances, printed account values and all five scoped section endpoints. A positive assigned engineer and a denied unassigned engineer were tested in memory. The old local assembly lacked the historical controller; the refreshed assembly contains it. The original administrator HTTP status is inferred, not captured.
