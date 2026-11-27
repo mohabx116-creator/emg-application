@@ -1,4 +1,5 @@
 using System.Data;
+using System.Security.Cryptography;
 using System.Text.Json;
 using EMG.Api.Modules.Imports.Services;
 using EMG.Domain.Entities;
@@ -28,19 +29,25 @@ public sealed partial class ReviewedWorkbookImportService
     public async Task<UniversalNewProjectValidation> RevalidateNewProjectAsync(UniversalNewProjectRequest request,
         int actor, CancellationToken ct)
     {
-        var preview = GetNewProjectPreview(request, actor);
-        var plan = await PlanNewProjectAsync(request, preview, ct);
-        return new(plan.Project.Code, plan.Rows.Select(row => row.Disposition).ToArray(), IsNewProjectPostingAllowed(preview.SourceSha256, historical: false),
+        var snapshot = GetNewProjectSnapshot(request, actor);
+        var plan = await PlanNewProjectAsync(request, snapshot.Preview, ct);
+        snapshot.BindDailyPlan(DailyPlanSha256(snapshot, plan.Project, plan.Rows));
+        return new(plan.Project.Code, plan.Rows.Select(row => row.Disposition).ToArray(), IsNewProjectPostingAllowed(snapshot, historical: false),
             plan.Rows.Any(row => !row.Disposition.CanImport && !row.Record.IsSummary));
     }
 
     public async Task<UniversalNewProjectResult> CommitNewProjectAsync(UniversalNewProjectRequest request, int actor, CancellationToken ct,
         HistoricalMigrationBaseline? historicalBaseline = null)
     {
-        var preview = GetNewProjectPreview(request, actor);
-        if (!IsNewProjectPostingAllowed(preview.SourceSha256, historicalBaseline is not null)) throw new HistoricalWorkbookPostingDisabledException();
+        var snapshot = GetNewProjectSnapshot(request, actor);
+        var preview = snapshot.Preview;
+        if (historicalBaseline is null && snapshot.Validation is null)
+            throw new InvalidOperationException("أعد التحقق من معاينة الملف قبل حفظ المشروع.");
+        if (!IsNewProjectPostingAllowed(snapshot, historicalBaseline is not null)) throw new HistoricalWorkbookPostingDisabledException();
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var (project, rows) = await PlanNewProjectAsync(request, preview, ct, historicalBaseline is not null);
+        if (historicalBaseline is null && snapshot.Validation?.PlanSha256 != DailyPlanSha256(snapshot, project, rows))
+            throw new InvalidOperationException("تغيّرت بيانات المشروع أو نتيجة المطابقة. أعد التحقق من المعاينة قبل الحفظ.");
         var accepted = rows.Where(row => row.Disposition.CanImport).ToArray();
         if (accepted.Length == 0 && historicalBaseline is null) throw new InvalidOperationException("لا توجد حركات مؤهلة للاستيراد.");
         if (!request.ConfirmExcluded && rows.Any(row => !row.Disposition.CanImport && !row.Record.IsSummary))
@@ -138,9 +145,20 @@ public sealed partial class ReviewedWorkbookImportService
             groups.ToDictionary(g => g.Key, g => g.Sum(row => row.Record.Amount!.Value)), rows.Count - accepted.Length);
     }
 
-    private UniversalPreviewResponse GetNewProjectPreview(UniversalNewProjectRequest request, int actor) =>
-        snapshots.Find(request.SnapshotId, actor) is { ProjectId: 0 } snapshot ? snapshot.Preview :
+    private ReviewedWorkbookSnapshots.Snapshot GetNewProjectSnapshot(UniversalNewProjectRequest request, int actor) =>
+        snapshots.Find(request.SnapshotId, actor) is { ProjectId: 0 } snapshot ? snapshot :
             throw new KeyNotFoundException("انتهت صلاحية المعاينة أو لا تخص حسابك. أعد رفع الملف.");
+
+    private static string DailyPlanSha256(ReviewedWorkbookSnapshots.Snapshot snapshot, Project project, List<NewProjectRow> rows)
+    {
+        var plan = new
+        {
+            snapshot.Actor, snapshot.ProjectId, snapshot.Preview.SourceSha256, snapshot.Preview.EngineVersion,
+            project.Code, project.Name, project.ClientName, project.OwnerName, project.PayerName, project.Location, project.EngineerName,
+            Rows = rows.Select(row => new { row.Disposition, row.SupplierId, row.MappingNote })
+        };
+        return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(plan)));
+    }
 
     private async Task<(Project Project, List<NewProjectRow> Rows)> PlanNewProjectAsync(
         UniversalNewProjectRequest request, UniversalPreviewResponse preview, CancellationToken ct, bool allowHistoricalCounterparties = false)
@@ -244,8 +262,11 @@ public sealed partial class ReviewedWorkbookImportService
         _ => "دليل نوع الحركة أو الطرف أو الربط المحاسبي غير مكتمل."
     };
 
-    internal bool IsNewProjectPostingAllowed(string sourceSha256, bool historical)
+    internal bool IsNewProjectPostingAllowed(ReviewedWorkbookSnapshots.Snapshot snapshot, bool historical)
     {
+        var sourceSha256 = snapshot.Preview.SourceSha256;
+        if (!historical && (snapshot.ProjectId != 0 || sourceSha256.Length != 64 || !sourceSha256.All(Uri.IsHexDigit) ||
+            snapshot.Validation?.SourceSha256 != sourceSha256)) return false;
         if (!db.Database.IsNpgsql() || string.IsNullOrWhiteSpace(db.Database.GetConnectionString())) return false;
         if (environment.IsProduction())
             return !historical && configuration.GetValue<bool>("UniversalImport:EnableProductionCommit");
@@ -260,9 +281,7 @@ public sealed partial class ReviewedWorkbookImportService
                 (connection.Database?.StartsWith("emg_historical_qa_", StringComparison.Ordinal) == true ||
                  primaryLocal && configuration.GetValue<bool>("HistoricalMigration:AllowAuthorizedLocalTarget"));
 
-        if (primaryLocal)
-            return sourceSha256.Length == 64 && sourceSha256.All(Uri.IsHexDigit) &&
-                string.Equals(sourceSha256, configuration["UniversalImport:ApprovedLocalWorkbookSha256"], StringComparison.OrdinalIgnoreCase);
+        if (primaryLocal) return true;
         return loopback && configuration.GetValue<bool>("UniversalImportQa:Enabled") &&
             string.Equals(sourceSha256, configuration["UniversalImportQa:ApprovedSha256"], StringComparison.OrdinalIgnoreCase) &&
             connection.Port == configuration.GetValue<int>("UniversalImportQa:Port") &&

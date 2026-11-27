@@ -29,6 +29,7 @@ public sealed partial class UniversalImportPreviewService(UniversalImportMapping
         memory.Position = 0;
 
         using var workbook = new XLWorkbook(memory);
+        var workbookCurrencies = WorkbookCurrencyDeclarations.OfWorkbook(workbook).Select(item => item.Code).Distinct().ToArray();
         var sections = new List<UniversalSectionPreview>();
         var records = new List<UniversalRecordPreview>();
         var reconciliations = new List<UniversalReconciliationPreview>();
@@ -49,12 +50,17 @@ public sealed partial class UniversalImportPreviewService(UniversalImportMapping
                 !HasLabel(Key(sheet.Name), "owner funding", "owner advances", "تمويل المالك", "دفعات المالك");
             var controlled = isParallel ? ReadParallelControls(sheet) : [];
             var groups = controlled.Count > 0 ? controlled.Select(control => control.Block).ToList() : BuildGroups(sheet);
+            var layouts = groups.ToDictionary(group => group, group => ReadOperationalLayouts(sheet, group));
+            var firstHeader = layouts.Values.SelectMany(items => items).Select(layout => layout.HeaderRow)
+                .DefaultIfEmpty(20).Min();
+            var currencies = workbookCurrencies.Concat(WorkbookCurrencyDeclarations.OfSheet(sheet, firstHeader).Select(item => item.Code))
+                .Distinct().ToArray();
             foreach (var group in groups)
             {
                 var sectionId = StableId(sha, sheet.Name, group.Range, mapping?.FamilyKey ?? "MAPPING_REQUIRED");
                 var control = controlled.SingleOrDefault(item => item.Block == group);
                 var sectionRecords = control is null
-                    ? ExtractRecords(sha, sheet, group, sectionId, titleMapping, allowOperationalMapping: !isParallel)
+                    ? ExtractRecords(sha, sheet, group, sectionId, titleMapping, layouts[group], currencies, allowOperationalMapping: !isParallel)
                     : ExtractControlledLedger(sha, sheet, sectionId, control);
                 var requires = mapping is null || isParallel || sectionRecords.Any(item =>
                     item.RecordType == UniversalRecordType.Unresolved || item.OperationalEvidence?.RequiresManualMapping == true);
@@ -155,14 +161,28 @@ public sealed partial class UniversalImportPreviewService(UniversalImportMapping
     }
 
     private static List<UniversalRecordPreview> ExtractRecords(string sha, IXLWorksheet sheet, Block block, string sectionId,
-        UniversalMappingDefinition? mapping, bool allowOperationalMapping)
+        UniversalMappingDefinition? mapping, List<OperationalLayout> layouts, string[] currencies, bool allowOperationalMapping)
     {
         var output = new List<UniversalRecordPreview>();
-        var layouts = ReadOperationalLayouts(sheet, block);
+        int? sourceCurrencyColumn = null;
+        int? sourceHeaderRow = null;
         for (var row = block.FirstRow; row <= block.LastRow; row++)
         {
             var cells = sheet.Row(row).Cells(block.FirstColumn, block.LastColumn).Where(cell => !string.IsNullOrWhiteSpace(SafeText(cell))).ToList();
             if (cells.Count == 0) continue;
+            var layout = layouts.LastOrDefault(item => item.HeaderRow <= row);
+            if (layout?.HeaderRow == row)
+            {
+                sourceCurrencyColumn = null;
+                sourceHeaderRow = row;
+            }
+            var currencyHeadings = cells.Where(cell => !cell.HasFormula && cell.DataType == XLDataType.Text &&
+                WorkbookCurrencyDeclarations.IsCurrencyColumn(cell.GetString())).ToArray();
+            if (currencyHeadings.Length > 0)
+            {
+                sourceCurrencyColumn = currencyHeadings.Length == 1 ? currencyHeadings[0].Address.ColumnNumber : -1;
+                sourceHeaderRow = row;
+            }
             var hasMeaningfulValue = cells.Any(cell => !cell.HasFormula &&
                 ((cell.DataType == XLDataType.Text && !string.IsNullOrWhiteSpace(cell.GetString())) ||
                  cell.TryGetValue<decimal>(out var number) && number != 0 || IsDateCell(cell)));
@@ -174,11 +194,22 @@ public sealed partial class UniversalImportPreviewService(UniversalImportMapping
             var text = string.Join(' ', cells.Select(SafeText));
             var summary = block.IsSummary || IsSummary(text, false, row);
             var type = summary ? UniversalRecordType.Summary : UniversalRecordType.Unresolved;
-            var mapped = allowOperationalMapping ? ReadOperationalEvidence(sheet, row, mapping?.FamilyKey, layouts) : [];
+            string RowCurrency(IXLCell? amountCell)
+            {
+                if (sourceCurrencyColumn == -1) return "UNKNOWN";
+                var currencyCell = sourceCurrencyColumn is > 0 ? sheet.Cell(row, sourceCurrencyColumn.Value) : null;
+                var amountHeading = sourceHeaderRow is int headerRow && amountCell is not null
+                    ? SafeText(sheet.Cell(headerRow, amountCell.Address.ColumnNumber)) : string.Empty;
+                var rateHeading = layout is not null && layout.HeaderRow == sourceHeaderRow && layout.Columns.TryGetValue("rate", out var rate)
+                    ? sheet.Cell(layout.HeaderRow, rate).GetString() : string.Empty;
+                return WorkbookSourceCurrency.ResolveWithDeclarations(currencies, currencyCell, amountCell, sheet.Name, amountHeading, rateHeading);
+            }
+            var mapped = allowOperationalMapping ? ReadOperationalEvidence(sheet, row, mapping?.FamilyKey, layout) : [];
             if (mapped.Count > 0)
             {
-                foreach (var (evidence, amount, sourceCells, currency) in mapped)
+                foreach (var (evidence, amount, sourceCells) in mapped)
                 {
+                    var currency = RowCurrency(sheet.Cell(evidence.AmountCell));
                     var typeOfRecord = IsSignedAdjustment(evidence.Description, evidence.Quantity, amount)
                         ? UniversalRecordType.Adjustment
                         : evidence.Target switch
@@ -199,7 +230,7 @@ public sealed partial class UniversalImportPreviewService(UniversalImportMapping
             foreach (var amountCell in new[] { numeric.LastOrDefault() })
             {
                 decimal? amount = amountCell is not null && amountCell.TryGetValue<decimal>(out var parsed) ? parsed : null;
-                var currency = DetectCurrency(text);
+                var currency = RowCurrency(amountCell);
                 var recordId = StableId(sha, sheet.Name, sectionId, row.ToString(CultureInfo.InvariantCulture), amountCell?.Address.ToString() ?? "");
                 output.Add(new UniversalRecordPreview(recordId, sectionId, sheet.Name,
                     $"{sheet.Name}!{ColumnName(block.FirstColumn)}{row}:{ColumnName(block.LastColumn)}{row}",
@@ -235,19 +266,7 @@ public sealed partial class UniversalImportPreviewService(UniversalImportMapping
     }
 
     private static bool IsSummary(string text, bool formula, int row) => formula || NormalizeText(text).Split(' ').Any(term => term is "اجمالي" or "الإجمالي" or "المتبقي" or "الرصيد" or "المستحق" or "summary" or "total");
-    private static string DetectCurrency(string text)
-    {
-        if (text.Contains("usd", StringComparison.OrdinalIgnoreCase) || text.Contains("دولار", StringComparison.Ordinal) || text.Contains('$'))
-        {
-            // Excel also uses [$...] for locale/currency directives, e.g. [$ج.م.-C01].
-            if (!text.Contains("ج.م", StringComparison.Ordinal) && !text.Contains("egp", StringComparison.OrdinalIgnoreCase))
-                return "USD";
-        }
-        if (text.Contains("eur", StringComparison.OrdinalIgnoreCase) || text.Contains("€", StringComparison.Ordinal) || text.Contains("يورو", StringComparison.Ordinal)) return "EUR";
-        if (text.Contains("gbp", StringComparison.OrdinalIgnoreCase) || text.Contains('£')) return "GBP";
-        if (text.Contains("sar", StringComparison.OrdinalIgnoreCase) || text.Contains("ريال", StringComparison.Ordinal)) return "SAR";
-        return "EGP";
-    }
+
     private static string SafeText(IXLCell cell) => cell.HasFormula ? cell.CachedValue.ToString(CultureInfo.InvariantCulture).Trim() : cell.GetFormattedString().Trim();
     private static string NormalizeText(string value) => string.Join(' ', value.Trim().Replace('ـ', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries));
     private static string StableId(params string[] parts) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\u001f", parts)))).ToLowerInvariant()[..24];

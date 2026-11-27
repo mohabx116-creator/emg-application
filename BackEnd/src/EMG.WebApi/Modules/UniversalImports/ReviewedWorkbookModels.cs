@@ -41,5 +41,14 @@ public sealed class ReviewedWorkbookSnapshots : IDisposable
 
     public void Dispose() => cache.Dispose();
 
-    public sealed record Snapshot(int Actor, int ProjectId, UniversalPreviewResponse Preview);
+    public sealed record Snapshot(int Actor, int ProjectId, UniversalPreviewResponse Preview)
+    {
+        private DailyValidation? dailyValidation;
+        internal DailyValidation? Validation => Volatile.Read(ref dailyValidation);
+
+        internal void BindDailyPlan(string planSha256) =>
+            Volatile.Write(ref dailyValidation, new DailyValidation(Preview.SourceSha256, planSha256));
+    }
+
+    internal sealed record DailyValidation(string SourceSha256, string PlanSha256);
 }

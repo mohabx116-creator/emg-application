@@ -92,28 +92,33 @@ public sealed partial class WorkbookImportService : IWorkbookImportService
             // such as Sheet1 are not business metadata and are frequently
             // used for real concrete, excavation, or summary pages in the
             // live archive.
+            XLWorkbook? contentWorkbook = null;
             try
             {
                 memory.Position = 0;
-                using var contentWorkbook = new XLWorkbook(memory);
-                sheets = sheets.Select(sheet =>
-                {
-                    var worksheet = contentWorkbook.Worksheets.FirstOrDefault(item => item.Name == sheet.OriginalName)
-                        ?? contentWorkbook.Worksheets.FirstOrDefault(item => Normalize(item.Name) == Normalize(sheet.OriginalName));
-                    if (worksheet is null) return sheet;
-                    var classification = ClassifySheet(worksheet);
-                    var recognized = classification != "صفحة غير معنونة";
-                    var isSourceData = recognized && classification is not ("كشف الحساب النهائي" or "مرفقات/تقارير" or "ملخص مشروع" or "مستخلص");
-                    return sheet with { Classification = classification, Recognized = recognized, IsSourceData = isSourceData };
-                }).ToList();
+                contentWorkbook = new XLWorkbook(memory);
             }
             catch (Exception) when (!cancellationToken.IsCancellationRequested)
             {
-                // The ZIP-level workbook metadata is still a valid preview
-                // when a legacy/minimal XLSX cannot be opened by ClosedXML.
-                // The migration plan will apply the same content classifier
-                // when the workbook is readable, without rejecting the file
-                // at the initial upload step.
+                // Minimal XLSX files may expose metadata only. Building a plan still requires a readable workbook.
+            }
+            using (contentWorkbook)
+            {
+                if (contentWorkbook is not null)
+                {
+                    sheets = sheets.Select(sheet =>
+                    {
+                        var worksheet = contentWorkbook.Worksheets.FirstOrDefault(item => item.Name == sheet.OriginalName)
+                            ?? contentWorkbook.Worksheets.FirstOrDefault(item => Normalize(item.Name) == Normalize(sheet.OriginalName));
+                        if (worksheet is null) return sheet;
+                        var classification = ClassifySheet(worksheet);
+                        var recognized = classification != "صفحة غير معنونة";
+                        var isSourceData = recognized && classification is not ("كشف الحساب النهائي" or "مرفقات/تقارير" or "ملخص مشروع" or "مستخلص");
+                        return sheet with { Classification = classification, Recognized = recognized, IsSourceData = isSourceData };
+                    }).ToList();
+                    var currencyIssue = LegacyCurrencyIssue(contentWorkbook, sheets);
+                    if (currencyIssue is not null) return Invalid(fileName, file.Length, currencyIssue);
+                }
             }
 
             if (sheets.Count == 0) warnings.Add("لم يتم العثور على صفحات داخل الملف.");

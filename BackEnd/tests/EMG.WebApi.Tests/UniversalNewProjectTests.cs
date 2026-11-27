@@ -1,3 +1,4 @@
+using ClosedXML.Excel;
 using EMG.Api.Modules.FinalAccounts.Services;
 using EMG.Api.Modules.Reports.Services;
 using EMG.Api.Modules.UniversalImports;
@@ -7,6 +8,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 using Xunit.Abstractions;
@@ -43,6 +46,18 @@ public sealed class UniversalNewProjectTests(ITestOutputHelper output)
         Assert.Contains(result.Records, entry => entry.RecordId == "manual" && entry.CanImport && entry.Amount == 250m);
         Assert.Contains(result.Records, entry => entry.RecordId == "reference" && !entry.CanImport);
         Assert.False(result.PostingEnabled);
+        var snapshot = snapshots.Find(request.SnapshotId, 7)!;
+        var reviewed = Assert.IsType<ReviewedWorkbookSnapshots.DailyValidation>(snapshot.Validation);
+        Assert.Equal(preview.SourceSha256, reviewed.SourceSha256);
+        await service.RevalidateNewProjectAsync(corrected with { ConfirmExcluded = false }, 7, default);
+        Assert.Equal(reviewed, snapshot.Validation);
+        await service.RevalidateNewProjectAsync(corrected with { Name = "Changed" }, 7, default);
+        Assert.NotEqual(reviewed, snapshot.Validation);
+        await service.RevalidateNewProjectAsync(request, 7, default);
+        Assert.NotEqual(reviewed, snapshot.Validation);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => service.CommitNewProjectAsync(corrected, 8, default));
+        var existingProject = snapshots.Store(7, 84, preview);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => service.CommitNewProjectAsync(corrected with { SnapshotId = existingProject }, 7, default));
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.RevalidateNewProjectAsync(
             request with { MappingEvidence = new() { ["reference"] = "Unsupported source claim" } }, 7, default));
         await Assert.ThrowsAsync<HistoricalWorkbookPostingDisabledException>(() => service.CommitNewProjectAsync(corrected, 7, default));
@@ -67,20 +82,110 @@ public sealed class UniversalNewProjectTests(ITestOutputHelper output)
         using var snapshots = new ReviewedWorkbookSnapshots();
         var service = new ReviewedWorkbookImportService(db, new UniversalImportPreviewService(new UniversalImportMappingRegistry()),
             snapshots, config, host.Environment);
-        var approved = new string('A', 64);
-        var different = new string('B', 64);
+        var preview = new UniversalPreviewResponse("synthetic.xlsx", 100, new string('A', 64), "test", false, [], [], [], [], [], []);
+        var first = snapshots.Find(snapshots.Store(7, 0, preview), 7)!;
+        var second = snapshots.Find(snapshots.Store(7, 0, preview with { SourceSha256 = new string('B', 64) }), 7)!;
 
-        Assert.False(service.IsNewProjectPostingAllowed(approved, historical: false));
-        config["UniversalImport:ApprovedLocalWorkbookSha256"] = approved.ToLowerInvariant();
-        Assert.Equal(primaryLocal, service.IsNewProjectPostingAllowed(approved, historical: false));
-        Assert.False(service.IsNewProjectPostingAllowed(different, historical: false));
-        Assert.False(service.IsNewProjectPostingAllowed(approved, historical: true));
+        Assert.False(service.IsNewProjectPostingAllowed(first, historical: false));
+        first.BindDailyPlan(new string('1', 64));
+        Assert.Equal(primaryLocal, service.IsNewProjectPostingAllowed(first, historical: false));
+        Assert.False(service.IsNewProjectPostingAllowed(second, historical: false));
+        Assert.False(service.IsNewProjectPostingAllowed(first, historical: true));
         config["HistoricalMigration:Enabled"] = "true";
-        Assert.False(service.IsNewProjectPostingAllowed(approved, historical: true));
+        Assert.False(service.IsNewProjectPostingAllowed(first, historical: true));
         config["HistoricalMigration:AllowAuthorizedLocalTarget"] = "true";
-        Assert.Equal(primaryLocal, service.IsNewProjectPostingAllowed(approved, historical: true));
-        Assert.False(service.IsNewProjectPostingAllowed(different, historical: false));
+        Assert.Equal(primaryLocal, service.IsNewProjectPostingAllowed(first, historical: true));
+        Assert.False(service.IsNewProjectPostingAllowed(second, historical: false));
+        second.BindDailyPlan(new string('2', 64));
+        Assert.Equal(primaryLocal, service.IsNewProjectPostingAllowed(second, historical: false));
         Assert.Equal(System.Data.ConnectionState.Closed, db.Database.GetDbConnection().State);
+    }
+
+    [Fact]
+    public async Task SyntheticDailyWorkbookRequiresItsReviewedPlanAndRollsBackOrPostsExactlyOnce()
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.AddWorksheet("خاص باعمال الموقع");
+        sheet.Cell("A1").Value = "Date";
+        sheet.Cell("B1").Value = "Description";
+        sheet.Cell("C1").Value = "Amount";
+        sheet.Cell("D1").Value = "Currency";
+        sheet.Cell("A2").Value = "2025-01-15";
+        sheet.Cell("B2").Value = "Synthetic daily expense";
+        sheet.Cell("C2").Value = 125.50;
+        sheet.Cell("D2").Value = "EGP";
+        sheet.Cell("A3").Value = "2025-01-16";
+        sheet.Cell("B3").Value = "Synthetic foreign expense";
+        sheet.Cell("C3").Value = 20.25;
+        sheet.Cell("D3").Value = "AED";
+        using var bytes = new MemoryStream();
+        workbook.SaveAs(bytes);
+        var parser = new UniversalImportPreviewService(new UniversalImportMappingRegistry());
+        var preview = await parser.PreviewAsync(new FormFile(bytes, 0, bytes.Length, "file", "ordinary.xlsx"), default);
+
+        await using var sqlite = new SqliteConnection("Data Source=:memory:");
+        await sqlite.OpenAsync();
+        var options = new DbContextOptionsBuilder<EmgDbContext>().UseSqlite(sqlite)
+            .ReplaceService<IDatabaseProvider, TransactionFixtureProvider>();
+        await using var db = new EmgDbContext(options.Options);
+        await db.Database.EnsureCreatedAsync();
+        var host = WebApplication.CreateSlimBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        config["UniversalImport:EnableProductionCommit"] = "true";
+        using var snapshots = new ReviewedWorkbookSnapshots();
+        var service = new ReviewedWorkbookImportService(db, parser, snapshots, config, host.Environment);
+        var request = new UniversalNewProjectRequest(snapshots.Store(7, 0, preview), "Synthetic", "QA-001",
+            null, null, null, null, null, null, false);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CommitNewProjectAsync(request, 7, default));
+        var validated = await service.RevalidateNewProjectAsync(request, 7, default);
+        Assert.True(validated.PostingEnabled);
+        Assert.True(validated.RequiresExclusionConfirmation);
+        Assert.Single(validated.Records, row => row.CanImport && row.Amount == 125.50m && row.Currency == "EGP");
+        Assert.Single(validated.Records, row => !row.CanImport && row.Amount == 20.25m && row.Currency == "AED");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CommitNewProjectAsync(request, 7, default));
+        request = request with { ConfirmExcluded = true };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CommitNewProjectAsync(request with { Name = "Changed" }, 7, default));
+        sheet.Cell("C2").Value = 900;
+        using var modified = new MemoryStream();
+        workbook.SaveAs(modified);
+        var changedFile = await parser.PreviewAsync(new FormFile(modified, 0, modified.Length, "file", "ordinary.xlsx"), default);
+        Assert.NotEqual(preview.SourceSha256, changedFile.SourceSha256);
+        var alteredSnapshot = snapshots.Store(7, 0, changedFile);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CommitNewProjectAsync(request with { SnapshotId = alteredSnapshot }, 7, default));
+        var otherSnapshot = snapshots.Store(7, 0, preview);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CommitNewProjectAsync(request with { SnapshotId = otherSnapshot }, 7, default));
+        Assert.False(await db.Projects.AnyAsync());
+
+        await using (var faultDb = new EmgDbContext(options.AddInterceptors(new FailBeforeProvenance()).Options))
+        {
+            var failing = new ReviewedWorkbookImportService(faultDb, parser, snapshots, config, host.Environment);
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => failing.CommitNewProjectAsync(request, 7, default));
+            Assert.Equal("QA injected fault after writing operational rows", failure.Message);
+        }
+        Assert.False(await db.Projects.AnyAsync());
+        Assert.False(await db.SiteMovements.AnyAsync());
+        Assert.False(await db.HistoricalImportBatches.AnyAsync());
+
+        var result = await service.CommitNewProjectAsync(request, 7, default);
+        Assert.Equal(125.50m, result.Totals["SiteMovement"]);
+        Assert.Equal(125.50m, (await db.SiteMovements.SingleAsync()).TotalAmount);
+        var posted = await db.HistoricalPostedEntries.SingleAsync();
+        Assert.Equal(preview.SourceSha256, posted.SourceSha256);
+        Assert.Equal(result.ProjectId, posted.ProjectId);
+        Assert.Equal("AED", (await db.HistoricalImportRecords.SingleAsync(row => row.OriginalAmount == 20.25m)).Currency);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.CommitNewProjectAsync(request, 7, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RevalidateNewProjectAsync(request with { SnapshotId = otherSnapshot, Code = "QA-002" }, 7, default));
+        Assert.Equal(1, await db.Projects.CountAsync());
+        Assert.Equal(1, await db.HistoricalPostedEntries.CountAsync());
+    }
+
+    // Only this SQLite in-memory test double supplies the provider name checked by the posting policy.
+    // The target matrix above checks that policy separately with real, unopened Npgsql connections.
+    private sealed class TransactionFixtureProvider : IDatabaseProvider
+    {
+        public string Name => "Npgsql.EntityFrameworkCore.PostgreSQL";
+        public bool IsConfigured(IDbContextOptions options) => options.Extensions.Any(extension => extension.Info.IsDatabaseProvider);
     }
 
     [Q315Fact]

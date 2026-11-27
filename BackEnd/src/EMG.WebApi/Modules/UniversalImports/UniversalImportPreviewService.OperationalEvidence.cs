@@ -19,7 +19,7 @@ public sealed partial class UniversalImportPreviewService
         ["party"] = ["supplier", "supplier name", "payer", "اسم المورد", "المورد", "الدافع", "اسم الدافع"],
         ["reference"] = ["invoice", "invoice number", "reference", "المرجع", "رقم الفاتورة", "رقم الايصال"],
         ["paid"] = ["paid", "paid amount", "المدفوع", "المبلغ المدفوع", "الدفعة", "الدفعات", "المتبقي", "الخصم", "الرصيد السابق"],
-        ["currency"] = ["currency", "العملة"]
+        ["currency"] = ["currency", "currency code", "العملة", "عملة", "رمز العملة"]
     };
 
     private sealed record OperationalLayout(int HeaderRow, IReadOnlyDictionary<string, int> Columns, string AmountLabel);
@@ -53,11 +53,10 @@ public sealed partial class UniversalImportPreviewService
         return layouts;
     }
 
-    private static List<(UniversalOperationalEvidence Evidence, decimal Amount, IReadOnlyList<string> Cells, string Currency)> ReadOperationalEvidence(
-        IXLWorksheet sheet, int row, string? family, List<OperationalLayout> layouts)
+    private static List<(UniversalOperationalEvidence Evidence, decimal Amount, IReadOnlyList<string> Cells)> ReadOperationalEvidence(
+        IXLWorksheet sheet, int row, string? family, OperationalLayout? layout)
     {
-        var layout = layouts.LastOrDefault(item => item.HeaderRow < row);
-        if (layout is null || layouts.Any(item => item.HeaderRow == row)) return [];
+        if (layout is null || layout.HeaderRow == row) return [];
         var title = Key(sheet.Name);
         var target = family switch
         {
@@ -167,15 +166,11 @@ public sealed partial class UniversalImportPreviewService
         if (target == "SteelRecord" && !string.IsNullOrWhiteSpace(party) && !string.IsNullOrWhiteSpace(reference))
             target = "SupplierSupply";
 
-        var currencyLabel = Text("currency");
-        var currency = currencyLabel is null
-            ? DetectCurrency($"{title} {layout.AmountLabel} {valueCell.Style.NumberFormat.Format}")
-            : ParseCurrency(currencyLabel);
         var evidence = new UniversalOperationalEvidence(target, parsedDate.Value, description,
             quantity, unit, rate, party, reference, valueCell.Address.ToString()!, manual);
         var coordinates = layout.Columns.Values.Select(column => sheet.Cell(row, column))
             .Where(cell => !cell.IsEmpty()).Select(cell => cell.Address.ToString()!).ToArray();
-        return [(evidence, amount.Value, coordinates, currency)];
+        return [(evidence, amount.Value, coordinates)];
     }
 
     private static DateOnly? ReadDate(IXLCell? date)
@@ -229,14 +224,7 @@ public sealed partial class UniversalImportPreviewService
         }
     }
 
-    private static string ParseCurrency(string value) => Key(value) switch
-    {
-        "egp" or "جنيه" or "جنيه مصري" or "ج.م" => "EGP",
-        "usd" or "دولار" or "$" => "USD",
-        "eur" or "يورو" or "€" => "EUR",
-        "sar" or "ريال" => "SAR",
-        _ => "UNKNOWN"
-    };
+
 
     private static bool IsSignedAdjustment(string? text, decimal? quantity, decimal? amount) =>
         amount is < 0m && (quantity is null || quantity < 0m) &&

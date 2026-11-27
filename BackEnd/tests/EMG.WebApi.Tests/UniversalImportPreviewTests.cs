@@ -56,6 +56,134 @@ public sealed class UniversalImportPreviewTests
         Assert.False(foreign.EligibleForPosting);
     }
 
+    [Theory]
+    [InlineData("جنيه مصري", "EGP", true)]
+    [InlineData("AED", "AED", false)]
+    [InlineData("جنيه إسترليني", "GBP", false)]
+    [InlineData("درهم", "UNKNOWN", false)]
+    [InlineData("درهم إماراتي", "AED", false)]
+    [InlineData("GBP", "GBP", false)]
+    [InlineData("unspecified units", "UNKNOWN", false)]
+    [InlineData("", "UNKNOWN", false)]
+    public async Task ExplicitCurrencyControlsAcceptedAndRetainedRows(string sourceCurrency, string expected, bool eligible)
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.AddWorksheet("خاص باعمال الموقع");
+        sheet.Cell("A1").Value = "Date";
+        sheet.Cell("B1").Value = "Description";
+        sheet.Cell("C1").Value = "Amount";
+        sheet.Cell("D1").Value = "Currency";
+        sheet.Cell("A2").Value = "2025-01-15";
+        sheet.Cell("B2").Value = "QA work";
+        sheet.Cell("C2").Value = 18.50;
+        sheet.Cell("D2").Value = sourceCurrency;
+        sheet.Cell("B3").Value = "QA missing date";
+        sheet.Cell("C3").Value = 21.50;
+        sheet.Cell("D3").Value = sourceCurrency;
+        using var input = new MemoryStream();
+        workbook.SaveAs(input);
+        var parser = new UniversalImportPreviewService(new UniversalImportMappingRegistry());
+        var preview = await parser.PreviewAsync(new FormFile(input, 0, input.Length, "file", "synthetic.xlsx"), default);
+
+        var mapped = Assert.Single(preview.Records, row => row.Amount == 18.50m);
+        Assert.Equal(expected, mapped.Currency);
+        Assert.Equal(eligible, mapped.EligibleForPosting);
+        var retained = Assert.Single(preview.Records, row => row.Amount == 21.50m);
+        Assert.Equal(expected, retained.Currency);
+        Assert.False(retained.EligibleForPosting);
+    }
+
+    [Theory]
+    [InlineData("[$AED-3801]#,##0.00", "AED")]
+    [InlineData("#,##0.00 \"ZZZ\"", "ZZZ")]
+    [InlineData("#,##0.00 \"CHF\"", "CHF")]
+    [InlineData("[$-409]#,##0.00", "EGP")]
+    [InlineData("[$ج.م.-C01]#,##0.00", "EGP")]
+    [InlineData("[$¥-411]#,##0.00", "UNKNOWN")]
+    public async Task FormattedCurrencySurvivesWithoutASeparateCurrencyColumn(string format, string currency)
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.AddWorksheet("Site expenses");
+        sheet.Cell("A1").Value = "Date";
+        sheet.Cell("B1").Value = "Description";
+        sheet.Cell("C1").Value = "Amount";
+        sheet.Cell("A2").Value = "2025-01-15";
+        sheet.Cell("B2").Value = "QA work";
+        sheet.Cell("C2").Value = 18.50;
+        sheet.Cell("C2").Style.NumberFormat.Format = format;
+        using var input = new MemoryStream();
+        workbook.SaveAs(input);
+        var parser = new UniversalImportPreviewService(new UniversalImportMappingRegistry());
+        var preview = await parser.PreviewAsync(new FormFile(input, 0, input.Length, "file", "format.xlsx"), default);
+        var row = Assert.Single(preview.Records, row => row.Amount == 18.50m);
+        Assert.Equal(currency, row.Currency);
+        Assert.Equal(currency == "EGP", row.EligibleForPosting);
+    }
+
+    [Theory]
+    [InlineData("EGP", "Amount", "[$USD-409]#,##0.00", 0, "UNKNOWN")]
+    [InlineData("EGP", "Amount USD", "", 0, "UNKNOWN")]
+    [InlineData("USD", "Amount EGP", "", 0, "UNKNOWN")]
+    [InlineData(null, "Amount", "", 5, "UNKNOWN")]
+    [InlineData(null, "Amount", "", 42, "UNKNOWN")]
+    [InlineData("EGP", "Amount", "", 5, "EGP")]
+    public async Task ConflictingSignalsAndLocaleCurrencyFormatsAreHeld(string? declared, string heading, string format,
+        int formatId, string expected)
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.AddWorksheet("Site expenses");
+        sheet.Cell("A1").Value = "Date";
+        sheet.Cell("B1").Value = "Description";
+        sheet.Cell("C1").Value = heading;
+        sheet.Cell("A2").Value = "2025-01-15";
+        sheet.Cell("B2").Value = "QA memo mentions USD";
+        sheet.Cell("C2").Value = 30;
+        if (declared is not null)
+        {
+            sheet.Cell("D1").Value = "Currency";
+            sheet.Cell("D2").Value = declared;
+        }
+        if (format.Length > 0) sheet.Cell("C2").Style.NumberFormat.Format = format;
+        else sheet.Cell("C2").Style.NumberFormat.NumberFormatId = formatId;
+        using var bytes = new MemoryStream();
+        workbook.SaveAs(bytes);
+        var parser = new UniversalImportPreviewService(new UniversalImportMappingRegistry());
+        var preview = await parser.PreviewAsync(new FormFile(bytes, 0, bytes.Length, "file", "currency.xlsx"), default);
+        var row = Assert.Single(preview.Records, row => row.Amount == 30);
+        Assert.Equal(expected, row.Currency);
+        Assert.Equal(expected == "EGP", row.EligibleForPosting);
+    }
+
+    [Theory]
+    [InlineData("Currency: USD", null, "USD")]
+    [InlineData("عملة المشروع: درهم إماراتي", "EGP", "UNKNOWN")]
+    [InlineData("Workbook currency: EGP", "EGP", "EGP")]
+    [InlineData("Currency: ZZZ", null, "ZZZ")]
+    public async Task CurrencyDeclarationsApplyToRows(string declaration, string? rowCurrency, string expected)
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.AddWorksheet("Site expenses");
+        sheet.Cell("A1").Value = declaration;
+        sheet.Cell("A3").Value = "Date";
+        sheet.Cell("B3").Value = "Description";
+        sheet.Cell("C3").Value = "Amount";
+        sheet.Cell("A4").Value = "2025-01-15";
+        sheet.Cell("B4").Value = "QA memo mentions SAR";
+        sheet.Cell("C4").Value = 35;
+        if (rowCurrency is not null)
+        {
+            sheet.Cell("D3").Value = "Currency";
+            sheet.Cell("D4").Value = rowCurrency;
+        }
+        using var bytes = new MemoryStream();
+        workbook.SaveAs(bytes);
+        var parser = new UniversalImportPreviewService(new UniversalImportMappingRegistry());
+        var preview = await parser.PreviewAsync(new FormFile(bytes, 0, bytes.Length, "file", "declaration.xlsx"), default);
+        var row = Assert.Single(preview.Records, row => row.Amount == 35);
+        Assert.Equal(expected, row.Currency);
+        Assert.Equal(expected == "EGP", row.EligibleForPosting);
+    }
+
     [Fact]
     public async Task FormulaBackedOperationalRowsMapWhenCachedFormulaValuesAreAbsent()
     {
