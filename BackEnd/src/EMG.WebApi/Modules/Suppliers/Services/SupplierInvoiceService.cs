@@ -10,6 +10,8 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
 {
     public async Task<SupplierInvoiceSummary?> CreateAsync(CreateSupplierInvoiceRequest request, int? userId, bool globalAccess, CancellationToken cancellationToken)
     {
+        if (request.Currency is not null && !string.Equals(request.Currency.Trim(), "EGP", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("فواتير الموردين بالجنيه المصري فقط.");
         if (request.Lines is null || request.Lines.Count == 0 || request.Lines.Any(line => string.IsNullOrWhiteSpace(line.Description) || string.IsNullOrWhiteSpace(line.Unit) || line.Quantity <= 0 || line.UnitPrice < 0) || request.InitialPayment < 0)
             throw new InvalidOperationException("يجب إدخال بند واحد على الأقل بقيم كمية وسعر صحيحة.");
         if (!globalAccess && (!userId.HasValue || !await db.UserProjectAssignments.AnyAsync(item => item.UserId == userId && item.ProjectId == request.ProjectId && item.IsActive, cancellationToken))) return null;
@@ -27,7 +29,7 @@ public sealed class SupplierInvoiceService(EmgDbContext db, IWebHostEnvironment 
         if (request.SiteMovementId is int linkedId)
         {
             var target = await db.SiteMovements.SingleAsync(m => m.Id == linkedId, cancellationToken);
-            if (target.MovementType == "وارد" || target.SupplierId.HasValue && target.SupplierId != supplier.Id ||
+            if (target.Currency != "EGP" || target.MovementType == "وارد" || target.SupplierId.HasValue && target.SupplierId != supplier.Id ||
                 target.TotalAmount != total || target.Status is not ("مرحّل" or "معتمد") ||
                 await EMG.Api.Modules.Projects.Services.HistoricalWorkReader.IsLinkedAsync(db, "site-movement", linkedId, cancellationToken))
                 throw new InvalidOperationException("حركة الموقع المرتبطة يجب أن تطابق الفاتورة والمورد وقيمة الأعمال.");

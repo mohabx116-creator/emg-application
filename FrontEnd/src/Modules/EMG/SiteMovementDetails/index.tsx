@@ -52,7 +52,7 @@ import {
 import useAuth from 'hooks/useAuth';
 
 const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
-const formatMoney = (value: number) => `${money.format(value || 0)} ج.م`;
+const formatMoney = (value: number, currency: string) => `${money.format(value)} ${currency}`;
 
 export default function EmgSiteMovementDetails() {
   const { movementId } = useParams();
@@ -300,8 +300,8 @@ export default function EmgSiteMovementDetails() {
             ['المورد أو المقاول', movement.supplierName || '—'],
             ['تاريخ الحركة', new Date(movement.movementDate).toLocaleDateString('ar-EG')],
             ['الكمية', movement.quantity == null ? '—' : `${movement.quantity} ${movement.unit || ''}`],
-            ['سعر الوحدة', movement.unitPrice == null ? '—' : formatMoney(movement.unitPrice)],
-            ['الإجمالي', formatMoney(movement.totalAmount)],
+            ['سعر الوحدة', movement.unitPrice == null ? '—' : formatMoney(movement.unitPrice, movement.currency)],
+            ['الإجمالي', formatMoney(movement.totalAmount, movement.currency)],
             ['حالة الدفع', movement.isPaid ? `مدفوع · ${movement.paymentMethod || '—'}` : 'غير مدفوع'],
             ['دُفع إلى', movement.paidTo || '—'],
             ['المرجع', movement.reference || '—']

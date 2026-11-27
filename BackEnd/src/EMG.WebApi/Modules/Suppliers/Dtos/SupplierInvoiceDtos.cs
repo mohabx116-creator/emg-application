@@ -16,7 +16,7 @@ public sealed record CreateSupplierInvoiceRequest(
     string? ExpenseCategory = null,
     string? PaidTo = null,
     string? Details = null,
-    string? PaymentSource = null);
+    string? PaymentSource = null, string? Currency = null);
 
 public sealed record UpdateSupplierInvoiceRequest(IReadOnlyList<SupplierInvoiceLineRequest> Lines, DateTime? InvoiceDate, string? Notes);
 

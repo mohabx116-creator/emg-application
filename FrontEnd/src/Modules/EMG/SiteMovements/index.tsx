@@ -353,7 +353,7 @@ export default function EmgSiteMovements() {
     try {
       const paymentDetailsSuffix =
         header.paymentMode === 'partial' && header.partialPaidAmount
-          ? ` | دفع جزئي مسجل: ${header.partialPaidAmount} ج.م`
+          ? ` | دفع جزئي مسجل: ${header.partialPaidAmount} ${header.currency}`
           : header.paymentMode === 'credit'
             ? ' | آجل'
             : '';
@@ -373,7 +373,7 @@ export default function EmgSiteMovements() {
             description: line.description.trim(), unit: line.unit.trim(), quantity: Number(line.quantity),
             unitPrice: Number(line.unitPrice), supplyType: header.expenseCategory || 'خامات'
           })),
-          initialPayment, paymentMethod: header.paymentMode === 'credit' ? 'آجل' : header.paymentMethod || 'نقدي',
+          initialPayment, currency: header.currency, paymentMethod: header.paymentMode === 'credit' ? 'آجل' : header.paymentMethod || 'نقدي',
           paymentReference: header.invoiceNumber || null, notes: combinedDetails,
           movementDescription: header.details.trim() || (header.paymentSource === 'مالك مباشر' ? 'دفع فاتورة مباشرة من المالك' : validLines[0].description.trim()),
           paymentSource: header.paymentSource,
@@ -518,6 +518,8 @@ export default function EmgSiteMovements() {
               </Select>
             </FormControl>
           </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth select label="العملة" value={header.currency} onChange={e => updateHeader('currency', e.target.value)}>
+            <MenuItem value="EGP">EGP</MenuItem><MenuItem value="USD">USD</MenuItem></TextField></Grid>
           <Grid size={{ xs: 6, sm: 4 }}>
             <TextField
               fullWidth
@@ -850,7 +852,7 @@ export default function EmgSiteMovements() {
                 size="small"
                 type="number"
                 inputProps={{ inputMode: 'decimal', min: 0, step: 'any' }}
-                label="المبلغ المدفوع الآن (ج.م)"
+                label={`المبلغ المدفوع الآن (${header.currency})`}
                 value={header.partialPaidAmount}
                 onChange={(e) => updateHeader('partialPaidAmount', e.target.value)}
                 helperText="يتم توثيق الجزء المسدد مع تفاصيل الحركة"

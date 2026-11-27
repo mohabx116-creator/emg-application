@@ -13,6 +13,35 @@ namespace EMG.WebApi.Tests;
 public sealed class AdvanceAllocationTargetsTests
 {
     [Fact]
+    public async Task OperationalUsdEntriesKeepTheirCurrencyThroughCorrectionsAndAccounts()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new EmgDbContext(new DbContextOptionsBuilder<EmgDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var project = new Project { Name = "Currency test", Code = "CUR" };
+        db.Add(project);
+        await db.SaveChangesAsync();
+        var advances = new AdvancesService(db);
+        var request = new CreateAdvanceRequest(project.Id, null, null, 100, null, null, null, null, "usd");
+        Assert.Equal("USD", (await advances.CreateAsync(request, null, true, default))!.Currency);
+        Assert.Null(await advances.CreateAsync(request with { Currency = "unsupported" }, null, true, default));
+        var movements = new EMG.Api.Modules.SiteMovements.Services.SiteMovementsService(db);
+        var movement = new EMG.Api.Modules.SiteMovements.Dtos.CreateSiteMovementRequest(project.Id, null, null, null,
+            "USD", null, null, null, "مصروف", "Site expense", null, null, null, 25, null, null, null, null, null, null, null);
+        var created = await movements.CreateAsync(movement, null, true, default);
+        Assert.NotNull(created);
+        Assert.Equal("USD", (await movements.UpdateAsync(created.Id, movement with { Currency = null, Amount = 30 },
+            null, true, default, true))!.Currency);
+        var account = await new EMG.Api.Modules.FinalAccounts.Services.FinalAccountsService(db).GetAsync(project.Id, null, true, default);
+        Assert.Equal(0m, account!.TotalPayments);
+        var usd = Assert.Single(account.Currencies, row => row.Currency == "USD");
+        Assert.Equal(100m, usd.Payments);
+        Assert.Equal(30m, usd.Works);
+        Assert.Equal(70m, usd.CashBalance);
+    }
+
+    [Fact]
     public async Task TargetSelectionPreservesCurrencyProjectAndInvoiceCapacityAcrossReceipts()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

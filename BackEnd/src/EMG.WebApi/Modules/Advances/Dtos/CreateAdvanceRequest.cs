@@ -8,4 +8,5 @@ public sealed record CreateAdvanceRequest(
     DateTime? PaymentDate,
     string? PaymentMethod,
     string? Reference,
-    string? Notes);
+    string? Notes,
+    string? Currency = null);

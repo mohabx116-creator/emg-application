@@ -199,6 +199,7 @@ public sealed class SuppliersService(EmgDbContext db) : ISuppliersService
 
     public async Task<PaymentSummary?> AddPaymentAsync(int supplierId, CreateSupplierPaymentRequest request, int? userId, bool globalAccess, CancellationToken cancellationToken)
     {
+        if (request.Currency is not null && !string.Equals(request.Currency.Trim(), "EGP", StringComparison.OrdinalIgnoreCase)) return null;
         if (request.Amount <= 0 || !await db.Suppliers.AnyAsync(item => item.Id == supplierId && item.IsActive, cancellationToken)) return null;
         if (!globalAccess && request.ProjectId is null) return null;
         if (request.ProjectId is not null && (!await db.Projects.AnyAsync(item => item.Id == request.ProjectId, cancellationToken) ||

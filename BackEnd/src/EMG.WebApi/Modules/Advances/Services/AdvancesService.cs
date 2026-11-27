@@ -29,11 +29,12 @@ public sealed partial class AdvancesService(EmgDbContext db) : IAdvancesService
     {
         if (!isAdmin && (userId is null || !await db.UserProjectAssignments.AnyAsync(item => item.ProjectId == request.ProjectId && item.UserId == userId && item.IsActive, cancellationToken))) return null;
         var project = await db.Projects.FirstOrDefaultAsync(item => item.Id == request.ProjectId, cancellationToken);
-        if (project is null || request.Amount <= 0) return null;
+        var currency = (request.Currency ?? "EGP").Trim().ToUpperInvariant();
+        if (project is null || request.Amount <= 0 || currency is not ("EGP" or "USD")) return null;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var advance = new AdvancePayment
         {
-            ProjectId = request.ProjectId,
+            ProjectId = request.ProjectId, Currency = currency,
             ClientName = string.IsNullOrWhiteSpace(request.ClientName) ? project.ClientName ?? string.Empty : request.ClientName.Trim(),
             PayerName = string.IsNullOrWhiteSpace(request.PayerName) ? project.PayerName ?? string.Empty : request.PayerName.Trim(),
             Amount = request.Amount,

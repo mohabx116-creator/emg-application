@@ -88,6 +88,7 @@ export default function EmgAdvances() {
     clientName: '',
     payerName: '',
     amount: '',
+    currency: 'EGP',
     paymentDate: getLocalIsoDate(),
     paymentMethod: 'تحويل',
     reference: '',
@@ -590,6 +591,11 @@ export default function EmgAdvances() {
                   value={form.amount}
                   onChange={(e) => setForm({ ...form, amount: e.target.value })}
                 />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField fullWidth select label="العملة" value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
+                  <MenuItem value="EGP">EGP</MenuItem><MenuItem value="USD">USD</MenuItem>
+                </TextField>
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField

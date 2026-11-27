@@ -101,3 +101,7 @@ The allocation permission grants a scoped read of eligible targets. Currency mus
 ### Supplier invoices and section access
 
 Invoice corrections synchronize their linked site movement and check payment limits across the invoice. Deletion preserves independently linked movements. Nine focused tests passed for new and historical project accounting, named party balances, printed account values and all five scoped section endpoints. A positive assigned engineer and a denied unassigned engineer were tested in memory. The old local assembly lacked the historical controller; the refreshed assembly contains it. The original administrator HTTP status is inferred, not captured.
+
+### Operational currency entry
+
+The ordinary USD receipt and site movement test created a 100 USD receipt, corrected 25 USD of works to 30 with currency omitted, and read 70 USD cash and zero EGP receipts. Unsupported advance currencies were rejected. Supplier invoices and payments require EGP, with a currency check on linked site work. Existing callers may omit the currency when entering EGP. Local UI data integration passed TypeScript.

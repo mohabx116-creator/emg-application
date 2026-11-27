@@ -117,7 +117,7 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
         movement.SupplierId = request.SupplierId;
         movement.ContractorId = request.ContractorId;
         movement.CounterpartyType = NormalizeCounterparty(request);
-        movement.Currency = NormalizeCurrency(request.Currency);
+        movement.Currency = request.Currency is null ? movement.Currency : NormalizeCurrency(request.Currency);
         movement.FundingSource = request.FundingSource?.Trim();
         movement.Recipient = request.Recipient?.Trim();
         movement.WorkCategory = request.WorkCategory?.Trim();
@@ -166,6 +166,7 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
 
     private async Task<bool> ValidateCounterpartyAsync(CreateSiteMovementRequest request, CancellationToken cancellationToken)
     {
+        if (request.Currency is not null && NormalizeCurrency(request.Currency) is not ("EGP" or "USD")) return false;
         if (request.SupplierId is not null && request.ContractorId is not null) return false;
         var type = NormalizeCounterparty(request);
         if (type == "مورد" && request.SupplierId is null || type == "مقاول" && request.ContractorId is null) return false;

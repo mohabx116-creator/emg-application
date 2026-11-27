@@ -8,4 +8,4 @@ public sealed record CreateSupplierPaymentRequest(
     string? PaymentMethod,
     string? Reference,
     string? Notes,
-    string? PaymentSource = null);
+    string? PaymentSource = null, string? Currency = null);
