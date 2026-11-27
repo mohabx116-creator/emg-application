@@ -173,12 +173,8 @@ public sealed class ContractorStatementService(EmgDbContext db) : IContractorSta
         if (statement is not null && statement.Currency != currency) return null;
         if (!string.IsNullOrWhiteSpace(request.Reference) && await db.ContractorPayments.AnyAsync(item => item.ProjectId == request.ProjectId && item.Reference == request.Reference.Trim(), cancellationToken))
             throw new InvalidOperationException("مرجع دفعة المقاول مستخدم بالفعل داخل المشروع.");
-        if (statement is not null)
-        {
-            var paid = await db.ContractorPayments.Where(item => item.ContractorStatementId == statement.Id).SumAsync(item => (decimal?)item.Amount, cancellationToken) ?? 0m;
-            var remaining = statement.NetAmount - paid;
-            if (request.Amount > remaining) throw new InvalidOperationException("قيمة الدفعة تتجاوز صافي التزام المقاول المتبقي.");
-        }
+        if (statement is not null && request.Amount > statement.NetAmount)
+            throw new InvalidOperationException("قيمة الدفعة تتجاوز صافي التزام المقاول المتبقي.");
         var payment = new ContractorPayment
         {
             ProjectId = request.ProjectId, ContractorId = contractorId, ContractorStatementId = request.ContractorStatementId,

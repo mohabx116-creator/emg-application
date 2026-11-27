@@ -26,6 +26,39 @@ public sealed class ContractorStatementTests
         Assert.Contains(await fixture.Db.WorkflowActions.ToListAsync(), row => row.EntityType == "contractor-statement" && row.EntityId == draft.Id && row.ToStatus == "مسودة");
     }
 
+    [Theory]
+    [InlineData("مكتب", 0)]
+    [InlineData("مالك مباشر", 100)]
+    public async Task SuccessivePaymentsSettleOnlyTheRemainingEntitlement(string source, int ownerFunding)
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        var service = new ContractorStatementService(fixture.Db);
+        var request = fixture.Request(1m, 100m, 1);
+        var statement = await service.CreateDraftAsync(request, fixture.UserId, false, default);
+        Assert.NotNull(statement);
+        var payment = new CreateContractorPaymentRequest(fixture.ProjectId, statement.Id, 30m, "EGP",
+            DateTime.UtcNow.Date, null, "payment-1", null, source);
+        Assert.NotNull(await service.AddPaymentAsync(request.ContractorId, payment, fixture.UserId, false, default));
+        Assert.Equal(70m, await fixture.Db.ContractorStatements.Select(s => s.NetAmount).SingleAsync());
+        Assert.NotNull(await service.AddPaymentAsync(request.ContractorId,
+            payment with { Amount = 70m, Reference = "payment-2" }, fixture.UserId, false, default));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AddPaymentAsync(request.ContractorId,
+            payment with { Amount = 0.01m, Reference = "overpayment" }, fixture.UserId, false, default));
+
+        var settled = await fixture.Db.ContractorStatements.AsNoTracking().SingleAsync();
+        Assert.Equal(0m, settled.NetAmount);
+        Assert.Equal(100m, settled.PreviousPaymentsAmount);
+        Assert.Equal(2, await fixture.Db.ContractorPayments.CountAsync());
+        Assert.False(await fixture.Db.AdvancePayments.AnyAsync());
+        Assert.False(await fixture.Db.AdvanceAllocations.AnyAsync());
+        var account = await new EMG.Api.Modules.FinalAccounts.Services.FinalAccountsService(fixture.Db)
+            .GetAsync(fixture.ProjectId, fixture.UserId, false, default);
+        Assert.NotNull(account);
+        Assert.Equal(100m, account.TotalWorks);
+        Assert.Equal((decimal)ownerFunding, account.TotalPayments);
+        Assert.Equal(ownerFunding - 100m, account.CashBalance);
+    }
+
     [Fact]
     public async Task CertifiedSourceCannotBeUsedInAnotherDraft()
     {
