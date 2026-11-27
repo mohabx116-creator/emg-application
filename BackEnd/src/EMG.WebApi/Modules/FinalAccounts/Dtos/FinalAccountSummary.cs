@@ -29,8 +29,8 @@ public sealed record FinalAccountSummary(
     public decimal OfficePaid { get; init; }
     public decimal OfficeNetDue { get; init; }
     public decimal TotalWorks { get; init; }
-    public decimal TotalPayments { get; init; }
-    public decimal CashBalance { get; init; }
+    public decimal? TotalPayments { get; init; }
+    public decimal? CashBalance { get; init; }
     public string CashBalanceStatus { get; init; } = "متزن";
     public bool HasUnresolvedImportRecords { get; init; }
     public IReadOnlyDictionary<string, decimal> OutgoingByCategory { get; init; } = new Dictionary<string, decimal>();
@@ -44,5 +44,5 @@ public sealed record SectionFinancialSummary(string Category, string Currency, d
     public string? SectionKey { get; init; }
 }
 
-public sealed record CurrencyFinancialSummary(string Currency, decimal Works, decimal Payments, decimal CashBalance,
+public sealed record CurrencyFinancialSummary(string Currency, decimal Works, decimal? Payments, decimal? CashBalance,
     decimal OfficeFee, decimal OfficePayments, decimal OfficeOutstanding, decimal ReferenceTransfers);

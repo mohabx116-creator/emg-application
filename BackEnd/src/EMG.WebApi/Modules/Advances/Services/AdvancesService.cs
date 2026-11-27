@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EMG.Api.Modules.Advances.Services;
 
-public sealed class AdvancesService(EmgDbContext db) : IAdvancesService
+public sealed partial class AdvancesService(EmgDbContext db) : IAdvancesService
 {
     private static readonly HashSet<string> AccountCategories = new(StringComparer.Ordinal)
     {
@@ -141,6 +141,6 @@ public sealed class AdvancesService(EmgDbContext db) : IAdvancesService
         item.Allocations.Sum(allocation => allocation.Amount), item.Amount - item.Allocations.Sum(allocation => allocation.Amount),
         item.Amount - item.Allocations.Sum(allocation => allocation.Amount) > 0 ? item.Amount - item.Allocations.Sum(allocation => allocation.Amount) : 0,
         item.Allocations.Sum(allocation => allocation.Amount) - item.Amount > 0 ? item.Allocations.Sum(allocation => allocation.Amount) - item.Amount : 0,
-        item.Amount - item.Allocations.Sum(allocation => allocation.Amount) < 0 ? "مستحق على الدافع" : "متاح",
+        item.Amount - item.Allocations.Sum(allocation => allocation.Amount) < 0 ? "تجاوز التخصيص" : "مسجلة",
         item.PaymentDate, item.PaymentMethod, item.Reference ?? string.Empty, item.Status, item.Notes ?? string.Empty);
 }

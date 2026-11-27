@@ -319,6 +319,19 @@ internal static class XlsxBuilder
         var officeAllocated = Value(account.IncomingByCategory, "المكتب");
         SetNumber(worksheet, "G24", workTotal - (account.IncomingByCategory.Values.Sum() - officeAllocated), ns);
         SetNumber(worksheet, "L24", account.TotalIncoming - workTotal, ns);
+        if (account.HistoricalFundingUnknown)
+            foreach (var address in new[] { "N22", "O22", "L24" }) ClearCell(worksheet, address, ns);
+        foreach (var section in account.Sections.Where(s => s.Currency == "EGP" && s.FundingUnknown))
+        {
+            var c = Array.IndexOf(categories,section.Category);
+            if (c >= 0)
+            {
+                ClearCell(worksheet, $"{Column(c + 1)}19", ns);
+                ClearCell(worksheet, $"{Column(c + 1)}22", ns);
+            }
+            ClearCell(worksheet, "M19", ns);
+            ClearCell(worksheet, "G24", ns);
+        }
     }
 
     private static void PopulateFinalAccountTemplate(XElement worksheet, FinalAccountSummary account, XNamespace ns)
@@ -347,7 +360,7 @@ internal static class XlsxBuilder
         else
         {
             SetNumber(worksheet, "K10", account.TotalIncoming, ns);
-            SetNumber(worksheet, "K15", account.CashBalance, ns);
+            if (account.CashBalance is decimal balance) SetNumber(worksheet, "K15", balance, ns);
         }
         for (var i = 0; i < account.FinancialWarnings.Count; i++)
             SetText(worksheet, $"D{17+i}", account.FinancialWarnings[i], ns);
@@ -722,7 +735,7 @@ internal static class XlsxBuilder
             new[] { "إجمالي المصروفات النقدية", N(report.FinalAccount.TotalExpenses) },
             new[] { "صافي المشروع بعد نصيب المكتب", N(report.FinalAccount.NetAfterOfficeShare) },
             new[] { "رصيد الدافع", report.FinalAccount.HistoricalFundingUnknown ? "" : N(report.FinalAccount.PayerBalance) },
-            new[] { "الرصيد النقدي", report.FinalAccount.HistoricalFundingUnknown ? "" : N(report.FinalAccount.CashBalance) },
+            new[] { "الرصيد النقدي", report.FinalAccount.CashBalance is decimal cash ? N(cash) : "" },
             new[] { "حالة الرصيد", report.FinalAccount.BalanceStatus }
         };
         if (report.FinalAccount.OutgoingByCategory.Count > 0)

@@ -34,7 +34,7 @@ import {
 } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import useAuth from 'hooks/useAuth';
-import { useEmgAdvancesCache, useEmgProjectsCache, useEmgSuppliersCache, useTodayAttendanceCache } from 'hooks/useEmgData';
+import { useEmgProjectsCache, useEmgSuppliersCache, useTodayAttendanceCache } from 'hooks/useEmgData';
 import EngineerMobileDashboard from './EngineerMobileDashboard';
 import { withAlpha } from 'utils/colorUtils';
 import {
@@ -397,7 +397,6 @@ export default function EmgDashboard() {
 
   const { data: projects = [], isLoading: projectsLoading, error: projectsError } = useEmgProjectsCache(canReadProjects);
   const { data: suppliers = [], isLoading: suppliersLoading, error: suppliersError } = useEmgSuppliersCache(canReadSuppliers && !engineerView);
-  const { data: advances = [], isLoading: advancesLoading, error: advancesError } = useEmgAdvancesCache(undefined, canReadAdvances && !engineerView);
   const { data: attendance = null } = useTodayAttendanceCache(canReadAttendance);
 
   const [notifications, setNotifications] = useState<EmgNotification[]>([]);
@@ -415,16 +414,15 @@ export default function EmgDashboard() {
     };
   }, [canReadNotifications, engineerView]);
 
-  const loading = projectsLoading || (!engineerView && (suppliersLoading || advancesLoading));
+  const loading = projectsLoading || (!engineerView && suppliersLoading);
   const error =
-    projectsError || suppliersError || advancesError
+    projectsError || suppliersError
       ? 'تعذر تحميل بعض المؤشرات المالية. راجع صلاحيات الحساب أو افتح المشاريع مباشرة.'
       : null;
 
   const totals = useMemo(
     () => ({
-      incoming: advances.reduce((x, a) => x + a.amount, 0),
-      due: advances.reduce((x, a) => x + a.dueFromPayer, 0),
+      due: projects.reduce((sum,p) => sum + Math.max(0, -(p.cashBalance ?? 0)), 0),
       supplierRemaining: suppliers.reduce((x, s) => x + s.remaining, 0),
       openMovements: projects.reduce((x, p) => x + p.openMovements, 0),
         activeProjects: projects.filter((p) => p.status === 'نشط').length,
@@ -432,7 +430,7 @@ export default function EmgDashboard() {
         totalPayments: projects.reduce((x, p) => x + (p.totalPayments || 0), 0),
         cashBalance: projects.reduce((x, p) => x + (p.cashBalance || 0), 0)
     }),
-    [advances, suppliers, projects]
+    [suppliers, projects]
   );
 
   const quickTiles = useMemo<QuickTile[]>(() => {
@@ -650,8 +648,8 @@ export default function EmgDashboard() {
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <BerryGradientHeroCard
                     title="دفعات تحت الحساب"
-                    value={fmt(totals.incoming)}
-                    subtitle={`${advances.length} دفعة مسجلة`}
+                    value={fmt(totals.totalPayments)}
+                    subtitle="الدفعات المثبتة بالجنيه المصري"
                     icon={<IconCash size={22} />}
                     variant="purple"
                   />
@@ -687,7 +685,7 @@ export default function EmgDashboard() {
               {hasFinancialAccess && canReadAdvances && (
                 <Grid size={{ xs: 6 }}>
                   <StackedMetricCard
-                    title="مستحق على الدافعين"
+                    title="الأرصدة المدينة المثبتة"
                     value={fmt(totals.due)}
                     icon={<IconReceipt size={20} />}
                     tone="error"

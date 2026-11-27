@@ -13,6 +13,37 @@ namespace EMG.WebApi.Tests;
 public sealed class ProjectsTests
 {
     [Fact]
+    public async Task ProjectViewReturnsAssignedEngineerFinancialsWithoutReportsPermission()
+    {
+        var route = typeof(ProjectsController).GetMethod(nameof(ProjectsController.GetProject))!;
+        var policy = Assert.Single(route.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), true)
+            .Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>());
+        Assert.Equal("Permission:projects.view",policy.Policy);
+        var accounts = new AssignedAccount();
+        var controller = new ProjectsController(new ProjectsService(new ProjectsRepository(),accounts));
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            [new(System.Security.Claims.ClaimTypes.NameIdentifier,"17"),new(System.Security.Claims.ClaimTypes.Role,"engineer")],"fixture");
+        controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = new(identity) } };
+        var result = await controller.GetProject(1,default);
+        var summary = Assert.IsType<ProjectSummary>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(25m,summary.TotalPayments);
+        Assert.Equal(10m,Assert.Single(summary.Sections).Works);
+    }
+
+    private sealed class AssignedAccount : EMG.Api.Modules.FinalAccounts.Services.IFinalAccountsService
+    {
+        public Task<EMG.Api.Modules.FinalAccounts.Dtos.FinalAccountSummary?> GetAsync(int projectId,int? userId,bool global,CancellationToken ct)
+        {
+            Assert.Equal(1,projectId);
+            Assert.Equal(17,userId);
+            Assert.False(global);
+            EMG.Api.Modules.FinalAccounts.Dtos.FinalAccountSummary account = new(projectId,"","","",0,25,0,0,0,0,0,0,"","")
+                { TotalPayments = 25, TotalWorks = 10, CashBalance = 15, Sections = [new("الموقع","EGP",10,25,15)] };
+            return Task.FromResult<EMG.Api.Modules.FinalAccounts.Dtos.FinalAccountSummary?>(account);
+        }
+    }
+
+    [Fact]
     public async Task GetProjects_ReturnsPilotProjects()
     {
         var service = CreateService();

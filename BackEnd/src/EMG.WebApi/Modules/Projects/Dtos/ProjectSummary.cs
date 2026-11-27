@@ -13,8 +13,8 @@ public sealed record ProjectSummary(
     decimal TotalReceived)
 {
     public decimal TotalWorks { get; init; }
-    public decimal TotalPayments { get; init; }
-    public decimal CashBalance { get; init; }
+    public decimal? TotalPayments { get; init; }
+    public decimal? CashBalance { get; init; }
     public string HistoricalFundingBasis { get; init; } = "operational";
     public bool HistoricalFundingUnknown { get; init; }
     public IReadOnlyList<string> FinancialWarnings { get; init; } = [];

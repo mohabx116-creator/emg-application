@@ -17,7 +17,12 @@ public sealed record ConsolidatedStatementRow(
     IReadOnlyList<NetTransactionDiagnostic> NetTransactionDiagnostics,
     IReadOnlyList<UnresolvedRecordDiagnostic> UnresolvedRecords,
     bool IsComplete,
-    string CompletenessStatus);
+    string CompletenessStatus)
+{
+    public decimal TotalWorks { get; init; }
+    public decimal? TotalPayments { get; init; }
+    public decimal? CashBalance { get; init; }
+}
 
 public sealed record MasterStatementColumn(
     string Column,

@@ -1,10 +1,11 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
   Breadcrumbs,
   Button,
   Card,
+  CardActionArea,
   CardContent,
   Chip,
   Dialog,
@@ -15,6 +16,7 @@ import {
   IconButton,
   InputLabel,
   MenuItem,
+  Pagination,
   Select,
   Skeleton,
   Stack,
@@ -23,10 +25,10 @@ import {
   useMediaQuery,
   useTheme
 } from '@mui/material';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { IconArrowRight, IconCash, IconPlus, IconReceipt, IconRefresh, IconTrash, IconX } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
-import { createEmgAdvance, deleteEmgTransaction, EmgAdvance, getEmgAdvances, uploadEmgAttachment } from 'api/emg';
+import { createEmgAdvance, deleteEmgTransaction, EmgAdvance, EmgAdvanceLedger, getEmgAdvanceLedger, uploadEmgAttachment } from 'api/emg';
 import useAuth from 'hooks/useAuth';
 import { invalidateEmgCache, useEmgProjectsCache } from 'hooks/useEmgData';
 import { useActiveProject } from 'contexts/ActiveProjectContext';
@@ -42,7 +44,20 @@ const getAttachmentError = (file: File) => {
   return null;
 };
 
+type HistoricalRecord = EmgAdvanceLedger['historical'][number];
+
+function recordKind(row: HistoricalRecord) {
+  if (row.basis === 'conflicting_ownership') return 'ملكية غير محسومة';
+  if (row.basis === 'verified_zero') return 'دفعات صفرية مثبتة';
+  if (row.fundsProject && row.isAllocation) return 'دفعة وتوزيع';
+  if (row.fundsProject) return 'تمويل مثبت';
+  if (row.isAllocation) return 'توزيع على المشروع';
+  return row.basis === 'transfer_breakdown' ? 'تفصيل تحويل' : 'دليل مرجعي';
+}
+
 export default function EmgAdvances() {
+  const navigate = useNavigate();
+  const [selectedRecord, setSelectedRecord] = useState<HistoricalRecord | null>(null);
   const { projectId: routeProjectId } = useParams();
   const lockedProjectId = routeProjectId ? Number(routeProjectId) : null;
   const theme = useTheme();
@@ -52,7 +67,10 @@ export default function EmgAdvances() {
   const { data: projects = [] } = useEmgProjectsCache(true);
 
   const canCreate = user?.permissions?.includes('advances.create');
-  const [advances, setAdvances] = useState<EmgAdvance[]>([]);
+  const [ledger, setLedger] = useState<EmgAdvanceLedger | null>(null);
+  const [page, setPage] = useState(1);
+  const requestNumber = useRef(0);
+  const advances = ledger?.receipts ?? [];
   const [loading, setLoading] = useState(true);
   const [projectFilter, setProjectFilter] = useState<string>(lockedProjectId ? String(lockedProjectId) : '');
   const [open, setOpen] = useState(false);
@@ -90,26 +108,21 @@ export default function EmgAdvances() {
 
   const load = () => {
     const pid = lockedProjectId ?? (projectFilter ? Number(projectFilter) : undefined);
+    const request = ++requestNumber.current;
     setLoading(true);
-    getEmgAdvances(pid)
-      .then((a) => setAdvances(a))
-      .catch(() => setMessage({ severity: 'error', text: 'تعذر تحميل الدفعات تحت الحساب.' }))
-      .finally(() => setLoading(false));
+    setLedger(null);
+    setPage(1);
+    getEmgAdvanceLedger(pid)
+      .then(data => { if (requestNumber.current === request) setLedger(data); })
+      .catch(() => { if (requestNumber.current === request) setMessage({ severity: 'error', text: 'تعذر تحميل الدفعات تحت الحساب.' }); })
+      .finally(() => { if (requestNumber.current === request) setLoading(false); });
   };
 
   useEffect(() => {
     load();
+    return () => { requestNumber.current++; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectFilter, lockedProjectId]);
-
-  const totals = useMemo(
-    () =>
-      advances.reduce(
-        (x, a) => ({ amount: x.amount + a.amount, allocated: x.allocated + a.allocatedAmount, due: x.due + a.dueFromPayer }),
-        { amount: 0, allocated: 0, due: 0 }
-      ),
-    [advances]
-  );
 
   const handleProjectSelect = (value: string) => {
     const selected = projects.find((p) => String(p.id) === value);
@@ -160,7 +173,7 @@ export default function EmgAdvances() {
       setForm((previous) => ({ ...previous, amount: '', reference: '', notes: '' }));
       setAttachment(null);
       setOpen(false);
-      await invalidateEmgCache('emg/advances');
+      await Promise.all([invalidateEmgCache('emg/advances'), invalidateEmgCache('emg/projects')]);
       load();
     } catch (e: any) {
       setMessage({ severity: 'error', text: e?.message || 'تعذر تسجيل الدفعة.' });
@@ -174,7 +187,7 @@ export default function EmgAdvances() {
     try {
       await deleteEmgTransaction('advance-payment', advance.id);
       setMessage({ severity: 'success', text: 'تم حذف الدفعة نهائيًا.' });
-      await invalidateEmgCache('emg/advances');
+      await Promise.all([invalidateEmgCache('emg/advances'), invalidateEmgCache('emg/projects')]);
       load();
     } catch (e: any) {
       setMessage({ severity: 'error', text: e?.message || 'تعذر حذف الدفعة. قد توجد تخصيصات مرتبطة بها.' });
@@ -232,29 +245,68 @@ export default function EmgAdvances() {
         </Alert>
       )}
 
-      <Grid container spacing={2} sx={{ mb: 2.5 }}>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <MainCard title="إجمالي الدفعات" sx={{ borderRadius: 3 }}>
-            <Typography variant="h3" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}>
-              {formatEmgMoney(totals.amount)}
-            </Typography>
-          </MainCard>
+      {loading && !ledger ? (
+        <Grid container spacing={2} sx={{ mb: 2.5 }}>
+          {['إجمالي الدفعات', 'المخصص على حركات', 'الرصيد النقدي'].map((label) => (
+            <Grid key={label} size={{ xs: 12, md: 4 }}>
+              <MainCard title={label} sx={{ borderRadius: 3 }}>
+                <Skeleton variant="text" width="60%" height={36} />
+              </MainCard>
+            </Grid>
+          ))}
         </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <MainCard title="المخصص على حركات" sx={{ borderRadius: 3 }}>
-            <Typography variant="h3" color="primary" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}>
-              {formatEmgMoney(totals.allocated)}
-            </Typography>
-          </MainCard>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <MainCard title="مستحق على الدافع" sx={{ borderRadius: 3 }}>
-            <Typography variant="h3" color="error.main" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}>
-              {formatEmgMoney(totals.due)}
-            </Typography>
-          </MainCard>
-        </Grid>
-      </Grid>
+      ) : (
+        (ledger?.totals.length ? ledger.totals : [{ currency: 'EGP', payments: 0, allocated: 0, works: 0, cashBalance: 0 }]).map((t) => (
+          <Grid key={t.currency} container spacing={2} sx={{ mb: 2.5 }}>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <MainCard
+                title="إجمالي الدفعات"
+                secondary={ledger && ledger.totals.length > 1 ? <Chip size="small" label={t.currency} variant="outlined" /> : undefined}
+                sx={{ borderRadius: 3 }}
+              >
+                <Typography variant="h3" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}>
+                  {t.payments == null ? 'غير محدد' : formatEmgMoney(t.payments, t.currency === 'EGP' ? 'ج.م' : t.currency)}
+                </Typography>
+              </MainCard>
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <MainCard
+                title="المخصص على حركات"
+                secondary={ledger && ledger.totals.length > 1 ? <Chip size="small" label={t.currency} variant="outlined" /> : undefined}
+                sx={{ borderRadius: 3 }}
+              >
+                <Typography variant="h3" color="primary" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}>
+                  {t.allocated == null ? 'غير محدد' : formatEmgMoney(t.allocated, t.currency === 'EGP' ? 'ج.م' : t.currency)}
+                </Typography>
+              </MainCard>
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <MainCard
+                title="الرصيد النقدي"
+                secondary={ledger && ledger.totals.length > 1 ? <Chip size="small" label={t.currency} variant="outlined" /> : undefined}
+                sx={{ borderRadius: 3 }}
+              >
+                <Typography
+                  variant="h3"
+                  color={(t.cashBalance ?? 0) < 0 ? 'error.main' : 'success.main'}
+                  sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {t.cashBalance == null ? 'غير محدد' : formatEmgMoney(t.cashBalance, t.currency === 'EGP' ? 'ج.م' : t.currency)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
+                  إجمالي الأعمال: {formatEmgMoney(t.works, t.currency === 'EGP' ? 'ج.م' : t.currency)}
+                </Typography>
+              </MainCard>
+            </Grid>
+          </Grid>
+        ))
+      )}
+      {(lockedProjectId || projectFilter) &&
+        ledger?.warnings.map((w) => (
+          <Alert severity="warning" key={w} sx={{ mb: 1.5, borderRadius: 2 }}>
+            {w}
+          </Alert>
+        ))}
 
       <MainCard
         title="قائمة الدفعات"
@@ -331,28 +383,30 @@ export default function EmgAdvances() {
                       <Stack direction="row" justifyContent="space-between">
                         <Typography color="text.secondary">قيمة الدفعة</Typography>
                         <Typography fontWeight={800} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {formatEmgMoney(advance.amount)}
+                          {formatEmgMoney(advance.amount, advance.currency === 'EGP' ? 'ج.م' : advance.currency)}
                         </Typography>
                       </Stack>
                       <Stack direction="row" justifyContent="space-between">
                         <Typography color="text.secondary">المخصص</Typography>
-                        <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>{formatEmgMoney(advance.allocatedAmount)}</Typography>
-                      </Stack>
-                      <Stack direction="row" justifyContent="space-between">
-                        <Typography color="text.secondary">المتاح</Typography>
-                        <Typography color="primary.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {formatEmgMoney(advance.unallocatedAmount)}
+                        <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {formatEmgMoney(advance.allocatedAmount, advance.currency === 'EGP' ? 'ج.م' : advance.currency)}
                         </Typography>
                       </Stack>
                       <Stack direction="row" justifyContent="space-between">
-                        <Typography color="text.secondary">مستحق على الدافع</Typography>
+                        <Typography color="text.secondary">غير مخصص من الإيصال</Typography>
+                        <Typography color="primary.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {formatEmgMoney(advance.unallocatedAmount, advance.currency === 'EGP' ? 'ج.م' : advance.currency)}
+                        </Typography>
+                      </Stack>
+                      <Stack direction="row" justifyContent="space-between">
+                        <Typography color="text.secondary">زيادة التخصيص</Typography>
                         <Typography color="error.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {formatEmgMoney(advance.dueFromPayer)}
+                          {formatEmgMoney(advance.dueFromPayer, advance.currency === 'EGP' ? 'ج.م' : advance.currency)}
                         </Typography>
                       </Stack>
                     </Stack>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-                      {advance.paymentDate ? new Date(advance.paymentDate).toLocaleDateString('ar-EG') : 'التاريخ غير مدون'} · {advance.paymentMethod} · {advance.status}
+                      {advance.paymentDate ? new Date(advance.paymentDate).toLocaleDateString('ar-EG-u-nu-latn') : 'التاريخ غير مدون'} · {advance.paymentMethod} · {advance.status}
                     </Typography>
                   </CardContent>
                 </Card>
@@ -366,6 +420,101 @@ export default function EmgAdvances() {
           </Typography>
         )}
       </MainCard>
+
+      {!loading && ledger && ledger.historical.length > 0 && (
+        <MainCard
+          title={`سجل التمويل والتوزيعات التاريخية (${ledger.historical.length})`}
+          sx={{ borderRadius: 3, mt: 2.5 }}
+        >
+          <Grid container spacing={2}>
+            {ledger.historical.slice((page - 1) * 24, page * 24).map((row) => (
+              <Grid key={`source-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: '100%',
+                    borderRadius: 3,
+                    bgcolor: 'background.paper',
+                    transition: 'border-color 150ms ease',
+                    '&:hover': { borderColor: 'primary.main' }
+                  }}
+                >
+                  <CardActionArea
+                    onClick={() => (row.receiptId != null ? navigate(`/emg/advances/${row.receiptId}`) : setSelectedRecord(row))}
+                    sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}
+                  >
+                    <CardContent sx={{ width: '100%' }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                            {row.projectName}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {row.category || row.sheet}
+                          </Typography>
+                        </Box>
+                        <Chip
+                          size="small"
+                          label={recordKind(row)}
+                          color={row.basis === 'conflicting_ownership' ? 'warning' : row.fundsProject ? 'primary' : 'default'}
+                        />
+                      </Stack>
+                      <Stack spacing={0.75} sx={{ mt: 2 }}>
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography color="text.secondary">{row.isAllocation ? 'قيمة التوزيع' : 'القيمة المسجلة'}</Typography>
+                          <Typography fontWeight={800} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {formatEmgMoney(row.amount, row.currency === 'EGP' ? 'ج.م' : row.currency)}
+                          </Typography>
+                        </Stack>
+                        {row.description && (
+                          <Typography variant="body2" color="text.primary">
+                            {row.description}
+                          </Typography>
+                        )}
+                        <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                          {row.workbook} · {row.sheet}!{row.cell}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+                        {row.date ? new Date(row.date).toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}
+                      </Typography>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+          {ledger.historical.length > 24 && (
+            <Stack alignItems="center" sx={{ mt: 2.5 }}>
+              <Pagination
+                color="primary"
+                shape="rounded"
+                page={page}
+                count={Math.ceil(ledger.historical.length / 24)}
+                onChange={(_, nextPage) => setPage(nextPage)}
+              />
+            </Stack>
+          )}
+        </MainCard>
+      )}
+
+      <Dialog open={selectedRecord != null} onClose={() => setSelectedRecord(null)} fullWidth maxWidth="sm" fullScreen={downSM}>
+        {selectedRecord && <>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h3">{recordKind(selectedRecord)}</Typography>
+            <IconButton aria-label="إغلاق" onClick={() => setSelectedRecord(null)}><IconX size={20} /></IconButton>
+          </DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={1.5}>
+              <Typography variant="h4">{selectedRecord.projectName}</Typography>
+              <Typography>{formatEmgMoney(selectedRecord.amount, selectedRecord.currency)} · {selectedRecord.category}</Typography>
+              {selectedRecord.description && <Typography>{selectedRecord.description}</Typography>}
+              <Typography>{selectedRecord.date ? new Date(selectedRecord.date).toLocaleDateString('en-GB', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}</Typography>
+              <Typography color="text.secondary">{selectedRecord.workbook} · {selectedRecord.sheet}!{selectedRecord.cell}</Typography>
+            </Stack>
+          </DialogContent>
+        </>}
+      </Dialog>
 
       <Dialog open={open} onClose={() => !saving && setOpen(false)} fullWidth maxWidth="sm" fullScreen={downSM}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

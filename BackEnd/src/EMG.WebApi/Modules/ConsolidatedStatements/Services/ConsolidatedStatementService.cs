@@ -50,10 +50,14 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
         }
 
         var rows = new List<ConsolidatedStatementRow>(projects.Count);
+        var accounts = new FinalAccountsService(db);
         foreach (var project in projects)
         {
             var classification = await classificationService.PreviewAsync(project.Id, userId, isGlobalAccess, cancellationToken);
-            if (classification is not null) rows.Add(BuildRow(classification));
+            if (classification is null) continue;
+            var account = await accounts.GetAsync(project.Id,userId,isGlobalAccess,cancellationToken);
+            if (account != null) rows.Add(BuildRow(classification) with
+                { TotalWorks = account.TotalWorks, TotalPayments = account.TotalPayments, CashBalance = account.CashBalance });
         }
 
         return new ConsolidatedStatementPreview(DateTime.UtcNow,
@@ -66,7 +70,7 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
         var unresolvedLines = source.UnresolvedRecords;
         var unresolved = unresolvedLines.Select(item => new UnresolvedRecordDiagnostic(item.EntityType, item.EntityId, item.Amount, item.Status,
             item.Provenance.SourceText, item.Provenance.SourceSheet, item.Provenance.SourceRow, item.Diagnostic)).ToList();
-        var concrete = visible.Where(item => item.EntityType == "concrete").Sum(item => item.Amount);
+        var concrete = visible.Where(item => item.Classification is AccountingClassificationCode.ConcreteStation or AccountingClassificationCode.ContractorWorkmanship).Sum(item => item.Amount);
         var resolvedOperational = visible.Where(IsOperational).Sum(item => item.Amount);
         var unresolvedOperational = visible.Where(item => item.Resolution == ClassificationResolution.Unresolved && IsOperationalSource(item.EntityType)).Sum(item => item.Amount);
         var dimensions = new ConsolidatedFinancialDimensions(
@@ -79,7 +83,7 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
             Dimension(visible, item => item.Resolution == ClassificationResolution.Unresolved, "Financial rows requiring review; excluded from resolved category totals."));
 
         var officePercentage = source.OfficeSharePercentage;
-        var hasUnresolvedBasis = source.HasUnresolvedImportRecords ||
+        var hasUnresolvedBasis = source.HasUnresolvedImportRecords && !source.HasRecoveredLedger ||
             visible.Any(item => item.Resolution == ClassificationResolution.Unresolved && IsOperationalSource(item.EntityType));
         var officeBasis = hasUnresolvedBasis ? resolvedOperational : visible.Where(item => IsOperationalSource(item.EntityType)).Sum(item => item.Amount);
         var office = OfficeFeeCalculation.Calculate(officeBasis, officePercentage, dimensions.OfficePayments.CurrentAmount);
@@ -116,7 +120,8 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
         var total = source.Totals.Single(item => item.Classification == code);
         var affected = unresolved.Where(item => code == AccountingClassificationCode.ContractorWorkmanship || code == AccountingClassificationCode.ConcreteStation
             ? item.EntityType == "concrete" : false).ToList();
-        var status = source.HasUnresolvedImportRecords || total.UnresolvedRecordCount > 0 || affected.Count > 0
+        if (column == "S" && source.FundingOwnershipConflict) return new(column,heading,null,null,null,0,1,false,"INCOMPLETE_UNVERIFIED","لم تتأكد ملكية الدفعة.");
+        var status = source.HasUnresolvedImportRecords && !source.HasRecoveredLedger || total.UnresolvedRecordCount > 0 || affected.Count > 0
             ? "INCOMPLETE_UNVERIFIED" : "VERIFIED_PROJECTION";
         return new(column, heading, total.ImportedApprovedPostedAmount, total.CurrentApprovedPostedAmount, null,
             affected.Sum(item => item.Amount), affected.Count, status == "VERIFIED_PROJECTION", status,
@@ -132,9 +137,9 @@ public sealed class ConsolidatedStatementService(EmgDbContext db, IAccountingCla
 
     private static bool IsOperational(AccountingClassificationLine item) => item.Resolution == ClassificationResolution.Resolved && item.Classification is
         AccountingClassificationCode.SiteExpense or AccountingClassificationCode.Excavation or AccountingClassificationCode.ContractorWorkmanship or AccountingClassificationCode.ConcreteStation or
-        AccountingClassificationCode.Steel or AccountingClassificationCode.Buildings or AccountingClassificationCode.Plaster or AccountingClassificationCode.Insulation or AccountingClassificationCode.Electrical or AccountingClassificationCode.Plumbing;
+        AccountingClassificationCode.Steel or AccountingClassificationCode.Buildings or AccountingClassificationCode.Plaster or AccountingClassificationCode.Insulation or AccountingClassificationCode.Electrical or AccountingClassificationCode.Plumbing or AccountingClassificationCode.OtherWork;
 
-    private static bool IsOperationalSource(string entityType) => entityType is "site-movement" or "excavation" or "concrete" or "steel" or "finishing";
+    private static bool IsOperationalSource(string entityType) => entityType is "site-movement" or "excavation" or "concrete" or "steel" or "finishing" or "historical-work";
 
     private sealed record ProjectRef(int Id, string Code = "", string Name = "");
 }

@@ -1,3 +1,4 @@
+using EMG.Api.Modules.Advances.Services;
 using System.Text.RegularExpressions;
 using EMG.Api.Modules.AccountingClassification.Dtos;
 using EMG.Domain.Entities;
@@ -20,7 +21,7 @@ public sealed class AccountingClassificationService(EmgDbContext db) : IAccounti
         if (!isGlobalAccess && (userId is null || !await db.UserProjectAssignments.AnyAsync(item => item.ProjectId == projectId && item.UserId == userId && item.IsActive, cancellationToken))) return null;
 
         var lines = new List<AccountingClassificationLine>();
-        var siteMovements = await db.SiteMovements.AsNoTracking().Where(item => item.ProjectId == projectId)
+        var siteMovements = await db.SiteMovements.AsNoTracking().Where(item => item.ProjectId == projectId && item.Currency == "EGP" && item.MovementType != "وارد")
             .Select(item => new RawLine("site-movement", item.Id, item.TotalAmount, item.Status, item.Reference, item.ExpenseCategory, item.Reference, item.MovementDate, item.PaidTo)).ToListAsync(cancellationToken);
         lines.AddRange(siteMovements.Select(item => Resolve(item, AccountingClassificationCode.SiteExpense, "حركة موقع معتمدة كمصروف موقع")));
         var excavations = await db.ExcavationRecords.AsNoTracking().Where(item => item.ProjectId == projectId)
@@ -44,13 +45,73 @@ public sealed class AccountingClassificationService(EmgDbContext db) : IAccounti
             .Select(item => new RawLine("supplier-payment", item.Id, item.Amount, item.Status, item.Notes, null, item.Notes, item.PaymentDate, item.Supplier.Name)).ToListAsync(cancellationToken);
         lines.AddRange(supplierPayments.Select(item => Resolve(item, AccountingClassificationCode.SupplierPayment, "دفعة مورد منفصلة عن أصل التوريد")));
 
-        var advances = await db.AdvancePayments.AsNoTracking().Where(item => item.ProjectId == projectId).Select(item => new RawLine("advance-payment", item.Id, item.Amount, item.Status, item.Notes, null, item.Notes, item.PaymentDate, item.PayerName)).ToListAsync(cancellationToken);
+        var advances = await db.AdvancePayments.AsNoTracking().Where(item => item.ProjectId == projectId && item.Currency == "EGP").Select(item => new RawLine("advance-payment", item.Id, item.Amount, item.Status, item.Notes, null, item.Notes, item.PaymentDate, item.PayerName)).ToListAsync(cancellationToken);
         lines.AddRange(advances.Select(item => Resolve(item, AccountingClassificationCode.OwnerFunding, "إيصال/تمويل من المالك أو الدافع")));
         var advanceIds = advances.Select(item => item.EntityId).ToArray();
         var allocations = await db.AdvanceAllocations.AsNoTracking().Where(item => advanceIds.Contains(item.AdvancePaymentId)).Select(item => new RawLine("advance-allocation", item.Id, item.Amount, item.AdvancePayment.Status, item.Notes, item.AccountCategory, item.Notes, item.AllocationDate, item.AccountCategory)).ToListAsync(cancellationToken);
         lines.AddRange(allocations.Select(item => item.StoredCategory == "المكتب"
             ? Resolve(item, AccountingClassificationCode.OfficePayment, "توزيع دفعة تحت الحساب على المكتب")
             : Resolve(item, AccountingClassificationCode.FundingAllocation, "توزيع دفعة تحت الحساب؛ ليس إيصالًا جديدًا")));
+
+        var siteReceipts = await db.SiteMovements.AsNoTracking().Where(item => item.ProjectId == projectId && item.Currency == "EGP" && item.MovementType == "وارد")
+            .Select(item => new RawLine("site-receipt",item.Id,item.TotalAmount,item.Status,item.Reference,null,item.Description,item.MovementDate,item.PaidTo)).ToListAsync(cancellationToken);
+        var directSupplier = await db.SupplierPayments.Where(p => p.ProjectId == projectId && p.PaymentSource == "مالك مباشر")
+            .Select(p => new RawLine("owner-supplier-payment",p.Id,p.Amount,p.Status,p.Notes,null,p.Notes,p.PaymentDate,p.Supplier.Name)).ToListAsync(cancellationToken);
+        var directContractor = await db.ContractorPayments.Where(p => p.ProjectId == projectId && p.Currency == "EGP" && p.PaymentSource == "مالك مباشر")
+            .Select(p => new RawLine("owner-contractor-payment",p.Id,p.Amount,"مرحّل",p.Reference,null,p.Reference,p.PaymentDate,p.Contractor.Name)).ToListAsync(cancellationToken);
+        lines.AddRange(siteReceipts.Concat(directSupplier).Concat(directContractor)
+            .Select(p => Resolve(p,AccountingClassificationCode.OwnerFunding,"دفعات مشروع مثبتة")));
+
+        var works = await db.HistoricalWorkLines.AsNoTracking().Where(w => w.Batch.ProjectId == projectId && w.Currency == "EGP").ToListAsync(cancellationToken);
+        var operational = lines.Select((line,index) => (line,index)).ToDictionary(x => (x.line.EntityType,x.line.EntityId),x => x.index);
+        foreach (var w in works)
+        {
+            var code = w.Family switch
+            {
+                "site" => AccountingClassificationCode.SiteExpense, "excavation" => AccountingClassificationCode.Excavation,
+                "concrete" => AccountingClassificationCode.ConcreteStation, "workmanship" => AccountingClassificationCode.ContractorWorkmanship,
+                "steel" => AccountingClassificationCode.Steel, "building" => AccountingClassificationCode.Buildings,
+                _ => w.Category switch
+                {
+                    "المحارة" => AccountingClassificationCode.Plaster, "العزل" => AccountingClassificationCode.Insulation,
+                    "الكهرباء" => AccountingClassificationCode.Electrical, "السباكة" => AccountingClassificationCode.Plumbing,
+                    _ => AccountingClassificationCode.OtherWork
+                }
+            };
+            var provenance = new ClassificationProvenance(true,w.Description,w.Sheet,w.SourceRow,w.Cell);
+            if (w.SupplierId != null)
+                lines.Add(new("historical-supplier-work",checked((int)w.Id),AccountingClassificationCode.SupplierSupply,
+                    ClassificationResolution.Resolved,w.Amount,"مرحّل",true,provenance,"",w.WorkDate,w.Party));
+            if (w.OperationalId is int id)
+            {
+                var type = w.OperationalTable switch
+                {
+                    "SiteMovement" => "site-movement", "FinishingRecord" => "finishing", "ConcreteRecord" => "concrete",
+                    "ExcavationRecord" => "excavation", "SteelRecord" => "steel", _ => ""
+                };
+                if (operational.TryGetValue((type,id),out var index))
+                    lines[index] = lines[index] with { Classification = code, Resolution = ClassificationResolution.Resolved, Provenance = provenance, Diagnostic = "" };
+                continue;
+            }
+            lines.Add(new("historical-work",checked((int)w.Id),code,ClassificationResolution.Resolved,w.Amount,"مرحّل",true,
+                provenance,"",w.WorkDate,w.Party));
+        }
+        var supplierSettlements = await db.HistoricalSettlements.AsNoTracking().Where(s => s.Batch.ProjectId == projectId && s.Currency == "EGP" && s.SupplierId != null).ToListAsync(cancellationToken);
+        lines.AddRange(supplierSettlements.Select(s => new AccountingClassificationLine("historical-supplier-payment",checked((int)s.Id),
+            AccountingClassificationCode.SupplierPayment,ClassificationResolution.Resolved,s.Amount,"مرحّل",true,
+            new(true,s.Narrative,s.Sheet,int.TryParse(Regex.Match(s.Cell,@"[0-9]+$").Value,out var row) ? row : null,s.Cell),"",s.SettlementDate,s.Party)));
+        var funding = await db.HistoricalFundingLines.AsNoTracking().Where(f => f.Batch.ProjectId == projectId && f.Currency == "EGP").ToListAsync(cancellationToken);
+        var conflict = funding.Any(f => f.Basis == "conflicting_ownership");
+        var basis = new HistoricalFundingBasis(funding);
+        foreach (var f in funding)
+        {
+            void Add(AccountingClassificationCode code) =>
+                lines.Add(new("historical-funding",checked((int)f.Id),code,ClassificationResolution.Resolved,f.Amount,"مرحّل",true,
+                    new(true,f.Narrative,f.Sheet,f.SourceRow,f.Cell),"",f.SourceDate,""));
+            if (basis.Allocates(f))
+                Add(f.Category == "المكتب" ? AccountingClassificationCode.OfficePayment : AccountingClassificationCode.FundingAllocation);
+            if (basis.AdditionalFunding(f) || f.Basis == "verified_zero") Add(AccountingClassificationCode.OwnerFunding);
+        }
 
         var totals = AllCodes.Select(code =>
         {
@@ -71,7 +132,7 @@ public sealed class AccountingClassificationService(EmgDbContext db) : IAccounti
         return new AccountingClassificationPreview(project.Id, project.Code, project.Name, project.OfficeSharePercentage,
             "Lines are read-only; current totals include only معتمد/مرحّل. Imported totals are the imported subset of those same visible rows.",
             totals, lines, lines.Where(item => item.Resolution == ClassificationResolution.Unresolved).ToList())
-        { HasUnresolvedImportRecords = incompleteImport };
+        { HasUnresolvedImportRecords = incompleteImport, HasRecoveredLedger = works.Count > 0 || funding.Count > 0, FundingOwnershipConflict = conflict };
     }
 
     private static AccountingClassificationLine ClassifyConcrete(RawLine item)

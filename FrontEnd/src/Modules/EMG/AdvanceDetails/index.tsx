@@ -1,3 +1,4 @@
+import { invalidateEmgCache } from 'hooks/useEmgData';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -40,8 +41,8 @@ import {
 } from 'api/emg';
 import useAuth from 'hooks/useAuth';
 
-const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
-const fmt = (v: number) => `${money.format(v || 0)} ج.م`;
+const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+
 
 export default function AdvanceDetails() {
   const { advanceId } = useParams();
@@ -49,6 +50,7 @@ export default function AdvanceDetails() {
   const { user } = useAuth();
   const canAllocate = user?.permissions?.includes('advances.allocate');
   const [advance, setAdvance] = useState<EmgAdvance | null>(null);
+  const fmt = (value: number) => `${money.format(value)} ${advance?.currency ?? 'EGP'}`;
   const [report, setReport] = useState<EmgProjectReport | null>(null);
   const [allocations, setAllocations] = useState<EmgAdvanceAllocation[]>([]);
   const [attachments, setAttachments] = useState<EmgAttachment[]>([]);
@@ -96,7 +98,7 @@ export default function AdvanceDetails() {
     : null;
   const availableAdvance = advance?.unallocatedAmount ?? 0;
   const advanceWarning = Number.isFinite(allocationAmount) && allocationAmount > availableAdvance
-    ? `هذا التخصيص سيتجاوز المتاح في الدفعة بمقدار ${fmt(allocationAmount - availableAdvance)}. سيظهر المبلغ كمستحق على الدافع، وسيتم السماح به.`
+    ? `هذا التخصيص سيتجاوز المتاح في الدفعة بمقدار ${fmt(allocationAmount - availableAdvance)}. اختر مبلغًا ضمن المتبقي على الإيصال.`
     : null;
   const closePreview = () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -150,6 +152,7 @@ export default function AdvanceDetails() {
         amount: Number(amount),
         notes
       });
+      await Promise.all([invalidateEmgCache('emg/projects'), invalidateEmgCache('emg/advances')]);
       setMessage({ severity: 'success', text: 'تم حفظ توزيع الدفعة.' });
       setTargetId('');
       setAmount('');
@@ -212,13 +215,13 @@ export default function AdvanceDetails() {
             </Typography>
           </Box>
           <Box>
-            <Typography color="text.secondary">المتاح</Typography>
+            <Typography color="text.secondary">غير مخصص من الإيصال</Typography>
             <Typography variant="h3" color="success.main">
               {fmt(advance.unallocatedAmount)}
             </Typography>
           </Box>
           <Box>
-            <Typography color="text.secondary">مستحق على الدافع</Typography>
+            <Typography color="text.secondary">زيادة التخصيص</Typography>
             <Typography variant="h3" color="error.main">
               {fmt(advance.dueFromPayer)}
             </Typography>
@@ -315,7 +318,7 @@ export default function AdvanceDetails() {
                       <Box>
                         <Typography fontWeight={700}>{label}</Typography>
                         <Typography variant="body2" color="text.secondary">
-                          {item.accountCategory} · {new Date(item.allocationDate).toLocaleDateString('ar-EG')} ·{' '}
+                          {item.accountCategory} · {new Date(item.allocationDate).toLocaleDateString('ar-EG-u-nu-latn')} ·{' '}
                           {item.notes || 'بدون ملاحظات'}
                         </Typography>
                       </Box>
@@ -371,7 +374,7 @@ export default function AdvanceDetails() {
                             {file.originalFileName}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {Math.ceil(file.sizeInBytes / 1024)} ك.ب · {new Date(file.uploadedAtUtc).toLocaleDateString('ar-EG')}
+                            {Math.ceil(file.sizeInBytes / 1024)} ك.ب · {new Date(file.uploadedAtUtc).toLocaleDateString('ar-EG-u-nu-latn')}
                           </Typography>
                         </Box>
                       </Stack>

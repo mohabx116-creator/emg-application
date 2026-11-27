@@ -17,7 +17,8 @@ public enum AccountingClassificationCode
     FundingAllocation,
     SupplierSupply,
     SupplierPayment,
-    Unresolved
+    Unresolved,
+    OtherWork
 }
 
 public enum ClassificationResolution
@@ -64,5 +65,7 @@ public sealed record AccountingClassificationPreview(
     IReadOnlyList<AccountingClassificationLine> Lines,
     IReadOnlyList<AccountingClassificationLine> UnresolvedRecords)
 {
+    public bool HasRecoveredLedger { get; init; }
+    public bool FundingOwnershipConflict { get; init; }
     public bool HasUnresolvedImportRecords { get; init; }
 }

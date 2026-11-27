@@ -34,7 +34,10 @@ internal sealed record ReportBuilderProjectAmounts(
     int ProjectId,
     string ProjectCode,
     string ProjectName,
-    IReadOnlyDictionary<string, ReportBuilderAmounts> ByCategory);
+    IReadOnlyDictionary<string, ReportBuilderAmounts> ByCategory)
+{
+    public bool HasRecoveredLedger { get; init; }
+}
 
 public sealed record ReportBuilderSummaryRow(
     string GroupKey,

@@ -16,8 +16,8 @@ export type EmgProject = {
   totalIssued: number;
   totalReceived: number;
   totalWorks: number;
-  totalPayments: number;
-  cashBalance: number;
+  totalPayments: number | null;
+  cashBalance: number | null;
   cashBalanceStatus: string;
 };
 
@@ -77,8 +77,8 @@ export type EmgFinalAccount = {
   outgoingByCategory?: Record<string, number>;
   incomingByCategory?: Record<string, number>;
   totalWorks?: number;
-  totalPayments?: number;
-  cashBalance?: number;
+  totalPayments?: number | null;
+  cashBalance?: number | null;
   cashBalanceStatus?: string;
 };
 
@@ -167,6 +167,9 @@ export type EmgStatementDimension = {
 };
 
 export type EmgConsolidatedStatementRow = {
+  totalWorks: number;
+  totalPayments: number | null;
+  cashBalance: number | null;
   projectId: number;
   projectCode: string;
   projectName: string;
@@ -493,6 +496,7 @@ export type EmgSupplierPayment = {
   paymentSource: string;
 };
 export type EmgAdvance = {
+  currency: string;
   id: number;
   projectId: number;
   projectName: string;
@@ -903,6 +907,18 @@ export async function getEmgSteel(projectId: number): Promise<EmgSteel[]> {
 }
 export async function createEmgSteel(payload: Record<string, unknown>): Promise<EmgSteel> {
   return (await axios.post<EmgSteel>('/api/steel', payload)).data;
+}
+export type EmgAdvanceLedger = {
+  directFunding: Array<{ id: number; projectId: number; projectName: string; source: string; party: string; date: string | null; amount: number; currency: string; reference: string }>;
+  receipts: EmgAdvance[];
+  historical: Array<{ id: number; projectId: number; projectName: string; workbook: string; sheet: string; cell: string;
+    date: string | null; description: string; category: string; amount: number; currency: string; basis: string;
+    fundsProject: boolean; isAllocation: boolean; receiptId: number | null }>;
+  totals: Array<{ currency: string; works: number; payments: number | null; allocated: number | null; cashBalance: number | null }>;
+  warnings: string[];
+};
+export async function getEmgAdvanceLedger(projectId?: number): Promise<EmgAdvanceLedger> {
+  return (await axios.get<EmgAdvanceLedger>('/api/advances/ledger', { params: { projectId } })).data;
 }
 export async function getEmgAdvances(projectId?: number): Promise<EmgAdvance[]> {
   return (await axios.get<EmgAdvance[]>('/api/advances', { params: projectId ? { projectId } : undefined })).data;

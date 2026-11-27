@@ -150,6 +150,10 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
         var finishing = finishingRows.Sum(item => item.TotalAmount) + recovered.GetValueOrDefault("finishing") + recovered.GetValueOrDefault("building");
         var supplies = await db.SupplierSupplies.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.TotalAmount, cancellationToken);
         var payments = await db.SupplierPayments.Where(item => item.ProjectId == projectId && (item.Status == "معتمد" || item.Status == "مرحّل")).SumAsync(item => item.Amount, cancellationToken);
+        supplies += await db.HistoricalWorkLines.Where(w => w.Batch.ProjectId == projectId && w.Currency == "EGP" && w.SupplierId != null)
+            .SumAsync(w => w.Amount,cancellationToken);
+        payments += await db.HistoricalSettlements.Where(s => s.Batch.ProjectId == projectId && s.Currency == "EGP" && s.SupplierId != null)
+            .SumAsync(s => s.Amount,cancellationToken);
         var checks = new List<AuditCheck>
         {
             new("رصيد حساب الموردين", true, supplies - payments,

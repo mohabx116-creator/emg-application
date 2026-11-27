@@ -20,10 +20,12 @@ public sealed class ReportBuilderService(EmgDbContext db, IAccountingClassificat
         var projects = await projectsQuery.OrderBy(project => project.Code).ThenBy(project => project.Id).Select(project => new ProjectRef(project.Id)).ToListAsync(cancellationToken);
 
         var lines = new List<BuilderLine>();
+        var recoveredProjects = new HashSet<int>();
         foreach (var project in projects)
         {
             var preview = await classificationService.PreviewAsync(project.Id, userId, isGlobalAccess, cancellationToken);
             if (preview is null) continue;
+            if (preview.HasRecoveredLedger) recoveredProjects.Add(project.Id);
             lines.AddRange(preview.Lines.Select(line => new BuilderLine(preview.ProjectId, preview.ProjectCode, preview.ProjectName, line)));
         }
 
@@ -44,7 +46,7 @@ public sealed class ReportBuilderService(EmgDbContext db, IAccountingClassificat
         return new ReportBuilderPreview(DateTime.UtcNow, query, query.Columns?.Count > 0 ? query.Columns : DefaultColumns,
             summary, transactions, warnings, complete)
         {
-            Projects = includeProjectAmounts ? BuildProjectAmounts(visible) : []
+            Projects = includeProjectAmounts ? BuildProjectAmounts(visible).Select(p => p with { HasRecoveredLedger = recoveredProjects.Contains(p.ProjectId) }).ToList() : []
         };
     }
 

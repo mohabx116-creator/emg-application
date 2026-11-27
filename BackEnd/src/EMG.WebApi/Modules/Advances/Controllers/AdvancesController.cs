@@ -17,6 +17,14 @@ public sealed class AdvancesController(IAdvancesService advancesService) : Contr
     public async Task<ActionResult<IReadOnlyList<AdvanceSummary>>> Get(int? projectId, CancellationToken cancellationToken) =>
         Ok(await advancesService.GetAsync(projectId, CurrentUserId(), HasGlobalProjectAccess(), cancellationToken));
 
+    [HttpGet("ledger")]
+    [PermissionAuthorize("advances.view")]
+    public async Task<ActionResult<AdvanceLedger>> Ledger(int? projectId, CancellationToken cancellationToken)
+    {
+        var ledger = await advancesService.GetLedgerAsync(projectId,CurrentUserId(),HasGlobalProjectAccess(),cancellationToken);
+        return ledger is null ? NotFound() : Ok(ledger);
+    }
+
     [HttpPost]
     [PermissionAuthorize("advances.create")]
     public async Task<ActionResult<AdvanceSummary>> Create(CreateAdvanceRequest request, CancellationToken cancellationToken)

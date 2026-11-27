@@ -177,8 +177,9 @@ internal static class ReportBuilderXlsxWriter
         void Fill(ReportWorksheet sheet, string category, int first, int capacity, string? number, string? date, string? text, string? party, string amount)
         {
             var rows = byCategory[category].ToArray();
-            EnsureCapacity(sheet.Name, rows.Length, capacity);
-            for (var i = 0; i < rows.Length; i++)
+            // Historical rows beyond the fixed template are already present in the uncapped transaction sheet.
+            if (!project.HasRecoveredLedger) EnsureCapacity(sheet.Name, rows.Length, capacity);
+            for (var i = 0; i < Math.Min(rows.Length,capacity); i++)
             {
                 var line = rows[i];
                 var row = first + i;
@@ -233,7 +234,12 @@ internal static class ReportBuilderXlsxWriter
         account.Set("G9", Total("ContractorWorkmanship"));
         account.Set("H9", Total("ConcreteStation"));
         account.Set("I9", Total("Steel"));
+        var workCategories = MasterCategories.Where(c => c.Column != "R" && c.Column != "S").Select(c => c.Category).Append("OtherWork");
+        decimal? works = showSummary && (project.HasRecoveredLedger || workCategories.Any(project.ByCategory.ContainsKey))
+            ? workCategories.Sum(c => Total(c) ?? 0m) : null;
+        account.Set("K9", works);
         account.Set("K10", Total("OwnerFunding"));
+        account.Set("K15", Total("OwnerFunding") - works);
         account.Set("F12", Total("OfficePayment"));
         yield return account;
 

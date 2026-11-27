@@ -48,7 +48,7 @@ public sealed class ProjectsService(IProjectsRepository repository, IFinalAccoun
             FinancialWarnings = account.FinancialWarnings,
             HistoricalFundingUnknown = account.HistoricalFundingUnknown,
             TotalIssued = account.TotalWorks,
-            TotalReceived = account.TotalPayments
+            TotalReceived = account.TotalIncoming
         };
     }
 }

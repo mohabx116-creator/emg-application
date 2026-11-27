@@ -1,3 +1,4 @@
+import FinancialSummary from '../FinancialSummary';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -51,7 +52,7 @@ import useAuth from 'hooks/useAuth';
 import { EmgConsolidatedStatementRow, EmgStatementColumn, getEmgConsolidatedStatementPreview } from 'api/emg';
 import { localizeDiagnosticText, localizeEntityType } from '../reportLabels';
 
-const money = new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatMoney = (value: number | null | undefined) => (value === null || value === undefined ? '—' : `${money.format(value)} ج.م`);
 
 const statusLabel: Record<string, string> = {
@@ -72,7 +73,7 @@ function ColumnValue({ column, showImported }: { column: EmgStatementColumn; sho
   const imported = column.isOfficial ? column.importedAmount : null;
   const isZero = (amount === null || amount === 0) && (!showImported || imported === null || imported === 0);
 
-  if (isZero && !diagnostic) {
+  if (isZero && amount === null && !diagnostic) {
     return (
       <Typography variant="body2" sx={{ color: 'text.disabled', fontWeight: 500, textAlign: 'end', minWidth: 112 }}>
         —
@@ -174,7 +175,6 @@ function DetailsDialog({ row, onClose }: { row: EmgConsolidatedStatementRow | nu
     ['التكاليف التشغيلية', row.dimensions.operationalCosts],
     ['توريدات الموردين', row.dimensions.supplierSupplies],
     ['مدفوعات الموردين', row.dimensions.supplierPayments],
-    ['تمويل المالك', row.dimensions.ownerFunding],
     ['توزيعات الدفعات', row.dimensions.advanceAllocations],
     ['مدفوعات المكتب', row.dimensions.officePayments]
   ] as const;
@@ -222,6 +222,7 @@ function DetailsDialog({ row, onClose }: { row: EmgConsolidatedStatementRow | nu
       </DialogTitle>
 
       <DialogContent dividers sx={{ p: 3 }}>
+        <FinancialSummary totalWorks={row.totalWorks} totalPayments={row.totalPayments} cashBalance={row.cashBalance} />
         <Alert severity={row.isComplete ? 'success' : 'warning'} sx={{ mb: 2.5, borderRadius: 2 }}>
           {row.isComplete
             ? 'كل السجلات المالية لهذا المشروع مصنّفة بالكامل ضمن الأبعاد المعتمدة.'
