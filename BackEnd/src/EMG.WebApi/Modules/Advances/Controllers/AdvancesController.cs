@@ -39,6 +39,14 @@ public sealed class AdvancesController(IAdvancesService advancesService) : Contr
     public async Task<ActionResult<IReadOnlyList<AllocationSummary>>> GetAllocations(int advanceId, CancellationToken cancellationToken) =>
         Ok(await advancesService.GetAllocationsAsync(advanceId, CurrentUserId(), HasGlobalProjectAccess(), cancellationToken));
 
+    [HttpGet("{advanceId:int}/allocation-targets")]
+    [PermissionAuthorize("advances.allocate")]
+    public async Task<ActionResult<IReadOnlyList<AllocationTarget>>> Targets(int advanceId, CancellationToken cancellationToken)
+    {
+        var targets = await advancesService.GetAllocationTargetsAsync(advanceId, CurrentUserId(), HasGlobalProjectAccess(), cancellationToken);
+        return targets is null ? NotFound() : Ok(targets);
+    }
+
     [HttpPost("{advanceId:int}/allocations")]
     [PermissionAuthorize("advances.allocate")]
     public async Task<ActionResult<AllocationSummary>> Allocate(int advanceId, AllocateAdvanceRequest request, CancellationToken cancellationToken)

@@ -93,3 +93,7 @@ The five sections load the project independently. Partial detail failures preser
 ### Currency and financial knowledge
 
 Project and consolidated account DTOs expose currency-specific summaries. Report, portfolio and engineer views identify known partial funding and display failed requests explicitly. Frontend tests covered zero, unknown, partial, later recognized funding and complete totals. TypeScript passed. Operational currency entry is tracked separately.
+
+### Project allocation targets
+
+The allocation permission grants a scoped read of eligible targets. Currency must match, and recorded owner payments and linked allocations reduce the eligible amount. Two focused allocation tests passed, including a partial direct-owner payment and allocations from two receipts. No live allocations were written.

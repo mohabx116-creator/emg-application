@@ -1,5 +1,6 @@
 import { invalidateEmgCache } from 'hooks/useEmgData';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { getAllocationTargets, type AllocationTarget } from 'api/allocationTargets';
 import { Link, useParams } from 'react-router-dom';
 import {
   Alert,
@@ -31,12 +32,10 @@ import {
   EmgAdvance,
   EmgAdvanceAllocation,
   EmgAttachment,
-  EmgProjectReport,
   getEmgAdvance,
   getEmgAdvanceAllocations,
   getEmgAttachmentPreviewUrl,
   getEmgAttachments,
-  getEmgProjectReport,
   uploadEmgAttachment
 } from 'api/emg';
 import useAuth from 'hooks/useAuth';
@@ -51,7 +50,9 @@ export default function AdvanceDetails() {
   const canAllocate = user?.permissions?.includes('advances.allocate');
   const [advance, setAdvance] = useState<EmgAdvance | null>(null);
   const fmt = (value: number) => `${money.format(value)} ${advance?.currency ?? 'EGP'}`;
-  const [report, setReport] = useState<EmgProjectReport | null>(null);
+  const sequence = useRef(0);
+  const [loadError, setLoadError] = useState(false);
+  const [targets, setTargets] = useState<AllocationTarget[]>([]);
   const [allocations, setAllocations] = useState<EmgAdvanceAllocation[]>([]);
   const [attachments, setAttachments] = useState<EmgAttachment[]>([]);
   const [targetType, setTargetType] = useState('movement');
@@ -67,31 +68,35 @@ export default function AdvanceDetails() {
   const [uploading, setUploading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ clientName: '', payerName: '', amount: '', paymentDate: '', paymentMethod: '', reference: '', notes: '' });
-  const load = () =>
-    Promise.all([getEmgAdvance(id), getEmgAdvanceAllocations(id), getEmgAttachments('advance-payment', id).catch(() => [])])
-      .then(async ([a, al, files]) => {
-        setAdvance(a);
-        setAllocations(al);
-        setAttachments(files);
-        if (a) setReport(await getEmgProjectReport(a.projectId));
-      })
-      .catch(() => setMessage({ severity: 'error', text: 'تعذر تحميل تفاصيل الدفعة.' }));
+  const load = async () => {
+    const current = ++sequence.current;
+    setLoadError(false);
+    try {
+      const [receipt, rows, files, available] = await Promise.all([
+        getEmgAdvance(id), getEmgAdvanceAllocations(id), getEmgAttachments('advance-payment', id).catch(() => []),
+        canAllocate ? getAllocationTargets(id).catch(() => null) : Promise.resolve([])
+      ]);
+      if (sequence.current !== current) return;
+      setAdvance(receipt);
+      setAllocations(rows);
+      setAttachments(files);
+      setTargets(available ?? []);
+      if (!receipt) setLoadError(true);
+      if (!available) setMessage({ severity: 'error', text: 'تعذر تحميل الحركات والمدفوعات المتاحة للتخصيص.' });
+    } catch {
+      if (sequence.current === current) { setLoadError(true); setAdvance(null); }
+    }
+  };
   useEffect(() => {
-    if (Number.isInteger(id)) load();
-  }, [id]);
-  const selectedMovement = useMemo(
-    () => report?.movements.find((item) => item.id === Number(targetId)),
-    [report?.movements, targetId]
-  );
-  const selectedSupplierPayment = useMemo(
-    () => report?.supplierPayments.find((item) => item.id === Number(targetId)),
-    [report?.supplierPayments, targetId]
-  );
-  const selectedTargetAmount = selectedMovement?.amount ?? selectedSupplierPayment?.amount ?? null;
-  const selectedTargetAllocated = selectedTargetAmount === null ? 0 : allocations
-    .filter((item) => selectedMovement ? item.siteMovementId === selectedMovement.id : selectedSupplierPayment ? item.supplierPaymentId === selectedSupplierPayment.id : false)
-    .reduce((sum, item) => sum + item.amount, 0);
-  const targetRemaining = selectedTargetAmount === null ? null : selectedTargetAmount - selectedTargetAllocated;
+    setAdvance(null);
+    setTargetId('');
+    setTargets([]);
+    setMessage(null);
+    if (Number.isInteger(id)) void load();
+    return () => { ++sequence.current; };
+  }, [id, canAllocate]);
+  const selectedTarget = targets.find(item => item.kind === targetType && item.id === Number(targetId));
+  const targetRemaining = selectedTarget?.remaining ?? null;
   const allocationAmount = Number(amount);
   const targetWarning = targetRemaining !== null && Number.isFinite(allocationAmount) && allocationAmount > targetRemaining
     ? `قيمة التخصيص أكبر من المتبقي على المستهدف بمقدار ${fmt(allocationAmount - targetRemaining)}.`
@@ -100,6 +105,8 @@ export default function AdvanceDetails() {
   const advanceWarning = Number.isFinite(allocationAmount) && allocationAmount > availableAdvance
     ? `هذا التخصيص سيتجاوز المتاح في الدفعة بمقدار ${fmt(allocationAmount - availableAdvance)}. اختر مبلغًا ضمن المتبقي على الإيصال.`
     : null;
+  const canSubmitAllocation = Number.isFinite(allocationAmount) && allocationAmount > 0 && !targetWarning && !advanceWarning &&
+    (targetType === 'category' || !!selectedTarget);
   const closePreview = () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
@@ -139,8 +146,8 @@ export default function AdvanceDetails() {
   const remove = async () => { if (!window.confirm('سيتم حذف الدفعة نهائيًا. هل تريد المتابعة؟')) return; try { await deleteEmgTransaction('advance-payment', id); window.location.assign(advance ? `/emg/projects/${advance.projectId}/advances` : '/emg/advances'); } catch (error: any) { setMessage({ severity: 'error', text: error?.message || 'تعذر حذف الدفعة. قد توجد تخصيصات مرتبطة بها.' }); } };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!Number.isFinite(allocationAmount) || allocationAmount <= 0 || targetWarning) {
-      setMessage({ severity: 'error', text: targetWarning || 'أدخل قيمة تخصيص أكبر من صفر.' });
+    if (!canSubmitAllocation) {
+      setMessage({ severity: 'error', text: targetWarning || advanceWarning || 'اختر هدفًا متاحًا وأدخل مبلغًا موجبًا.' });
       return;
     }
     setSaving(true);
@@ -164,6 +171,7 @@ export default function AdvanceDetails() {
       setSaving(false);
     }
   };
+  if (loadError) return <Alert severity="error">تعذر تحميل تفاصيل الدفعة أو لا تملك صلاحية الوصول إليها.</Alert>;
   if (!advance)
     return (
       <Box sx={{ p: 4 }}>
@@ -270,17 +278,9 @@ export default function AdvanceDetails() {
                     label={targetType === 'movement' ? 'حركة الموقع' : 'دفعة المورد'}
                     onChange={(e) => setTargetId(e.target.value)}
                   >
-                    {targetType === 'movement'
-                      ? report?.movements.map((item) => (
-                          <MenuItem key={item.id} value={item.id}>
-                            {item.description} · {fmt(item.amount)}
-                          </MenuItem>
-                        ))
-                      : report?.supplierPayments.map((item) => (
-                          <MenuItem key={item.id} value={item.id}>
-                            {item.supplierName} · {fmt(item.amount)}
-                          </MenuItem>
-                        ))}
+                    {targets.filter(item => item.kind === targetType).map(item => (
+                      <MenuItem key={item.id} value={String(item.id)}>{item.description} · {fmt(item.remaining)}</MenuItem>
+                    ))}
                   </Select>
                 </FormControl>
               )}
@@ -289,7 +289,7 @@ export default function AdvanceDetails() {
               {targetWarning && <Alert severity="error">{targetWarning}</Alert>}
               {advanceWarning && <Alert severity="warning">{advanceWarning}</Alert>}
               <TextField label="ملاحظات" value={notes} onChange={(e) => setNotes(e.target.value)} />
-              <Button type="submit" disabled={saving || !Number.isFinite(allocationAmount) || allocationAmount <= 0 || Boolean(targetWarning)} variant="contained" startIcon={<IconPlus size={18} />}>
+              <Button type="submit" disabled={saving || !canSubmitAllocation} variant="contained" startIcon={<IconPlus size={18} />}>
                 {saving ? 'جاري الحفظ...' : 'حفظ التوزيع'}
               </Button>
             </Stack>
@@ -300,12 +300,12 @@ export default function AdvanceDetails() {
         <Grid size={{ xs: 12, md: 7 }}>
           <MainCard title="سجل التخصيصات">
             {allocations.map((item) => {
-              const movement = report?.movements.find((entry) => entry.id === item.siteMovementId);
-              const payment = report?.supplierPayments.find((entry) => entry.id === item.supplierPaymentId);
+              const movement = targets.find(entry => entry.kind === 'movement' && entry.id === item.siteMovementId);
+              const payment = targets.find(entry => entry.kind === 'supplier' && entry.id === item.supplierPaymentId);
               const label = movement
                 ? `حركة موقع: ${movement.description}`
                 : payment
-                  ? `دفعة مورد: ${payment.supplierName}`
+                  ? `دفعة مورد: ${payment.description}`
                   : item.siteMovementId
                     ? `حركة موقع #${item.siteMovementId}`
                     : item.supplierPaymentId

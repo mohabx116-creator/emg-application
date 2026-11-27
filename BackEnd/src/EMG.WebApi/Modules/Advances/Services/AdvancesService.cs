@@ -75,17 +75,17 @@ public sealed partial class AdvancesService(EmgDbContext db) : IAdvancesService
             var alreadyAllocatedToAdvance = await db.AdvanceAllocations.Where(item => item.AdvancePaymentId == advanceId).SumAsync(item => item.Amount, cancellationToken);
             if (request.Amount > advance.Amount - alreadyAllocatedToAdvance) return null;
 
-            if (request.SiteMovementId is not null)
+            if ((request.SiteMovementId ?? request.SupplierPaymentId) is int targetId)
             {
-                var movement = await db.SiteMovements.AsNoTracking().FirstOrDefaultAsync(item => item.Id == request.SiteMovementId && item.ProjectId == advance.ProjectId, cancellationToken);
-                var alreadyAllocated = await db.AdvanceAllocations.Where(item => item.SiteMovementId == request.SiteMovementId).SumAsync(item => item.Amount, cancellationToken);
-                if (movement is null || movement.Status is not ("معتمد" or "مرحّل") || request.Amount > movement.TotalAmount - alreadyAllocated) return null;
-            }
-            if (request.SupplierPaymentId is not null)
-            {
-                var payment = await db.SupplierPayments.AsNoTracking().FirstOrDefaultAsync(item => item.Id == request.SupplierPaymentId && item.ProjectId == advance.ProjectId, cancellationToken);
-                var alreadyAllocated = await db.AdvanceAllocations.Where(item => item.SupplierPaymentId == request.SupplierPaymentId).SumAsync(item => item.Amount, cancellationToken);
-                if (payment is null || payment.Status is not ("معتمد" or "مرحّل") || request.Amount > payment.Amount - alreadyAllocated) return null;
+                // Different receipts can fund the same invoice through its movement or a supplier payment.
+                // Serialize target validation across receipts in this project. The receipt lock above still applies.
+                if (db.Database.IsNpgsql())
+                    await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT pg_advisory_xact_lock(hashtext('emg.advance-allocation'), {advance.ProjectId})", cancellationToken);
+                var kind = request.SiteMovementId.HasValue ? "movement" : "supplier";
+                var targets = await ReadTargetsAsync(advance, cancellationToken);
+                var target = targets.SingleOrDefault(item => item.Kind == kind && item.Id == targetId);
+                if (target == null || request.Amount > target.Remaining) return null;
             }
             var allocation = new AdvanceAllocation
             {
