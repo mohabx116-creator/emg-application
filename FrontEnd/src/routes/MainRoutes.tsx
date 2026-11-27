@@ -23,6 +23,7 @@ const EmgSteel = Loadable(lazy(() => import('Modules/EMG/Steel')));
 const EmgFinishing = Loadable(lazy(() => import('Modules/EMG/Finishing')));
 const EmgSuppliers = Loadable(lazy(() => import('Modules/EMG/Suppliers')));
 const EmgSupplierDetails = Loadable(lazy(() => import('Modules/EMG/SupplierDetails')));
+const ActiveProjectRedirect = Loadable(lazy(() => import('Modules/EMG/ActiveProjectRedirect')));
 const EmgAdvances = Loadable(lazy(() => import('Modules/EMG/Advances')));
 const EmgAdvanceDetails = Loadable(lazy(() => import('Modules/EMG/AdvanceDetails')));
 const EmgAttendance = Loadable(lazy(() => import('Modules/EMG/Attendance')));
@@ -276,9 +277,10 @@ const MainRoutes = {
       path: '/emg/contractor-statements',
       element: emgGuard(['suppliers.view'], <EmgContractorStatements />)
     },
+    { path: '/emg/projects/:projectId/advances', element: emgGuard(['advances.manage', 'advances.view'], <EmgAdvances />) },
     {
       path: '/emg/advances',
-      element: emgGuard(['advances.manage', 'advances.view'], <EmgAdvances />)
+      element: emgGuard(['advances.manage', 'advances.view'], <ActiveProjectRedirect section="advances" />)
     },
     {
       path: '/emg/advances/:advanceId',

@@ -909,6 +909,10 @@ export async function createEmgSteel(payload: Record<string, unknown>): Promise<
   return (await axios.post<EmgSteel>('/api/steel', payload)).data;
 }
 export type EmgAdvanceLedger = {
+  fundingEntries: Array<{ kind: 'advance' | 'historical' | 'direct'; advance: EmgAdvance | null;
+    historical: EmgAdvanceLedger['historical'][number] | null; direct: EmgAdvanceLedger['directFunding'][number] | null }>;
+  allocationEntries: Array<{ projectId: number; currency: string; allocation: EmgAdvanceAllocation | null;
+    historical: EmgAdvanceLedger['historical'][number] | null }>;
   directFunding: Array<{ id: number; projectId: number; projectName: string; source: string; party: string; date: string | null; amount: number; currency: string; reference: string }>;
   receipts: EmgAdvance[];
   historical: Array<{ id: number; projectId: number; projectName: string; workbook: string; sheet: string; cell: string;

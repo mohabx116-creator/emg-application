@@ -25,7 +25,7 @@ import {
   useMediaQuery,
   useTheme
 } from '@mui/material';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { IconArrowRight, IconCash, IconPlus, IconReceipt, IconRefresh, IconTrash, IconX } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import { createEmgAdvance, deleteEmgTransaction, EmgAdvance, EmgAdvanceLedger, getEmgAdvanceLedger, uploadEmgAttachment } from 'api/emg';
@@ -56,7 +56,6 @@ function recordKind(row: HistoricalRecord) {
 }
 
 export default function EmgAdvances() {
-  const navigate = useNavigate();
   const [selectedRecord, setSelectedRecord] = useState<HistoricalRecord | null>(null);
   const { projectId: routeProjectId } = useParams();
   const lockedProjectId = routeProjectId ? Number(routeProjectId) : null;
@@ -66,11 +65,18 @@ export default function EmgAdvances() {
   const { setActiveProjectId } = useActiveProject();
   const { data: projects = [] } = useEmgProjectsCache(true);
 
-  const canCreate = user?.permissions?.includes('advances.create');
+  const canCreate = !!lockedProjectId && user?.permissions?.includes('advances.create');
   const [ledger, setLedger] = useState<EmgAdvanceLedger | null>(null);
   const [page, setPage] = useState(1);
   const requestNumber = useRef(0);
-  const advances = ledger?.receipts ?? [];
+  const [showEvidence, setShowEvidence] = useState(false);
+  const advances = ledger?.fundingEntries.flatMap(entry => entry.advance ? [entry.advance] : []) ?? [];
+  const recognizedHistoricalReceipts = ledger?.fundingEntries.flatMap(entry => entry.historical ? [entry.historical] : []) ?? [];
+  const directReceipts = ledger?.fundingEntries.flatMap(entry => entry.direct ? [entry.direct] : []) ?? [];
+  const historicalAllocations = ledger?.allocationEntries.flatMap(entry => entry.historical ? [entry.historical] : []) ?? [];
+  const ordinaryAllocations = ledger?.allocationEntries.flatMap(entry => entry.allocation ? [{ ...entry.allocation, currency: entry.currency }] : []) ?? [];
+  const evidenceRows = ledger?.historical.filter(row => !row.fundsProject && !row.isAllocation) ?? [];
+  const allocationAndReferenceRows = showEvidence ? evidenceRows : historicalAllocations;
   const [loading, setLoading] = useState(true);
   const [projectFilter, setProjectFilter] = useState<string>(lockedProjectId ? String(lockedProjectId) : '');
   const [open, setOpen] = useState(false);
@@ -194,6 +200,63 @@ export default function EmgAdvances() {
     }
   };
 
+  const renderHistoricalRow = (row: HistoricalRecord) => (
+              <Grid key={`source-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: '100%',
+                    borderRadius: 3,
+                    bgcolor: 'background.paper',
+                    transition: 'border-color 150ms ease',
+                    '&:hover': { borderColor: 'primary.main' }
+                  }}
+                >
+                  <CardActionArea
+                    onClick={() => setSelectedRecord(row)}
+                    sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}
+                  >
+                    <CardContent sx={{ width: '100%' }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="h4" sx={{ fontWeight: 800 }}>
+                            {row.projectName}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {row.category || row.sheet}
+                          </Typography>
+                        </Box>
+                        <Chip
+                          size="small"
+                          label={recordKind(row)}
+                          color={row.basis === 'conflicting_ownership' ? 'warning' : row.fundsProject ? 'primary' : 'default'}
+                        />
+                      </Stack>
+                      <Stack spacing={0.75} sx={{ mt: 2 }}>
+                        <Stack direction="row" justifyContent="space-between">
+                          <Typography color="text.secondary">{row.isAllocation ? 'قيمة التوزيع' : 'القيمة المسجلة'}</Typography>
+                          <Typography fontWeight={800} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {formatEmgMoney(row.amount, row.currency === 'EGP' ? 'ج.م' : row.currency)}
+                          </Typography>
+                        </Stack>
+                        {row.description && (
+                          <Typography variant="body2" color="text.primary">
+                            {row.description}
+                          </Typography>
+                        )}
+                        <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                          {row.workbook} · {row.sheet}!{row.cell}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+                        {row.date ? new Date(row.date).toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}
+                      </Typography>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              </Grid>
+            );
+
   return (
     <Box sx={{ pb: 4 }}>
       {lockedProjectId && (
@@ -256,7 +319,7 @@ export default function EmgAdvances() {
           ))}
         </Grid>
       ) : (
-        (ledger?.totals.length ? ledger.totals : [{ currency: 'EGP', payments: 0, allocated: 0, works: 0, cashBalance: 0 }]).map((t) => (
+        (ledger?.totals ?? []).map((t) => (
           <Grid key={t.currency} container spacing={2} sx={{ mb: 2.5 }}>
             <Grid size={{ xs: 12, md: 4 }}>
               <MainCard
@@ -342,6 +405,15 @@ export default function EmgAdvances() {
           </Grid>
         ) : (
           <Grid container spacing={2}>
+            {directReceipts.map(row => (
+              <Grid key={`direct-${row.source}-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
+                <Card variant="outlined"><CardContent>
+                  <Typography variant="subtitle1">{row.source} · {row.party}</Typography>
+                  <Typography variant="h4">{formatEmgMoney(row.amount, row.currency)}</Typography>
+                  <Typography variant="caption">{row.date?.slice(0, 10)} · {row.reference || `#${row.id}`}</Typography>
+                </CardContent></Card>
+              </Grid>
+            ))}
             {advances.map((advance) => (
               <Grid key={advance.id} size={{ xs: 12, md: 6, xl: 4 }}>
                 <Card
@@ -412,85 +484,45 @@ export default function EmgAdvances() {
                 </Card>
               </Grid>
             ))}
+            {recognizedHistoricalReceipts.map(renderHistoricalRow)}
           </Grid>
         )}
-        {!loading && !advances.length && (
+        {!loading && ledger && !directReceipts.length && !advances.length && !recognizedHistoricalReceipts.length && (
           <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
             لا توجد دفعات تحت الحساب لهذا الاختيار.
           </Typography>
         )}
       </MainCard>
 
-      {!loading && ledger && ledger.historical.length > 0 && (
+      {!loading && ledger && (historicalAllocations.length + ordinaryAllocations.length + evidenceRows.length > 0) && (
         <MainCard
-          title={`سجل التمويل والتوزيعات التاريخية (${ledger.historical.length})`}
+          title={showEvidence ? 'مراجع المصدر' : 'التوزيعات على بنود المشروع'}
+          secondary={evidenceRows.length > 0 && <Button size="small" onClick={() => { setShowEvidence(!showEvidence); setPage(1); }}>
+            {showEvidence ? 'عرض التوزيعات' : `مراجع المصدر (${evidenceRows.length})`}
+          </Button>}
           sx={{ borderRadius: 3, mt: 2.5 }}
         >
           <Grid container spacing={2}>
-            {ledger.historical.slice((page - 1) * 24, page * 24).map((row) => (
-              <Grid key={`source-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
-                <Card
-                  variant="outlined"
-                  sx={{
-                    height: '100%',
-                    borderRadius: 3,
-                    bgcolor: 'background.paper',
-                    transition: 'border-color 150ms ease',
-                    '&:hover': { borderColor: 'primary.main' }
-                  }}
-                >
-                  <CardActionArea
-                    onClick={() => (row.receiptId != null ? navigate(`/emg/advances/${row.receiptId}`) : setSelectedRecord(row))}
-                    sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}
-                  >
-                    <CardContent sx={{ width: '100%' }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                            {row.projectName}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {row.category || row.sheet}
-                          </Typography>
-                        </Box>
-                        <Chip
-                          size="small"
-                          label={recordKind(row)}
-                          color={row.basis === 'conflicting_ownership' ? 'warning' : row.fundsProject ? 'primary' : 'default'}
-                        />
-                      </Stack>
-                      <Stack spacing={0.75} sx={{ mt: 2 }}>
-                        <Stack direction="row" justifyContent="space-between">
-                          <Typography color="text.secondary">{row.isAllocation ? 'قيمة التوزيع' : 'القيمة المسجلة'}</Typography>
-                          <Typography fontWeight={800} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                            {formatEmgMoney(row.amount, row.currency === 'EGP' ? 'ج.م' : row.currency)}
-                          </Typography>
-                        </Stack>
-                        {row.description && (
-                          <Typography variant="body2" color="text.primary">
-                            {row.description}
-                          </Typography>
-                        )}
-                        <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                          {row.workbook} · {row.sheet}!{row.cell}
-                        </Typography>
-                      </Stack>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-                        {row.date ? new Date(row.date).toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}
-                      </Typography>
-                    </CardContent>
-                  </CardActionArea>
-                </Card>
+            {!showEvidence && ordinaryAllocations.map(row => (
+              <Grid key={`allocation-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
+                <Card variant="outlined"><CardActionArea component={Link} to={`/emg/advances/${row.advancePaymentId}`}><CardContent>
+                  <Typography variant="subtitle1">{row.accountCategory}</Typography>
+                  <Typography variant="h4">{formatEmgMoney(row.amount, row.currency)}</Typography>
+                  <Typography variant="body2">{row.notes}</Typography>
+                  <Typography variant="caption">{row.allocationDate.slice(0, 10)} · دفعة #{row.advancePaymentId}
+                    {row.siteMovementId && ` · حركة موقع #${row.siteMovementId}`}{row.supplierPaymentId && ` · دفعة مورد #${row.supplierPaymentId}`}</Typography>
+                </CardContent></CardActionArea></Card>
               </Grid>
             ))}
+            {allocationAndReferenceRows.slice((page - 1) * 24, page * 24).map(renderHistoricalRow)}
           </Grid>
-          {ledger.historical.length > 24 && (
+          {allocationAndReferenceRows.length > 24 && (
             <Stack alignItems="center" sx={{ mt: 2.5 }}>
               <Pagination
                 color="primary"
                 shape="rounded"
                 page={page}
-                count={Math.ceil(ledger.historical.length / 24)}
+                count={Math.ceil(allocationAndReferenceRows.length / 24)}
                 onChange={(_, nextPage) => setPage(nextPage)}
               />
             </Stack>

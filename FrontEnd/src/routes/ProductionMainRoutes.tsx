@@ -61,7 +61,7 @@ const ProductionMainRoutes = {
     { path: '/emg/suppliers', element: guard(['suppliers.manage', 'suppliers.view'], <Suppliers />) },
     { path: '/emg/suppliers/:supplierId', element: guard(['suppliers.manage', 'suppliers.view'], <SupplierDetails />) },
     { path: '/emg/contractor-statements', element: guard(['suppliers.view'], <ContractorStatements />) },
-    { path: '/emg/advances', element: guard(['advances.manage', 'advances.view'], <Advances />) },
+    { path: '/emg/advances', element: guard(['advances.manage', 'advances.view'], <ActiveProjectRedirect section="advances" />) },
     { path: '/emg/advances/:advanceId', element: guard(['advances.manage', 'advances.view'], <AdvanceDetails />) },
     { path: '/emg/attendance', element: guard(['attendance.manage', 'attendance.view'], <Attendance />) },
     { path: '/emg/notifications', element: guard(['notifications.view'], <Notifications />) },

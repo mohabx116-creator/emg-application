@@ -136,7 +136,7 @@ export default function AdvanceDetails() {
   };
   const openEdit = () => { if (!advance) return; setEditForm({ clientName: advance.clientName, payerName: advance.payerName, amount: String(advance.amount), paymentDate: advance.paymentDate?.slice(0, 10) ?? '', paymentMethod: advance.paymentMethod, reference: advance.reference || '', notes: advance.notes || '' }); setEditOpen(true); };
   const saveEdit = async (event: FormEvent) => { event.preventDefault(); try { await correctEmgTransaction('advance-payment', id, { ...editForm, amount: Number(editForm.amount) }, 'تصحيح مباشر'); setEditOpen(false); setMessage({ severity: 'success', text: 'تم حفظ تصحيح الدفعة.' }); await load(); } catch (error: any) { setMessage({ severity: 'error', text: error?.message || 'تعذر تصحيح الدفعة.' }); } };
-  const remove = async () => { if (!window.confirm('سيتم حذف الدفعة نهائيًا. هل تريد المتابعة؟')) return; try { await deleteEmgTransaction('advance-payment', id); window.location.assign('/emg/advances'); } catch (error: any) { setMessage({ severity: 'error', text: error?.message || 'تعذر حذف الدفعة. قد توجد تخصيصات مرتبطة بها.' }); } };
+  const remove = async () => { if (!window.confirm('سيتم حذف الدفعة نهائيًا. هل تريد المتابعة؟')) return; try { await deleteEmgTransaction('advance-payment', id); window.location.assign(advance ? `/emg/projects/${advance.projectId}/advances` : '/emg/advances'); } catch (error: any) { setMessage({ severity: 'error', text: error?.message || 'تعذر حذف الدفعة. قد توجد تخصيصات مرتبطة بها.' }); } };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!Number.isFinite(allocationAmount) || allocationAmount <= 0 || targetWarning) {
@@ -185,7 +185,7 @@ export default function AdvanceDetails() {
             {advance.projectName} · الدافع: {advance.payerName || 'غير محدد'}
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1}><Button onClick={openEdit} variant="outlined" startIcon={<IconEdit size={17} />}>تعديل</Button><Button onClick={() => void remove()} color="error" variant="outlined" startIcon={<IconTrash size={17} />}>حذف</Button><Button component={Link} to="/emg/advances" endIcon={<IconArrowRight size={18} />} variant="outlined" sx={{ gap: 0.75 }}>كل الدفعات</Button></Stack>
+        <Stack direction="row" spacing={1}><Button onClick={openEdit} variant="outlined" startIcon={<IconEdit size={17} />}>تعديل</Button><Button onClick={() => void remove()} color="error" variant="outlined" startIcon={<IconTrash size={17} />}>حذف</Button><Button component={Link} to={`/emg/projects/${advance.projectId}/advances`} endIcon={<IconArrowRight size={18} />} variant="outlined" sx={{ gap: 0.75 }}>كل الدفعات</Button></Stack>
       </Stack>
       <Card sx={{ mb: 2 }}>
         <CardContent>

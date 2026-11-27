@@ -18,6 +18,7 @@ export function resolveCashBalanceStatus(cashBalance: number, provided?: string 
 }
 
 export type FinancialSummaryValues = {
+  currency?: string;
   totalWorks: number | null | undefined;
   totalPayments: number | null | undefined;
   cashBalance: number | null | undefined;
@@ -30,6 +31,7 @@ export type FinancialSummaryValues = {
 };
 
 export default function FinancialSummary({
+  currency = 'EGP',
   totalWorks,
   totalPayments,
   cashBalance,
@@ -222,7 +224,7 @@ export default function FinancialSummary({
                   </Typography>
                   {card.showCurrency && (
                     <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700, fontSize: '0.8rem' }}>
-                      ج.م
+                      {currency === 'EGP' ? 'ج.م' : currency}
                     </Typography>
                   )}
                 </Stack>

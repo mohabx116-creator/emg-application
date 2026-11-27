@@ -74,8 +74,29 @@ public sealed partial class AdvancesService
             g.All(t => t.Payments.HasValue) ? g.Sum(t => t.Payments) : null,
             g.All(t => t.Allocated.HasValue) ? g.Sum(t => t.Allocated) : null,
             g.All(t => t.CashBalance.HasValue) ? g.Sum(t => t.CashBalance) : null)).ToList();
+        var ordinary = receipts.Where(r => !linkedIds.Contains(r.Id)).ToList();
+        var fundingEntries = ordinary.Where(r => postedIds.Contains(r.Id))
+            .Select(r => new ProjectFundingEntry("advance", r, null, null))
+            .Concat(components.Where(r => r.FundsProject).Select(r => new ProjectFundingEntry("historical", null, r, null)))
+            .Concat(directFunding.Select(r => new ProjectFundingEntry("direct", null, null, r)))
+            .OrderByDescending(r => r.Advance?.PaymentDate ?? r.Historical?.Date ?? r.Direct?.Date)
+            .ToList();
+        var allocations = await db.AdvanceAllocations.AsNoTracking()
+            .Where(a => ids.Contains(a.AdvancePayment.ProjectId) &&
+                (a.AdvancePayment.Status == "مرحّل" || a.AdvancePayment.Status == "معتمد"))
+            .OrderBy(a => a.Id)
+            .Select(a => new ProjectAllocationEntry(a.AdvancePayment.ProjectId, a.AdvancePayment.Currency,
+                new AllocationSummary(a.Id, a.AdvancePaymentId, a.SiteMovementId, a.SupplierPaymentId,
+                    a.AccountCategory, a.Amount, a.AllocationDate, a.Notes ?? ""), null))
+            .ToListAsync(ct);
+        allocations.AddRange(components.Where(r => r.IsAllocation).Select(r =>
+            new ProjectAllocationEntry(r.ProjectId, r.Currency, null, r)));
         if (snapshot != null) await snapshot.CommitAsync(ct);
-        return new(receipts.Where(r => !linkedIds.Contains(r.Id)).ToList(),components,directFunding,portfolio,warnings);
+        return new(ordinary, components, directFunding, portfolio, warnings)
+        {
+            FundingEntries = fundingEntries,
+            AllocationEntries = allocations
+        };
     }
 
     private sealed record RecoveredReceipt(long LineId,int ReceiptId);

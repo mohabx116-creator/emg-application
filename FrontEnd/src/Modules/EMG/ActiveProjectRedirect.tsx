@@ -4,15 +4,15 @@ import { Alert, Box, Button, Card, CardActionArea, CardContent, Chip, Skeleton, 
 import { IconBuilding, IconChevronLeft } from '@tabler/icons-react';
 import { useActiveProject } from 'contexts/ActiveProjectContext';
 
-export default function ActiveProjectRedirect() {
+export default function ActiveProjectRedirect({ section = 'movements' }: { section?: 'movements' | 'advances' }) {
   const navigate = useNavigate();
   const { projects, activeProjectId, setActiveProjectId, loading } = useActiveProject();
 
   useEffect(() => {
     if (!loading && activeProjectId) {
-      navigate(`/emg/projects/${activeProjectId}/movements`, { replace: true });
+      navigate(`/emg/projects/${activeProjectId}/${section}`, { replace: true });
     }
-  }, [loading, activeProjectId, navigate]);
+  }, [loading, activeProjectId, navigate, section]);
 
   if (loading) {
     return (
@@ -34,7 +34,7 @@ export default function ActiveProjectRedirect() {
   return (
     <Box sx={{ maxWidth: 680, mx: 'auto', py: 2 }}>
       <Typography variant="h3" sx={{ fontWeight: 800, mb: 1 }}>
-        اختر المشروع لفتح حركات الموقع اليومية
+        {section === 'advances' ? 'اختر المشروع لفتح الدفعات تحت الحساب' : 'اختر المشروع لفتح حركات الموقع اليومية'}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
         سيتم حفظ اختيارك تلقائياً لفتح هذا المشروع مباشرة في المرات القادمة.
@@ -45,7 +45,7 @@ export default function ActiveProjectRedirect() {
             <CardActionArea
               onClick={() => {
                 setActiveProjectId(project.id);
-                navigate(`/emg/projects/${project.id}/movements`, { replace: true });
+                navigate(`/emg/projects/${project.id}/${section}`, { replace: true });
               }}
             >
               <CardContent sx={{ py: 1.75 }}>

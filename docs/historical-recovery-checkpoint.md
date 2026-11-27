@@ -73,3 +73,7 @@ The five operational section readers expose the signed source rows and preserve 
 ### Operational review navigation
 
 Both route tables and dashboard links retire the standalone review center. Project creation and notification captions use the direct operational workflow, while historical action records remain accessible in their transaction context. TypeScript passed. A browser check of the legacy URL remains in the local acceptance queue.
+
+### Unified project advances
+
+The scoped ledger returns fundingEntries and allocationEntries. Recognized source components, direct owner settlements and ordinary advances retain their distinct identities. Allocations carry an actual receipt or transaction link only when recorded. Legacy list navigation resolves to project advances. Source references remain available independently. The primary report verifier read all project ledgers and matched the signed funding and allocation schedules. The working frontend type check passed.
