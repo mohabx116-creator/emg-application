@@ -37,7 +37,6 @@ const EmgReportsDetails = Loadable(lazy(() => import('Modules/EMG/ReportsDetails
 const EmgImports = Loadable(lazy(() => import('Modules/EMG/Imports')));
 const EmgImportsLanding = Loadable(lazy(() => import('Modules/EMG/Imports/Landing')));
 const EmgApprovedHistory = Loadable(lazy(() => import('Modules/EMG/Imports/ApprovedHistory')));
-const EmgReviewCenter = Loadable(lazy(() => import('Modules/EMG/ReviewCenter')));
 const EmgContractorStatements = Loadable(lazy(() => import('Modules/EMG/contractorstatements')));
 
 const emgGuard = (permissions: string[], element: ReactNode) => (
@@ -301,13 +300,6 @@ const MainRoutes = {
     { path: '/emg/imports/new', element: emgGuard(['data.migrate'], <EmgImports />) },
     { path: '/emg/imports/update', element: emgGuard(['data.migrate'], <EmgImports />) },
     { path: '/emg/imports/approved-history', element: emgGuard(['project-imports.import-approved-history'], <EmgApprovedHistory />) },
-    {
-      path: '/emg/review-center',
-      element: emgGuard(
-        ['project-imports.approve', 'project-imports.reject', 'workflow.execute', 'suppliers.supplies-accept-technical', 'suppliers.supplies-approve-financial'],
-        <EmgReviewCenter />
-      )
-    },
     { path: '*', element: <NotFound /> },
     {
       path: '/widget/statistics',

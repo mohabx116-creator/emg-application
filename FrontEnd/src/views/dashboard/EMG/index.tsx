@@ -20,7 +20,6 @@ import {
   IconBell,
   IconBuilding,
   IconCash,
-  IconChecklist,
   IconClipboardCheck,
   IconClock,
   IconFileAnalytics,
@@ -375,13 +374,6 @@ export default function EmgDashboard() {
   const canReadSuppliers = hasAnyPermission(user, ['suppliers.manage', 'suppliers.view']);
   const canReadAdvances = hasAnyPermission(user, ['advances.manage', 'advances.view']);
   const canReadReports = hasAnyPermission(user, ['reports.view']);
-  const canReadReviewCenter = hasAnyPermission(user, [
-    'project-imports.approve',
-    'project-imports.reject',
-    'workflow.execute',
-    'suppliers.supplies-accept-technical',
-    'suppliers.supplies-approve-financial'
-  ]);
   const canReadUsers = hasAnyPermission(user, ['users.view', 'users.manage']);
   const canReadRoles = hasAnyPermission(user, ['roles.view', 'roles.manage']);
   const canMigrateData = hasAnyPermission(user, ['data.migrate']);
@@ -424,7 +416,6 @@ export default function EmgDashboard() {
     () => ({
       due: projects.reduce((sum,p) => sum + Math.max(0, -(p.cashBalance ?? 0)), 0),
       supplierRemaining: suppliers.reduce((x, s) => x + s.remaining, 0),
-      openMovements: projects.reduce((x, p) => x + p.openMovements, 0),
         activeProjects: projects.filter((p) => p.status === 'نشط').length,
         totalWorks: projects.reduce((x, p) => x + (p.totalWorks || 0), 0),
         totalPayments: projects.reduce((x, p) => x + (p.totalPayments || 0), 0),
@@ -443,13 +434,6 @@ export default function EmgDashboard() {
       case 'admin':
         add(canReadUsers, { label: 'إدارة المستخدمين', to: '/emg/users', icon: <IconUsers size={22} />, tone: 'primary' });
         add(canReadRoles, { label: 'الأدوار والصلاحيات', to: '/emg/roles', icon: <IconUserShield size={22} />, tone: 'secondary' });
-        add(false, {
-          label: 'مركز المراجعة',
-          to: '/emg/review-center',
-          icon: <IconChecklist size={22} />,
-          tone: 'warning',
-          badge: totals.openMovements
-        });
         add(canReadProjects, { label: 'المشاريع', to: '/emg/projects', icon: <IconBuilding size={22} />, tone: 'primary' });
         add(canMigrateData, { label: 'ترحيل البيانات', to: '/emg/imports', icon: <IconFileUpload size={22} />, tone: 'success' });
         add(canReadReports, { label: 'التقارير', to: '/emg/reports', icon: <IconFileAnalytics size={22} />, tone: 'secondary' });
@@ -473,13 +457,6 @@ export default function EmgDashboard() {
         break;
 
       case 'project_manager':
-        add(false, {
-          label: 'الاعتمادات الفنية',
-          to: '/emg/review-center',
-          icon: <IconChecklist size={22} />,
-          tone: 'warning',
-          badge: totals.openMovements
-        });
         add(canReadProjects, { label: 'المشاريع المسندة', to: '/emg/projects', icon: <IconBuilding size={22} />, tone: 'primary' });
         add(canReadReports, { label: 'تقارير المشروعات', to: '/emg/reports', icon: <IconFileAnalytics size={22} />, tone: 'secondary' });
         add(canReadAttendance, { label: 'حضور الموقع', to: '/emg/attendance', icon: <IconClock size={22} />, tone: 'success' });
@@ -540,14 +517,12 @@ export default function EmgDashboard() {
     canReadNotifications,
     canReadProjects,
     canReadReports,
-    canReadReviewCenter,
     canReadRoles,
     canReadSuppliers,
     canReadUsers,
     notifications.length,
     primaryRole,
-    projects,
-    totals.openMovements
+    projects
   ]);
 
   if (engineerView) {

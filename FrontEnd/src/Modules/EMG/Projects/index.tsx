@@ -830,7 +830,7 @@ export default function EmgProjects() {
               <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="اسم المالك" value={projectForm.ownerName} onChange={(event) => setProjectForm({ ...projectForm, ownerName: event.target.value })} /></Grid>
               <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="اسم الدافع" value={projectForm.payerName} onChange={(event) => setProjectForm({ ...projectForm, payerName: event.target.value })} /></Grid>
               <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="الموقع" value={projectForm.location} onChange={(event) => setProjectForm({ ...projectForm, location: event.target.value })} /></Grid>
-              <Grid size={{ xs: 12, md: 4 }}><FormControl fullWidth><InputLabel>حالة المشروع</InputLabel><Select label="حالة المشروع" value={projectForm.status} onChange={(event) => setProjectForm({ ...projectForm, status: event.target.value })}><MenuItem value="نشط">نشط</MenuItem><MenuItem value="تحت المراجعة">تحت المراجعة</MenuItem><MenuItem value="متوقف">متوقف</MenuItem><MenuItem value="مكتمل">مكتمل</MenuItem></Select></FormControl></Grid>
+              <Grid size={{ xs: 12, md: 4 }}><FormControl fullWidth><InputLabel>حالة المشروع</InputLabel><Select label="حالة المشروع" value={projectForm.status} onChange={(event) => setProjectForm({ ...projectForm, status: event.target.value })}><MenuItem value="نشط">نشط</MenuItem><MenuItem value="متوقف">متوقف</MenuItem><MenuItem value="مكتمل">مكتمل</MenuItem></Select></FormControl></Grid>
               {canSelectAssignee && (
                 <Grid size={{ xs: 12, md: 4 }}>
                   {assignees === 'loading' ? (

@@ -76,7 +76,7 @@ export default function EmgNotifications() {
             />
           </Stack>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            متابعة التنبيهات والاعتمادات والإجراءات المطلوبة داخل النظام
+            متابعة التنبيهات والإجراءات المطلوبة داخل النظام
           </Typography>
         </Box>
 

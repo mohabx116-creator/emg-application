@@ -276,7 +276,7 @@ export default function EmgSiteMovementDetails() {
       )}
       {audit && (audit.blockingChecks.length > 0 || audit.warnings.length > 0) && (
         <Alert severity={audit.blockingChecks.length > 0 ? 'error' : 'warning'} sx={{ mb: 2 }}>
-          <Typography fontWeight={700} sx={{ mb: 0.5 }}>نتيجة المراجعة قبل الاعتماد</Typography>
+          <Typography fontWeight={700} sx={{ mb: 0.5 }}>فحوص بيانات الحركة</Typography>
           {audit.blockingChecks.map((check) => <Typography key={`block-${check}`} variant="body2">• {check}</Typography>)}
           {audit.warnings.map((warning) => <Typography key={`warn-${warning}`} variant="body2">• تنبيه: {warning}</Typography>)}
         </Alert>
@@ -399,7 +399,7 @@ export default function EmgSiteMovementDetails() {
           </MainCard>
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
-          <MainCard title="سجل الاعتماد">
+          <MainCard title="سجل الحركة">
             <Stack spacing={1.5}>
               {history.map((item) => (
                 <Box key={`${item.actionDateUtc}-${item.action}`}>
@@ -411,7 +411,7 @@ export default function EmgSiteMovementDetails() {
                   </Typography>
                 </Box>
               ))}
-              {history.length === 0 && <Typography color="text.secondary">لم يتم تنفيذ إجراءات اعتماد حتى الآن.</Typography>}
+              {history.length === 0 && <Typography color="text.secondary">لا توجد إجراءات مسجلة لهذه الحركة.</Typography>}
             </Stack>
           </MainCard>
         </Grid>

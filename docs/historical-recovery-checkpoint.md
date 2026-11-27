@@ -69,3 +69,7 @@ The approved daily new-project flow accepts a reviewed file whose SHA-256 matche
 ### Operational section and party detail
 
 The five operational section readers expose the signed source rows and preserve existing target links. The read-only verification matched the complete original source identities and signed amounts across 190 section reads and the named supplier and contractor accounts. No traditional records were inserted. The backend build and frontend type check passed; live browser checks are tracked separately.
+
+### Operational review navigation
+
+Both route tables and dashboard links retire the standalone review center. Project creation and notification captions use the direct operational workflow, while historical action records remain accessible in their transaction context. TypeScript passed. A browser check of the legacy URL remains in the local acceptance queue.
