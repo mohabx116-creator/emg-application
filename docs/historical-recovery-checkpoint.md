@@ -117,3 +117,19 @@ The final Release build succeeded and the existing loopback API was refreshed wi
 ### Targeted operational currency closure
 
 EGP-only native works and supplier inputs reject an explicit foreign denomination. Receipt allocations inherit the receipt currency and reject a conflicting code. Movement edits preserve linked denominations and allocation capacity. Contractor item and statement rates follow the contract, statement payments follow the selected statement, and the draft XLSX identifies its currency. Site movement values display the stored currency. The existing layout and frontend team's local changes were preserved. Sixteen focused MVC, service and workbook regressions and the working frontend TypeScript check passed.
+
+### Workbook source currency recovery & frontend visual integration handoff
+
+Recovered and validated the local Codex workbook-currency changes (`WorkbookSourceCurrency.cs`, `WorkbookCurrencyDeclarations.cs`, `WorkbookImportService.Currency.cs`, `WorkbookImportService.cs`, `ReportBuilderService.cs`, `ReviewedWorkbookImportService.NewProject.cs`, `ReviewedWorkbookModels.cs`, `UniversalImportPreviewService.cs`, `UniversalImportPreviewService.OperationalEvidence.cs`, `LegacyWorkbookCurrencyTests.cs`, `UniversalImportPreviewTests.cs`, `UniversalNewProjectTests.cs`, and `docs/emg-functional-integration.md`). All 61 focused currency, universal-import, and legacy-workbook tests passed (`0` failures, `1` skipped).
+
+Integrated all completed Antigravity frontend visual and UI closure work onto the latest backend contracts without modifying financial formulas or backend behavior:
+- **A08:** Restored transparent circular EMG favicon (`favicon-32x32.png`) and square PWA icons (`icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png`) with valid PNG binaries, updated `manifest.webmanifest`, `index.html`, and `sw.js` (`emg-shell-v2`, keeping `/api/*` and `/auth/*` strictly uncached).
+- **A09:** Integrated `fundingEntries` (including direct owner funding), `allocationEntries` (historical and operational allocations), `evidenceRows`, and `currency` support into the owner-preferred Advances card layout (`Advances/index.tsx`).
+- **A11:** Verified clean TypeScript (`tsc --noEmit`) and production Vite build (`npm run build`).
+- **A12:** Fixed 360px RTL header/profile clipping across `Header`, `SearchSection`, `NotificationSection`, and `ProfileSection` while preserving `MobileBottomNav` and the Berry floating `Customization` gear.
+- **A13:** Documented protected visual surfaces in `AGENTS.md` alongside the permanent Berry `Customization` rule (noting that `50719fa` is an interim technical reference and final visual approval remains subject to owner live inspection).
+- **G02 (partial):** Verified live desktop Landing and Login pages (fixing RTL password eye-icon overlap in `Login2.tsx`).
+
+**Remaining tasks for the next Codex / Owner Acceptance session:**
+- Authenticated live browser visual verification across `360px`, `390px`, `430px`, `768px`, and `1440px` (Arabic RTL, light and dark modes) covering Header, Advances, Work Sections (remaining checks beyond 50/190), Supplier/Contractor historical detail views, and `NewTransactionModalForm`.
+- Live assigned-engineer session check (`G01`), first authorized daily workbook import (`A07`), isolated backup restore drill (`G03`), and owner source decisions on `S01`–`S04` and `G04`.
