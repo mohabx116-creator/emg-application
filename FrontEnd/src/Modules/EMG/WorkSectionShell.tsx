@@ -33,6 +33,8 @@ import {
 import MainCard from 'ui-component/cards/MainCard';
 import { EmgProject } from 'api/emg';
 import FinancialSummary from './FinancialSummary';
+import type { HistoricalWork } from 'api/historicalWork';
+import HistoricalWorkTable from './HistoricalWorkTable';
 import { extractSectionFinancialSummary, SectionFinancialSummary } from './sectionFinancials';
 import { useActiveProject } from 'contexts/ActiveProjectContext';
 import useAuth from 'hooks/useAuth';
@@ -87,6 +89,7 @@ type WorkSectionShellProps = {
   onCloseMessage?: () => void;
   totalAmount: number;
   totalCount: number;
+  historical: HistoricalWork[];
   approvedCount: number;
   pendingCount: number;
   search: string;
@@ -125,6 +128,7 @@ export default function WorkSectionShell({
   onCloseMessage,
   totalAmount,
   totalCount,
+  historical,
   approvedCount,
   pendingCount,
   search,
@@ -158,6 +162,19 @@ export default function WorkSectionShell({
   useEffect(() => {
     if (project?.id) setActiveProjectId(project.id);
   }, [project?.id, setActiveProjectId]);
+
+  const searchText = search.trim().toLowerCase();
+  const sourceMatches = statusFilter === 'all' ? historical.filter(row =>
+    [row.description, row.category, row.party, row.workDate, row.unit, row.currency, row.amount, row.sourceFileName, row.sheet, row.cell]
+      .join(' ').toLowerCase().includes(searchText)
+  ) : [];
+  const count = filteredCount + sourceMatches.length;
+  const lastPage = Math.max(0, Math.ceil(count / rowsPerPage) - 1);
+  useEffect(() => {
+    if (page > lastPage) onPageChange(lastPage);
+  }, [lastPage, page, onPageChange]);
+  const offset = page * rowsPerPage;
+  const sourcePage = sourceMatches.slice(Math.max(0, offset - filteredCount), Math.max(0, offset + rowsPerPage - filteredCount));
 
   const effectiveSectionSummary = sectionSummary ?? extractSectionFinancialSummary(project, activeSection);
 
@@ -332,7 +349,7 @@ export default function WorkSectionShell({
                 <Chip
                   clickable
                   size="small"
-                  label={`الكل (${totalCount})`}
+                  label={`الكل (${totalCount + historical.length})`}
                   color={statusFilter === 'all' ? 'primary' : 'default'}
                   variant={statusFilter === 'all' ? 'filled' : 'outlined'}
                   onClick={() => onStatusFilterChange('all')}
@@ -367,13 +384,14 @@ export default function WorkSectionShell({
           </Stack>
         </Box>
 
-        {children}
+        {(offset < filteredCount || count === 0) && children}
+        <HistoricalWorkTable rows={sourcePage} />
 
-        {filteredCount > 0 && (
+        {count > 0 && (
           <TablePagination
             component="div"
-            count={filteredCount}
-            page={Math.min(page, Math.max(0, Math.ceil(filteredCount / rowsPerPage) - 1))}
+            count={count}
+            page={Math.min(page, lastPage)}
             onPageChange={(_, p) => onPageChange(p)}
             rowsPerPage={rowsPerPage}
             onRowsPerPageChange={(e) => {

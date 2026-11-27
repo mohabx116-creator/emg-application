@@ -2,6 +2,12 @@ using ClosedXML.Excel;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
 
+if (args is ["--historical-sections", var auditPath])
+{
+    await HistoricalSectionChecks.RunAsync(auditPath);
+    return;
+}
+
 if (args is ["--historical-reports", var mapping])
 {
     await HistoricalReportChecks.RunAsync(mapping);

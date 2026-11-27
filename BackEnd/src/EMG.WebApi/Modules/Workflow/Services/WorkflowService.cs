@@ -1,4 +1,5 @@
 using EMG.Api.Modules.Workflow.Dtos;
+using EMG.Api.Modules.Projects.Services;
 using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
 using EMG.Api.Modules.Notifications.Services;
@@ -24,7 +25,8 @@ public sealed class WorkflowService(EmgDbContext db, INotificationService notifi
         var access = await LoadAccessAsync(userId.Value, isCanonicalAdmin, cancellationToken);
         if (current is null || !CanView(access, current, normalizedType))
             throw new WorkflowForbiddenException("لا تملك صلاحية الوصول إلى المشروع أو الحركة.");
-        if (!CanTransition(normalizedType, current.Status, normalizedAction)) return null;
+        if (await HistoricalWorkReader.IsLinkedAsync(db, normalizedType, entityId, cancellationToken) ||
+            !CanTransition(normalizedType, current.Status, normalizedAction)) return null;
         if (!CanPerformAction(access, current, normalizedType, normalizedAction))
             throw new WorkflowForbiddenException("لا تملك الصلاحية لتنفيذ هذا الإجراء.");
         if (normalizedType == "supplier-supply")

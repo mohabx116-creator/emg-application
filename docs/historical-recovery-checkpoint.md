@@ -65,3 +65,7 @@ The payment limit now uses the remaining net entitlement under the existing seri
 ### Ordinary workbook import and scoped transaction tests
 
 The approved daily new-project flow accepts a reviewed file whose SHA-256 matches the locally configured approved workbook on the development loopback target. The historical migration switch remains separate. The focused suite passed 39 cases covering file and target constraints, validation, assigned-project access, CRUD, supplier settlement, contractor installments and allocation contention. A genuine new workbook has not been committed to the operational database. This and a live assigned-engineer session remain owner acceptance items.
+
+### Operational section and party detail
+
+The five operational section readers expose the signed source rows and preserve existing target links. The read-only verification matched the complete original source identities and signed amounts across 190 section reads and the named supplier and contractor accounts. No traditional records were inserted. The backend build and frontend type check passed; live browser checks are tracked separately.

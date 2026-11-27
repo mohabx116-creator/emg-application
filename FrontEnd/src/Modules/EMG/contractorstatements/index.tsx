@@ -92,6 +92,8 @@ function createEmptyDraftLine(): DraftLineInput {
   };
 }
 
+import HistoricalAccountDetails from '../HistoricalAccountDetails';
+
 export default function ContractorStatements() {
   const theme = useTheme();
   const downSM = useMediaQuery(theme.breakpoints.down('sm'));
@@ -579,6 +581,8 @@ export default function ContractorStatements() {
               </Grid>
             )}
 
+            {detailTab === 0 && <HistoricalAccountDetails type="contractors" id={contractor.id} projectId={projectFilter || undefined} kind="works" />}
+
             {/* TAB 1: Statements */}
             {detailTab === 1 && (
               <Stack spacing={1.5}>
@@ -714,6 +718,7 @@ export default function ContractorStatements() {
             {/* TAB 3: Payments */}
             {detailTab === 3 && (
               <Stack spacing={1.5}>
+                <HistoricalAccountDetails type="contractors" id={contractor.id} projectId={projectFilter || undefined} kind="settlements" />
                 {cStatements.length === 0 ? (
                   <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
                     لا توجد مدفوعات أو خصومات مسجلة على كشوف هذا المقاول حتى الآن.

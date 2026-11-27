@@ -1,4 +1,5 @@
 using System.Reflection;
+using EMG.Api.Modules.Projects.Services;
 using System.Text.Json;
 using System.Data;
 using EMG.Api.Modules.Transactions.Dtos;
@@ -27,7 +28,7 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
     {
         if (userId is null || request is null) return null;
         var type = Normalize(entityType);
-        if (!EditableProperties.ContainsKey(type)) return null;
+        if (!EditableProperties.ContainsKey(type) || await HistoricalWorkReader.IsLinkedAsync(db, type, entityId, cancellationToken)) return null;
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var record = await FindAsync(type, entityId, cancellationToken);
         if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasCorrectionPermission, permissionCode, cancellationToken) || IsCancelled(record)) return null;
@@ -62,7 +63,7 @@ public sealed class TransactionCorrectionService(EmgDbContext db) : ITransaction
     {
         if (userId is null) return null;
         var type = Normalize(entityType);
-        if (!EditableProperties.ContainsKey(type)) return null;
+        if (!EditableProperties.ContainsKey(type) || await HistoricalWorkReader.IsLinkedAsync(db, type, entityId, cancellationToken)) return null;
         var record = await FindAsync(type, entityId, cancellationToken);
         if (record is null || !await CanAccessAsync(type, record, userId.Value, globalAccess, hasDeletePermission, permissionCode, cancellationToken) || await HasDependentFinancialEffectsAsync(type, entityId, cancellationToken)) return null;
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);

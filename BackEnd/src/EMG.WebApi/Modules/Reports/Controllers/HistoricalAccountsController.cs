@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using EMG.Api.Modules.Projects.Services;
 using EMG.Api.Modules.Security.Authorization;
 using EMG.Infrastructure.Db;
 using Microsoft.AspNetCore.Authorization;
@@ -24,12 +25,12 @@ public sealed class HistoricalAccountsController(EmgDbContext db) : ControllerBa
         var works = await db.HistoricalWorkLines.AsNoTracking()
             .Where(w => (supplier ? w.SupplierId == id : w.ContractorId == id) && (global || allowed.Contains(w.Batch.ProjectId)))
             .OrderBy(w => w.Batch.ProjectId).ThenBy(w => w.Sheet).ThenBy(w => w.SourceRow)
-            .Select(w => new { w.Batch.ProjectId, w.Sheet, w.Cell, w.Category, w.Family, w.Currency, w.Amount,
-                w.WorkDate, w.Description, w.Unit, w.Quantity, w.Rate, w.Progress }).ToListAsync(ct);
+            .Select(HistoricalWorkReader.Detail).ToListAsync(ct);
         var settlements = await db.HistoricalSettlements.AsNoTracking()
             .Where(s => (supplier ? s.SupplierId == id : s.ContractorId == id) && (global || allowed.Contains(s.Batch.ProjectId)))
             .OrderBy(s => s.Id)
-            .Select(s => new { s.Batch.ProjectId, s.Sheet, s.Cell, s.Category, s.Currency, s.Amount, s.SettlementDate, s.Narrative })
+            .Select(s => new { s.Id, s.Batch.ProjectId, ProjectName = s.Batch.Project.Name, s.Batch.SourceFileName,
+                s.Batch.SourceSha256, s.Sheet, s.Cell, s.Category, s.Currency, s.Amount, s.SettlementDate, s.Narrative, s.Party })
             .ToListAsync(ct);
         if (works.Count == 0 && settlements.Count == 0) return NotFound();
         var totals = works.Select(w => (w.ProjectId, w.Currency)).Union(settlements.Select(s => (s.ProjectId,s.Currency)))

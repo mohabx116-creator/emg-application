@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import HistoricalAccountDetails from '../HistoricalAccountDetails';
 import { Link, useParams } from 'react-router-dom';
 import {
   Alert,
@@ -356,7 +357,7 @@ export default function SupplierDetails() {
                         <Button size="small" onClick={() => openWorkflow({ type: 'supplier-supply', id: item.id, supply: item })}>تصحيح</Button>
                         <Button size="small" color="error" onClick={() => void remove('supplier-supply', item.id)} startIcon={<IconTrash size={15} />}>حذف</Button>
                         <Typography variant="caption" color={item.status === 'معتمد' || item.status === 'مرحّل' ? 'success.main' : 'warning.main'}>
-                          {item.status === 'مقبول فنياً' ? 'مقبول فنياً · بانتظار الاعتماد المالي' : item.status}
+                          {item.status}
                         </Typography>
                       </Stack>
                     </Stack>
@@ -398,8 +399,8 @@ export default function SupplierDetails() {
                   </CardContent>
                 </Card>
               ))}
-          {tab === 0 && !supplies.length && <Typography color="text.secondary">لا توجد توريدات.</Typography>}
-          {tab === 1 && !payments.length && <Typography color="text.secondary">لا توجد مدفوعات.</Typography>}
+          <HistoricalAccountDetails type="suppliers" id={id} kind={tab === 0 ? 'works' : 'settlements'}
+            emptyText={tab === 0 && !supplies.length ? 'لا توجد توريدات.' : tab === 1 && !payments.length ? 'لا توجد مدفوعات.' : undefined} />
         </MainCard>
       )}
       {tab === 2 && (
@@ -574,7 +575,7 @@ export default function SupplierDetails() {
           <Stack spacing={2}>
             {workflowError && <Alert severity="error">{workflowError}</Alert>}
             {!workflowAudit && !workflowError && workflowTarget?.type === 'supplier-supply' && <CircularProgress size={24} aria-label="تحميل بيانات التصحيح" />}
-            {workflowError && <Alert severity="warning">تعذر تحميل معلومات المراجعة القديمة، ويمكن متابعة التصحيح المباشر.</Alert>}
+            {workflowError && <Alert severity="warning">تعذر تحميل سجل الإجراءات. يمكنك متابعة التصحيح.</Alert>}
             {workflowTarget && (
               <>
                 {workflowAudit && <Typography fontWeight={700}>الحالة الحالية: {workflowAudit.status}</Typography>}

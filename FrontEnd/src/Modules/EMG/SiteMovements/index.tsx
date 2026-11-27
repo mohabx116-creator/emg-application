@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { getSectionWork, type HistoricalWork } from 'api/historicalWork';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
@@ -160,6 +161,8 @@ export default function EmgSiteMovements() {
 
   const { data: cachedSuppliers = [], mutate: mutateSuppliers } = useEmgSuppliersCache(true);
 
+  const loadSequence = useRef(0);
+  const [historical, setHistorical] = useState<HistoricalWork[]>([]);
   const [project, setProject] = useState<EmgProject | null>(null);
   const [movements, setMovements] = useState<EmgSiteMovement[]>([]);
   const [contractors, setContractors] = useState<EmgContractor[]>([]);
@@ -198,18 +201,24 @@ export default function EmgSiteMovements() {
   const activeContractors = useMemo(() => contractors.filter((s) => s.isActive), [contractors]);
 
   const load = () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
-    Promise.all([getEmgProject(id), getEmgSiteMovements(id)])
+    Promise.all([getEmgProject(id), getSectionWork(id, 'movements', getEmgSiteMovements(id))])
       .then(([projectData, movementData]) => {
+        if (sequence !== loadSequence.current) return;
         setProject(projectData);
-        setMovements(movementData);
+        setMovements(movementData.records);
+        setHistorical(movementData.historical);
       })
-      .catch(() => setMessage({ severity: 'error', text: 'تعذر تحميل حركة الموقع.' }))
-      .finally(() => setLoading(false));
+      .catch(() => sequence === loadSequence.current && setMessage({ severity: 'error', text: 'تعذر تحميل حركة الموقع.' }))
+      .finally(() => { if (sequence === loadSequence.current) setLoading(false); });
   };
 
   useEffect(() => {
+    setProject(null);
+    setPage(0);
     if (Number.isInteger(id)) load();
+    return () => { ++loadSequence.current; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -967,6 +976,7 @@ export default function EmgSiteMovements() {
         loading={loading}
         message={message}
         onCloseMessage={() => setMessage(null)}
+        historical={historical}
         totalAmount={totalAmount}
         totalCount={movements.length}
         approvedCount={approvedCount}

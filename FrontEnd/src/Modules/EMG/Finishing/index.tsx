@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { getSectionWork, type HistoricalWork } from 'api/historicalWork';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -62,6 +63,8 @@ export default function EmgFinishing() {
   const { data: suppliers = [] } = useEmgSuppliersCache(true);
   const canCreate = !user?.permissions || user.permissions.includes('finishing.create') || user.permissions.includes('finishing.manage');
 
+  const loadSequence = useRef(0);
+  const [historical, setHistorical] = useState<HistoricalWork[]>([]);
   const [project, setProject] = useState<EmgProject | null>(null);
   const [records, setRecords] = useState<EmgFinishing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,18 +95,24 @@ export default function EmgFinishing() {
   const total = useMemo(() => (Number(form.quantity) || 0) * (Number(form.unitPrice) || 0), [form.quantity, form.unitPrice]);
 
   const load = () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
-    Promise.all([getEmgProject(id), getEmgFinishing(id)])
+    Promise.all([getEmgProject(id), getSectionWork(id, 'finishing', getEmgFinishing(id))])
       .then(([p, r]) => {
+        if (sequence !== loadSequence.current) return;
         setProject(p);
-        setRecords(r);
+        setRecords(r.records);
+        setHistorical(r.historical);
       })
-      .catch(() => setMessage({ severity: 'error', text: 'تعذر تحميل أعمال التشطيبات.' }))
-      .finally(() => setLoading(false));
+      .catch(() => sequence === loadSequence.current && setMessage({ severity: 'error', text: 'تعذر تحميل أعمال التشطيبات.' }))
+      .finally(() => { if (sequence === loadSequence.current) setLoading(false); });
   };
 
   useEffect(() => {
+    setProject(null);
+    setPage(0);
     if (Number.isInteger(id)) load();
+    return () => { ++loadSequence.current; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -358,6 +367,7 @@ export default function EmgFinishing() {
         loading={loading}
         message={message}
         onCloseMessage={() => setMessage(null)}
+        historical={historical}
         totalAmount={totalAmount}
         totalCount={records.length}
         approvedCount={approvedCount}

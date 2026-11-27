@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using EMG.Api.Modules.Projects.Services;
 using EMG.Api.Modules.SiteMovements.Dtos;
 using EMG.Domain.Entities;
 using EMG.Infrastructure.Db;
@@ -102,7 +103,8 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
 
     public async Task<SiteMovementSummary?> UpdateAsync(int id, CreateSiteMovementRequest request, int? userId, bool isAdmin, CancellationToken cancellationToken, bool hasOverridePermission)
     {
-        if (await db.SupplierInvoices.AnyAsync(item => item.SiteMovementId == id, cancellationToken)) return null;
+        if (await HistoricalWorkReader.IsLinkedAsync(db, "site-movement", id, cancellationToken) ||
+            await db.SupplierInvoices.AnyAsync(item => item.SiteMovementId == id, cancellationToken)) return null;
         var movement = await db.SiteMovements.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (movement is null || (!isAdmin && (userId is null || !await CanManageAsync(movement, userId.Value, hasOverridePermission, cancellationToken)))) return null;
         if (movement.Status == "محذوف" || request.ProjectId != movement.ProjectId) return null;
@@ -140,7 +142,8 @@ public sealed class SiteMovementsService(EmgDbContext db) : ISiteMovementsServic
 
     public async Task<bool> DeleteAsync(int id, int? userId, bool isAdmin, CancellationToken cancellationToken, bool hasOverridePermission)
     {
-        if (await db.SupplierInvoices.AnyAsync(item => item.SiteMovementId == id, cancellationToken)) return false;
+        if (await HistoricalWorkReader.IsLinkedAsync(db, "site-movement", id, cancellationToken) ||
+            await db.SupplierInvoices.AnyAsync(item => item.SiteMovementId == id, cancellationToken)) return false;
         var movement = await db.SiteMovements.FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (movement is null || (!isAdmin && (userId is null || !await CanManageAsync(movement, userId.Value, hasOverridePermission, cancellationToken)))) return false;
         if (await db.AdvanceAllocations.AnyAsync(item => item.SiteMovementId == id, cancellationToken) || await db.ContractorStatementLines.AnyAsync(item => item.SourceEntityType == "site-movement" && item.SourceEntityId == id, cancellationToken)) return false;
