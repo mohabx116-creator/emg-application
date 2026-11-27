@@ -85,6 +85,7 @@ type WorkSectionShellProps = {
   onOpenCreate: () => void;
   onRefresh: () => void;
   loading?: boolean;
+  detailWarnings: string[];
   message?: { severity: 'success' | 'warning' | 'error'; text: string } | null;
   onCloseMessage?: () => void;
   totalAmount: number;
@@ -124,6 +125,7 @@ export default function WorkSectionShell({
   onOpenCreate,
   onRefresh,
   loading = false,
+  detailWarnings,
   message,
   onCloseMessage,
   totalAmount,
@@ -384,7 +386,9 @@ export default function WorkSectionShell({
           </Stack>
         </Box>
 
-        {(offset < filteredCount || count === 0) && children}
+        {detailWarnings.map(warning => <Alert key={warning} severity="warning">{warning}</Alert>)}
+        {loading && count === 0 && <Skeleton variant="rounded" height={48} />}
+        {(offset < filteredCount || (count === 0 && !loading && detailWarnings.length === 0)) && children}
         <HistoricalWorkTable rows={sourcePage} />
 
         {count > 0 && (

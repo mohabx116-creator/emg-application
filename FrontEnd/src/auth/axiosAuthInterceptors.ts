@@ -80,6 +80,9 @@ export function installAuthInterceptors(axiosServices: AxiosInstance): void {
         }
         if (payload.message) return Promise.reject({ ...payload, status });
       }
+      if (error.response && !payload) {
+        return Promise.reject({ status: error.response.status, message: 'تعذر تحميل الطلب.' });
+      }
       return Promise.reject(payload || 'تعذر الاتصال بالخدمة.');
     }
   );

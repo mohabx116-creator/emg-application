@@ -1,5 +1,5 @@
-import { getSectionWork, type HistoricalWork } from 'api/historicalWork';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import useProjectWork from '../useProjectWork';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
@@ -51,9 +51,7 @@ import {
   createEmgSupplier,
   deleteEmgTransaction,
   EmgEntrySuggestion,
-  EmgProject,
   EmgSiteMovement,
-  getEmgProject,
   getEmgSiteMovements,
   getEmgContractors,
   createEmgContractor,
@@ -161,16 +159,12 @@ export default function EmgSiteMovements() {
 
   const { data: cachedSuppliers = [], mutate: mutateSuppliers } = useEmgSuppliersCache(true);
 
-  const loadSequence = useRef(0);
-  const [historical, setHistorical] = useState<HistoricalWork[]>([]);
-  const [project, setProject] = useState<EmgProject | null>(null);
-  const [movements, setMovements] = useState<EmgSiteMovement[]>([]);
+  const { project, projectError, records: movements, historical, warnings, loading, load } = useProjectWork(id, 'movements', getEmgSiteMovements);
   const [contractors, setContractors] = useState<EmgContractor[]>([]);
   const [workCategories, setWorkCategories] = useState<string[]>([]);
   const [header, setHeader] = useState<InvoiceHeaderForm>(createInitialHeader);
   const [lines, setLines] = useState<InvoiceLine[]>([createEmptyLine()]);
   const [attachments, setAttachments] = useState<File[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [message, setMessage] = useState<{ severity: 'success' | 'warning' | 'error'; text: string } | null>(null);
@@ -200,26 +194,8 @@ export default function EmgSiteMovements() {
   const activeSuppliers = useMemo(() => cachedSuppliers.filter((s) => s.isActive), [cachedSuppliers]);
   const activeContractors = useMemo(() => contractors.filter((s) => s.isActive), [contractors]);
 
-  const load = () => {
-    const sequence = ++loadSequence.current;
-    setLoading(true);
-    Promise.all([getEmgProject(id), getSectionWork(id, 'movements', getEmgSiteMovements(id))])
-      .then(([projectData, movementData]) => {
-        if (sequence !== loadSequence.current) return;
-        setProject(projectData);
-        setMovements(movementData.records);
-        setHistorical(movementData.historical);
-      })
-      .catch(() => sequence === loadSequence.current && setMessage({ severity: 'error', text: 'تعذر تحميل حركة الموقع.' }))
-      .finally(() => { if (sequence === loadSequence.current) setLoading(false); });
-  };
-
   useEffect(() => {
-    setProject(null);
     setPage(0);
-    if (Number.isInteger(id)) load();
-    return () => { ++loadSequence.current; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => { getEmgContractors().then(setContractors).catch(() => setContractors([])); }, []);
@@ -508,7 +484,7 @@ export default function EmgSiteMovements() {
   }, [search, statusFilter]);
 
   if (!project && loading) return <WorkSectionSkeleton />;
-  if (!project) return <Alert severity="error">المشروع غير موجود أو لا تملك صلاحية الوصول إليه.</Alert>;
+  if (!project) return <Alert severity="error" action={<Button onClick={load}>إعادة المحاولة</Button>}>{projectError}</Alert>;
 
   const selectedSupplierObj = activeSuppliers.find((s) => String(s.id) === header.supplierId) || null;
   const selectedContractorObj = activeContractors.find((s) => String(s.id) === header.contractorId) || null;
@@ -974,6 +950,7 @@ export default function EmgSiteMovements() {
         onOpenCreate={() => setCreateOpen(true)}
         onRefresh={load}
         loading={loading}
+        detailWarnings={warnings}
         message={message}
         onCloseMessage={() => setMessage(null)}
         historical={historical}

@@ -1,5 +1,5 @@
-import { getSectionWork, type HistoricalWork } from 'api/historicalWork';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import useProjectWork from '../useProjectWork';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -31,11 +31,9 @@ import AttachmentGallery from 'ui-component/emg/AttachmentGallery';
 import SmartEntryAdvisor from 'ui-component/emg/SmartEntryAdvisor';
 import {
   createEmgExcavation,
-  EmgProject,
   EmgSupplier,
   deleteEmgTransaction,
   getEmgExcavation,
-  getEmgProject,
   getEmgSuppliers,
   uploadEmgAttachment
 } from 'api/emg';
@@ -51,12 +49,8 @@ export default function EmgExcavation() {
   const { user } = useAuth();
   const canCreate = !user?.permissions || user.permissions.includes('excavation.create') || user.permissions.includes('excavation.manage');
 
-  const loadSequence = useRef(0);
-  const [historical, setHistorical] = useState<HistoricalWork[]>([]);
-  const [project, setProject] = useState<EmgProject | null>(null);
-  const [records, setRecords] = useState<EmgExcavation[]>([]);
+  const { project, projectError, records, historical, warnings, loading, load } = useProjectWork(id, 'excavation', getEmgExcavation);
   const [suppliers, setSuppliers] = useState<EmgSupplier[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [message, setMessage] = useState<{ severity: 'success' | 'warning' | 'error'; text: string } | null>(null);
@@ -83,26 +77,11 @@ export default function EmgExcavation() {
     notes: ''
   });
 
-  const load = () => {
-    const sequence = ++loadSequence.current;
-    setLoading(true);
-    Promise.all([getEmgProject(id), getSectionWork(id, 'excavation', getEmgExcavation(id)), getEmgSuppliers().catch(() => [])])
-      .then(([p, r, s]) => {
-        if (sequence !== loadSequence.current) return;
-        setProject(p);
-        setRecords(r.records);
-        setHistorical(r.historical);
-        setSuppliers(s);
-      })
-      .catch(() => sequence === loadSequence.current && setMessage({ severity: 'error', text: 'تعذر تحميل بيانات أعمال الحفر.' }))
-      .finally(() => { if (sequence === loadSequence.current) setLoading(false); });
-  };
-
   useEffect(() => {
-    setProject(null);
     setPage(0);
-    if (Number.isInteger(id)) load();
-    return () => { ++loadSequence.current; };
+    let active = true;
+    getEmgSuppliers().then(rows => { if (active) setSuppliers(rows); }).catch(() => { if (active) setSuppliers([]); });
+    return () => { active = false; };
   }, [id]);
 
   const calculatedQuantity = useMemo(() => {
@@ -195,7 +174,7 @@ export default function EmgExcavation() {
   }, [search, statusFilter]);
 
   if (loading && !project) return <WorkSectionSkeleton />;
-  if (!project) return <Alert severity="error">المشروع غير موجود أو لا تملك صلاحية الوصول إليه.</Alert>;
+  if (!project) return <Alert severity="error" action={<Button onClick={load}>إعادة المحاولة</Button>}>{projectError}</Alert>;
 
   const createForm = (
     <Box component="form" onSubmit={submit}>
@@ -326,6 +305,7 @@ export default function EmgExcavation() {
         onOpenCreate={() => setCreateOpen(true)}
         onRefresh={load}
         loading={loading}
+        detailWarnings={warnings}
         message={message}
         onCloseMessage={() => setMessage(null)}
         historical={historical}

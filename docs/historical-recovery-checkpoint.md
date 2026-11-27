@@ -85,3 +85,7 @@ The approved template expands work, receipt and allocation rows with original re
 ### Project card performance
 
 The read-only 38-card service benchmark used a cold process followed by three warm requests on each version. SQL commands fell from 1,094 to 866. Cold service time fell from 4,317 to 3,585 ms and median warm time from 2,393 to 1,878 ms. The digest of all pre-existing card fields matched. Separate currency projections are additive. Twenty-one focused tests passed. The project loop remains sequential and these measurements exclude browser rendering.
+
+### Independent section requests
+
+The five sections load the project independently. Partial detail failures preserve the successful collection and report the failing source and HTTP status. A focused frontend check covered historical 404, operational 403, empty new projects and linked-row suppression. TypeScript passed. The prior server binary predated the endpoint. No authenticated pre-refresh status was captured.
