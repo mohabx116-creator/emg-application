@@ -61,3 +61,7 @@ The authenticated browser showed the dated source row on the allocation-only ref
 ### Subsequent contractor payments
 
 The payment limit now uses the remaining net entitlement under the existing serializable transaction. Two service-level regression cases settle 100 in installments of 30 and 70, reject a further 0.01 and verify unchanged works. Only a direct owner settlement contributes to project funding. Live write verification remains pending.
+
+### Ordinary workbook import and scoped transaction tests
+
+The approved daily new-project flow accepts a reviewed file whose SHA-256 matches the locally configured approved workbook on the development loopback target. The historical migration switch remains separate. The focused suite passed 39 cases covering file and target constraints, validation, assigned-project access, CRUD, supplier settlement, contractor installments and allocation contention. A genuine new workbook has not been committed to the operational database. This and a live assigned-engineer session remain owner acceptance items.

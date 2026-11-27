@@ -30,7 +30,7 @@ public sealed partial class ReviewedWorkbookImportService
     {
         var preview = GetNewProjectPreview(request, actor);
         var plan = await PlanNewProjectAsync(request, preview, ct);
-        return new(plan.Project.Code, plan.Rows.Select(row => row.Disposition).ToArray(), IsNewProjectPostingAllowed(preview),
+        return new(plan.Project.Code, plan.Rows.Select(row => row.Disposition).ToArray(), IsNewProjectPostingAllowed(preview.SourceSha256, historical: false),
             plan.Rows.Any(row => !row.Disposition.CanImport && !row.Record.IsSummary));
     }
 
@@ -38,7 +38,7 @@ public sealed partial class ReviewedWorkbookImportService
         HistoricalMigrationBaseline? historicalBaseline = null)
     {
         var preview = GetNewProjectPreview(request, actor);
-        if (!IsNewProjectPostingAllowed(preview)) throw new HistoricalWorkbookPostingDisabledException();
+        if (!IsNewProjectPostingAllowed(preview.SourceSha256, historicalBaseline is not null)) throw new HistoricalWorkbookPostingDisabledException();
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         var (project, rows) = await PlanNewProjectAsync(request, preview, ct, historicalBaseline is not null);
         var accepted = rows.Where(row => row.Disposition.CanImport).ToArray();
@@ -244,33 +244,30 @@ public sealed partial class ReviewedWorkbookImportService
         _ => "دليل نوع الحركة أو الطرف أو الربط المحاسبي غير مكتمل."
     };
 
-    private bool IsNewProjectPostingAllowed(UniversalPreviewResponse preview)
+    internal bool IsNewProjectPostingAllowed(string sourceSha256, bool historical)
     {
-        if (configuration.GetValue<bool>("HistoricalMigration:Enabled") && environment.IsDevelopment() &&
-            db.Database.IsNpgsql() && IsHistoricalMigrationTargetAllowed()) return true;
-        // Set only after the owner authorizes production imports. The controller
-        // independently requires active administrator authorization and both permissions.
-        if (environment.IsProduction() && db.Database.IsNpgsql())
-            return configuration.GetValue<bool>("UniversalImport:EnableProductionCommit");
+        if (!db.Database.IsNpgsql() || string.IsNullOrWhiteSpace(db.Database.GetConnectionString())) return false;
+        if (environment.IsProduction())
+            return !historical && configuration.GetValue<bool>("UniversalImport:EnableProductionCommit");
+        if (!environment.IsDevelopment()) return false;
 
-        if (!environment.IsDevelopment() || !configuration.GetValue<bool>("UniversalImportQa:Enabled") ||
-            !string.Equals(preview.SourceSha256, configuration["UniversalImportQa:ApprovedSha256"], StringComparison.OrdinalIgnoreCase) ||
-            !db.Database.IsNpgsql() || string.IsNullOrWhiteSpace(db.Database.GetConnectionString())) return false;
         var connection = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString());
-        return connection.Host is "127.0.0.1" or "localhost" && connection.Port != 5432 &&
+        if (connection.Port == 5432) return false;
+        var loopback = connection.Host is "127.0.0.1" or "localhost";
+        var primaryLocal = loopback && connection.Port == 55464 && connection.Database == "emg_restore";
+        if (historical)
+            return configuration.GetValue<bool>("HistoricalMigration:Enabled") &&
+                (connection.Database?.StartsWith("emg_historical_qa_", StringComparison.Ordinal) == true ||
+                 primaryLocal && configuration.GetValue<bool>("HistoricalMigration:AllowAuthorizedLocalTarget"));
+
+        if (primaryLocal)
+            return sourceSha256.Length == 64 && sourceSha256.All(Uri.IsHexDigit) &&
+                string.Equals(sourceSha256, configuration["UniversalImport:ApprovedLocalWorkbookSha256"], StringComparison.OrdinalIgnoreCase);
+        return loopback && configuration.GetValue<bool>("UniversalImportQa:Enabled") &&
+            string.Equals(sourceSha256, configuration["UniversalImportQa:ApprovedSha256"], StringComparison.OrdinalIgnoreCase) &&
             connection.Port == configuration.GetValue<int>("UniversalImportQa:Port") &&
             connection.Database?.StartsWith("emg_universal_qa_", StringComparison.Ordinal) == true &&
             connection.Database == configuration["UniversalImportQa:Database"];
-    }
-
-    private bool IsHistoricalMigrationTargetAllowed()
-    {
-        if (string.IsNullOrWhiteSpace(db.Database.GetConnectionString())) return false;
-        var connection = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString());
-        if (connection.Port == 5432) return false;
-        if (connection.Database?.StartsWith("emg_historical_qa_", StringComparison.Ordinal) == true) return true;
-        return configuration.GetValue<bool>("HistoricalMigration:AllowAuthorizedLocalTarget") &&
-            connection.Database == "emg_restore" && connection.Port == 55464 && (connection.Host is "127.0.0.1" or "localhost");
     }
 
     private static bool FitsAmount(decimal? amount) => amount is >= -9999999999999999.99m and <= 9999999999999999.99m &&

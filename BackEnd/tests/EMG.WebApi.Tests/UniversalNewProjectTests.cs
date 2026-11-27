@@ -49,6 +49,40 @@ public sealed class UniversalNewProjectTests(ITestOutputHelper output)
         Assert.False(await db.Projects.AnyAsync());
     }
 
+    [Theory]
+    [InlineData("127.0.0.1", 55464, "emg_restore", true)]
+    [InlineData("localhost", 55464, "emg_restore", true)]
+    [InlineData("not-loopback.invalid", 55464, "emg_restore", false)]
+    [InlineData("127.0.0.1", 5432, "emg_restore", false)]
+    [InlineData("127.0.0.1", 55465, "emg_restore", false)]
+    [InlineData("127.0.0.1", 55464, "unapproved_target", false)]
+    public void DailyWorkbookApprovalIsBoundToFileAndTargetAndCannotEnableRecovery(
+        string hostName, int port, string databaseName, bool primaryLocal)
+    {
+        var connection = new NpgsqlConnectionStringBuilder { Host = hostName, Port = port, Database = databaseName };
+        using var db = new EmgDbContext(new DbContextOptionsBuilder<EmgDbContext>()
+            .UseNpgsql(connection.ConnectionString).Options);
+        var host = WebApplication.CreateSlimBuilder(new WebApplicationOptions { EnvironmentName = "Development" });
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var snapshots = new ReviewedWorkbookSnapshots();
+        var service = new ReviewedWorkbookImportService(db, new UniversalImportPreviewService(new UniversalImportMappingRegistry()),
+            snapshots, config, host.Environment);
+        var approved = new string('A', 64);
+        var different = new string('B', 64);
+
+        Assert.False(service.IsNewProjectPostingAllowed(approved, historical: false));
+        config["UniversalImport:ApprovedLocalWorkbookSha256"] = approved.ToLowerInvariant();
+        Assert.Equal(primaryLocal, service.IsNewProjectPostingAllowed(approved, historical: false));
+        Assert.False(service.IsNewProjectPostingAllowed(different, historical: false));
+        Assert.False(service.IsNewProjectPostingAllowed(approved, historical: true));
+        config["HistoricalMigration:Enabled"] = "true";
+        Assert.False(service.IsNewProjectPostingAllowed(approved, historical: true));
+        config["HistoricalMigration:AllowAuthorizedLocalTarget"] = "true";
+        Assert.Equal(primaryLocal, service.IsNewProjectPostingAllowed(approved, historical: true));
+        Assert.False(service.IsNewProjectPostingAllowed(different, historical: false));
+        Assert.Equal(System.Data.ConnectionState.Closed, db.Database.GetDbConnection().State);
+    }
+
     [Q315Fact]
     public async Task Q315CreatesProjectAndReportOnlyAfterAtomicCommit()
     {
