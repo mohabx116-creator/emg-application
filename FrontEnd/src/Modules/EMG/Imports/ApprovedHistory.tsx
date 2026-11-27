@@ -27,7 +27,7 @@ const streams: Record<string, string> = {
   allocation_ledger: 'التوزيعات', main_payment_ledger: 'الدفعات الرئيسية',
   unallocated_multicurrency_ledger: 'الدفعات غير الموزعة', workbook_stream: 'حركات القسم'
 };
-const value = (amount: number | null) => amount === null ? '—' : amount.toLocaleString('ar-EG', { maximumFractionDigits: 8 });
+const value = (amount: number | null) => amount === null ? '—' : amount.toLocaleString('en-US', { maximumFractionDigits: 8 });
 const targetLabel = (target: string | null | undefined) => target ? targets[target] ?? target : '—';
 
 function Reconciliation({ controls }: { controls: WorkbookControl[] }) {

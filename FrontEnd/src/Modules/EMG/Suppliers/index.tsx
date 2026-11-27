@@ -6,7 +6,7 @@ import { createEmgSupplier, EmgSupplier, getEmgSuppliers } from 'api/emg';
 import { Link } from 'react-router-dom';
 import useAuth from 'hooks/useAuth';
 
-const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const formatMoney = (value: number) => `${money.format(value || 0)} ج.م`;
 
 type SupplierForm = { name: string; supplierType: string; phone: string; taxNumber: string; notes: string };

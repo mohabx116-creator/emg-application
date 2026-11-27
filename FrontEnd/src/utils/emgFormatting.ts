@@ -1,11 +1,11 @@
 // Shared EMG formatting, local Cairo date, and canonical category definitions
 
-const arCurrencyFormatter = new Intl.NumberFormat('ar-EG', {
+const arCurrencyFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
 
-const arCompactFormatter = new Intl.NumberFormat('ar-EG', {
+const arCompactFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2
 });
 

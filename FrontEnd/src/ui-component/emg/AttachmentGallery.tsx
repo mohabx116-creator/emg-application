@@ -126,7 +126,7 @@ export default function AttachmentGallery({ entityType, entityId, title = 'ال�
                         {file.originalFileName}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {Math.ceil(file.sizeInBytes / 1024)} ك.ب · {new Date(file.uploadedAtUtc).toLocaleString('ar-EG')}
+                        {Math.ceil(file.sizeInBytes / 1024)} ك.ب · {new Date(file.uploadedAtUtc).toLocaleString('ar-EG-u-nu-latn')}
                       </Typography>
                     </Box>
                   </Stack>

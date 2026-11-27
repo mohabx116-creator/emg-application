@@ -37,9 +37,17 @@ export default function Header() {
   const isHorizontal = menuOrientation === MenuOrientation.HORIZONTAL && !downMD;
 
   return (
-    <>
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        width: '100%',
+        minWidth: 0,
+        gap: { xs: 0.75, sm: 1, md: 0 }
+      }}
+    >
       {/* logo & toggler button */}
-      <Box sx={{ width: downMD ? 'auto' : 228, display: 'flex' }}>
+      <Box sx={{ width: downMD ? 'auto' : 228, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <Box component="span" sx={{ display: { xs: 'none', md: 'block' }, flexGrow: 1 }}>
           <LogoSection />
         </Box>
@@ -74,12 +82,13 @@ export default function Header() {
       </Box>
 
       {/* header search */}
-      <SearchSection />
-      <Box sx={{ flexGrow: 1 }} />
-      <Box sx={{ flexGrow: 1 }} />
+      <Box sx={{ flex: { xs: '1 1 0', md: '0 0 auto' }, minWidth: 0 }}>
+        <SearchSection />
+      </Box>
+      <Box sx={{ display: { xs: 'none', md: 'block' }, flexGrow: 1 }} />
 
       {/* safe global navigation back action */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mr: { xs: 0.5, sm: 1 } }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, mr: { xs: 0, sm: 0.5, md: 1 } }}>
         <GlobalBackButton />
       </Box>
 
@@ -87,12 +96,12 @@ export default function Header() {
       <NotificationSection />
 
       {/* full screen toggler */}
-      <Box sx={{ display: { xs: 'none', lg: 'block' } }}>
+      <Box sx={{ display: { xs: 'none', lg: 'block' }, flexShrink: 0 }}>
         <FullScreenSection />
       </Box>
 
       {/* profile */}
       <ProfileSection />
-    </>
+    </Box>
   );
 }

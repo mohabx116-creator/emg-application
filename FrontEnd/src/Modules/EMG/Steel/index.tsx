@@ -330,7 +330,7 @@ export default function EmgSteel() {
               ) : (
                 paginated.map((record) => (
                   <TableRow key={record.id} hover>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.operationDate).toLocaleDateString('ar-EG')}</TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.operationDate).toLocaleDateString('ar-EG-u-nu-latn')}</TableCell>
                     <TableCell sx={{ maxWidth: 280 }}>
                       <Typography variant="body2" fontWeight={700}>{record.description}</Typography>
                       <Chip size="small" variant="outlined" label={record.operationType} sx={{ mt: 0.35, height: 20, fontWeight: 600 }} />

@@ -1,9 +1,14 @@
 // EMG Construction ERP — Safe PWA Service Worker
 // Security rule: NEVER cache /api/* responses, auth cookies, or confidential financial data.
 
-const CACHE_NAME = 'emg-shell-v1';
+const CACHE_NAME = 'emg-shell-v2';
 const SHELL_ASSETS = [
   '/manifest.webmanifest',
+  '/favicon-32x32.png',
+  '/apple-touch-icon.png',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/icon-maskable-512.png',
   '/emg-logo.png',
   '/emg-logo-3d.png'
 ];

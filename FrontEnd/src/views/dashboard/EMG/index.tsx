@@ -416,11 +416,11 @@ export default function EmgDashboard() {
   const funding = portfolioFunding(projects);
   const totals = useMemo(
     () => ({
-      due: projects.reduce((sum,p) => sum + Math.max(0, -(p.cashBalance ?? 0)), 0),
+      due: projects.reduce((sum, p) => sum + Math.max(0, -(p.cashBalance ?? 0)), 0),
       supplierRemaining: suppliers.reduce((x, s) => x + s.remaining, 0),
-        activeProjects: projects.filter((p) => p.status === 'نشط').length,
-        totalWorks: projects.reduce((x, p) => x + (p.totalWorks || 0), 0),
-          cashBalance: projects.reduce((x, p) => x + (p.cashBalance || 0), 0)
+      activeProjects: projects.filter((p) => p.status === 'نشط').length,
+      totalWorks: projects.reduce((x, p) => x + (p.totalWorks || 0), 0),
+      cashBalance: projects.reduce((x, p) => x + (p.cashBalance || 0), 0)
     }),
     [suppliers, projects]
   );

@@ -11,6 +11,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  Divider,
   FormControl,
   Grid,
   IconButton,
@@ -21,18 +22,20 @@ import {
   Skeleton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
   useMediaQuery,
   useTheme
 } from '@mui/material';
 import { Link, useParams } from 'react-router-dom';
-import { IconArrowRight, IconCash, IconPlus, IconReceipt, IconRefresh, IconTrash, IconX } from '@tabler/icons-react';
+import { IconArrowRight, IconCalendar, IconCash, IconFileSpreadsheet, IconPlus, IconReceipt, IconRefresh, IconTrash, IconX } from '@tabler/icons-react';
 import MainCard from 'ui-component/cards/MainCard';
 import { createEmgAdvance, deleteEmgTransaction, EmgAdvance, EmgAdvanceLedger, getEmgAdvanceLedger, uploadEmgAttachment } from 'api/emg';
 import useAuth from 'hooks/useAuth';
 import { invalidateEmgCache, useEmgProjectsCache } from 'hooks/useEmgData';
 import { useActiveProject } from 'contexts/ActiveProjectContext';
 import { formatEmgMoney, getLocalIsoDate } from 'utils/emgFormatting';
+import FinancialSummary from '../FinancialSummary';
 
 const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(['pdf', 'jpg', 'jpeg', 'png', 'webp', 'xlsx', 'xls', 'doc', 'docx']);
@@ -67,6 +70,7 @@ export default function EmgAdvances() {
 
   const canCreate = !!lockedProjectId && user?.permissions?.includes('advances.create');
   const [ledger, setLedger] = useState<EmgAdvanceLedger | null>(null);
+  const [receiptsPage, setReceiptsPage] = useState(1);
   const [page, setPage] = useState(1);
   const requestNumber = useRef(0);
   const [showEvidence, setShowEvidence] = useState(false);
@@ -118,6 +122,7 @@ export default function EmgAdvances() {
     const request = ++requestNumber.current;
     setLoading(true);
     setLedger(null);
+    setReceiptsPage(1);
     setPage(1);
     getEmgAdvanceLedger(pid)
       .then(data => { if (requestNumber.current === request) setLedger(data); })
@@ -201,63 +206,6 @@ export default function EmgAdvances() {
     }
   };
 
-  const renderHistoricalRow = (row: HistoricalRecord) => (
-              <Grid key={`source-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
-                <Card
-                  variant="outlined"
-                  sx={{
-                    height: '100%',
-                    borderRadius: 3,
-                    bgcolor: 'background.paper',
-                    transition: 'border-color 150ms ease',
-                    '&:hover': { borderColor: 'primary.main' }
-                  }}
-                >
-                  <CardActionArea
-                    onClick={() => setSelectedRecord(row)}
-                    sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}
-                  >
-                    <CardContent sx={{ width: '100%' }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                            {row.projectName}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {row.category || row.sheet}
-                          </Typography>
-                        </Box>
-                        <Chip
-                          size="small"
-                          label={recordKind(row)}
-                          color={row.basis === 'conflicting_ownership' ? 'warning' : row.fundsProject ? 'primary' : 'default'}
-                        />
-                      </Stack>
-                      <Stack spacing={0.75} sx={{ mt: 2 }}>
-                        <Stack direction="row" justifyContent="space-between">
-                          <Typography color="text.secondary">{row.isAllocation ? 'قيمة التوزيع' : 'القيمة المسجلة'}</Typography>
-                          <Typography fontWeight={800} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                            {formatEmgMoney(row.amount, row.currency === 'EGP' ? 'ج.م' : row.currency)}
-                          </Typography>
-                        </Stack>
-                        {row.description && (
-                          <Typography variant="body2" color="text.primary">
-                            {row.description}
-                          </Typography>
-                        )}
-                        <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                          {row.workbook} · {row.sheet}!{row.cell}
-                        </Typography>
-                      </Stack>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-                        {row.date ? new Date(row.date).toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}
-                      </Typography>
-                    </CardContent>
-                  </CardActionArea>
-                </Card>
-              </Grid>
-            );
-
   return (
     <Box sx={{ pb: 4 }}>
       {lockedProjectId && (
@@ -310,59 +258,29 @@ export default function EmgAdvances() {
       )}
 
       {loading && !ledger ? (
-        <Grid container spacing={2} sx={{ mb: 2.5 }}>
-          {['إجمالي الدفعات', 'المخصص على حركات', 'الرصيد النقدي'].map((label) => (
-            <Grid key={label} size={{ xs: 12, md: 4 }}>
-              <MainCard title={label} sx={{ borderRadius: 3 }}>
-                <Skeleton variant="text" width="60%" height={36} />
-              </MainCard>
+        <Grid container spacing={1.5} sx={{ mb: 2.5 }}>
+          {[0, 1, 2].map((i) => (
+            <Grid key={i} size={{ xs: 12, sm: 4 }}>
+              <Skeleton variant="rounded" height={106} sx={{ borderRadius: 2.5 }} />
             </Grid>
           ))}
         </Grid>
       ) : (
         (ledger?.totals ?? []).map((t) => (
-          <Grid key={t.currency} container spacing={2} sx={{ mb: 2.5 }}>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <MainCard
-                title="إجمالي الدفعات"
-                secondary={ledger && ledger.totals.length > 1 ? <Chip size="small" label={t.currency} variant="outlined" /> : undefined}
-                sx={{ borderRadius: 3 }}
-              >
-                <Typography variant="h3" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}>
-                  {t.payments == null ? 'غير محدد' : formatEmgMoney(t.payments, t.currency === 'EGP' ? 'ج.م' : t.currency)}
-                </Typography>
-              </MainCard>
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <MainCard
-                title="المخصص على حركات"
-                secondary={ledger && ledger.totals.length > 1 ? <Chip size="small" label={t.currency} variant="outlined" /> : undefined}
-                sx={{ borderRadius: 3 }}
-              >
-                <Typography variant="h3" color="primary" sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}>
-                  {t.allocated == null ? 'غير محدد' : formatEmgMoney(t.allocated, t.currency === 'EGP' ? 'ج.م' : t.currency)}
-                </Typography>
-              </MainCard>
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <MainCard
-                title="الرصيد النقدي"
-                secondary={ledger && ledger.totals.length > 1 ? <Chip size="small" label={t.currency} variant="outlined" /> : undefined}
-                sx={{ borderRadius: 3 }}
-              >
-                <Typography
-                  variant="h3"
-                  color={(t.cashBalance ?? 0) < 0 ? 'error.main' : 'success.main'}
-                  sx={{ fontWeight: 850, fontVariantNumeric: 'tabular-nums' }}
-                >
-                  {t.cashBalance == null ? 'غير محدد' : formatEmgMoney(t.cashBalance, t.currency === 'EGP' ? 'ج.م' : t.currency)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
-                  إجمالي الأعمال: {formatEmgMoney(t.works, t.currency === 'EGP' ? 'ج.م' : t.currency)}
-                </Typography>
-              </MainCard>
-            </Grid>
-          </Grid>
+          <Box key={t.currency} sx={{ mb: 2.5 }}>
+            <FinancialSummary
+              title={ledger && ledger.totals.length > 1 ? `الملخص المالي (${t.currency})` : undefined}
+              subtitle={
+                t.allocated != null
+                  ? `إجمالي المخصص على البنود: ${formatEmgMoney(t.allocated, t.currency === 'EGP' ? 'ج.م' : t.currency)}`
+                  : undefined
+              }
+              currency={t.currency}
+              totalWorks={t.works}
+              totalPayments={t.payments}
+              cashBalance={t.cashBalance}
+            />
+          </Box>
         ))
       )}
       {(lockedProjectId || projectFilter) &&
@@ -373,10 +291,10 @@ export default function EmgAdvances() {
         ))}
 
       <MainCard
-        title="قائمة الدفعات"
+        title={`قائمة الدفعات المقبوضة (${advances.length + recognizedHistoricalReceipts.length + directReceipts.length})`}
         sx={{ borderRadius: 3 }}
         secondary={
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             {!lockedProjectId && (
               <FormControl size="small" sx={{ minWidth: { xs: 160, sm: 220 } }}>
                 <InputLabel>المشروع</InputLabel>
@@ -406,91 +324,408 @@ export default function EmgAdvances() {
           </Grid>
         ) : (
           <Grid container spacing={2}>
-            {directReceipts.map(row => (
-              <Grid key={`direct-${row.source}-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
-                <Card variant="outlined"><CardContent>
-                  <Typography variant="subtitle1">{row.source} · {row.party}</Typography>
-                  <Typography variant="h4">{formatEmgMoney(row.amount, row.currency)}</Typography>
-                  <Typography variant="caption">{row.date?.slice(0, 10)} · {row.reference || `#${row.id}`}</Typography>
-                </CardContent></Card>
-              </Grid>
-            ))}
-            {advances.map((advance) => (
-              <Grid key={advance.id} size={{ xs: 12, md: 6, xl: 4 }}>
-                <Card
-                  component={Link}
-                  to={`/emg/advances/${advance.id}`}
-                  variant="outlined"
-                  sx={{ textDecoration: 'none', color: 'inherit', display: 'block', borderRadius: 3, '&:hover': { borderColor: 'primary.main' } }}
-                >
-                  <CardContent>
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                      <Box>
-                        <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                          {advance.projectName}
+            {directReceipts.map((row) => {
+              const currencyLabel = row.currency === 'EGP' ? 'ج.م' : row.currency;
+              const accentColor = theme.vars.palette.secondary.main;
+              return (
+                <Grid key={`direct-${row.source}-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      height: '100%',
+                      borderRadius: 3,
+                      bgcolor: 'background.paper',
+                      borderColor: 'divider',
+                      borderTop: '3px solid',
+                      borderTopColor: accentColor,
+                      boxShadow: theme.shadows[1]
+                    }}
+                  >
+                    <CardContent sx={{ p: 2, '&:last-child': { pb: 1.75 }, display: 'flex', flexDirection: 'column', height: '100%', gap: 1.5 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.25}>
+                        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                          <Box
+                            sx={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: 2,
+                              display: 'grid',
+                              placeItems: 'center',
+                              bgcolor: 'rgba(94, 53, 177, 0.12)',
+                              color: accentColor,
+                              flexShrink: 0
+                            }}
+                          >
+                            <IconCash size={20} />
+                          </Box>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.3 }} noWrap>
+                              {row.party || row.projectName}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }} noWrap>
+                              {row.source} · {row.projectName}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                        <Chip size="small" label="سداد مباشر من المالك" color="secondary" variant="filled" sx={{ fontWeight: 700, height: 24, flexShrink: 0 }} />
+                      </Stack>
+
+                      <Box
+                        sx={{
+                          px: 1.5,
+                          py: 1.1,
+                          borderRadius: 2,
+                          bgcolor: 'action.hover',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 1
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                          قيمة السداد المباشر
                         </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          العميل: {advance.clientName || 'غير محدد'}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          الدافع: {advance.payerName || 'غير محدد'}
+                        <Typography variant="h4" sx={{ fontWeight: 900, color: accentColor, fontVariantNumeric: 'tabular-nums' }}>
+                          {formatEmgMoney(row.amount, currencyLabel)}
                         </Typography>
                       </Box>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        <Chip size="small" label={advance.balanceStatus} color={advance.dueFromPayer > 0 ? 'error' : 'success'} />
-                        <IconButton
-                          aria-label="حذف الدفعة"
-                          size="small"
-                          color="error"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            void remove(advance);
+
+                      <Box sx={{ mt: 'auto' }}>
+                        <Divider sx={{ mb: 1.1 }} />
+                        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                          <Stack direction="row" spacing={0.5} alignItems="center" color="text.secondary">
+                            <IconCalendar size={14} />
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                              {row.date ? new Date(row.date).toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}
+                            </Typography>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }} noWrap>
+                            {row.reference || `#${row.id}`}
+                          </Typography>
+                        </Stack>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
+            {advances.map((advance) => {
+              const currencyLabel = advance.currency === 'EGP' ? 'ج.م' : advance.currency;
+              const isOverAllocated = advance.dueFromPayer > 0;
+              const accentColor = isOverAllocated ? theme.vars.palette.error.main : theme.vars.palette.secondary.main;
+
+              return (
+                <Grid key={advance.id} size={{ xs: 12, md: 6, xl: 4 }}>
+                  <Card
+                    component={Link}
+                    to={`/emg/advances/${advance.id}`}
+                    variant="outlined"
+                    sx={{
+                      textDecoration: 'none',
+                      color: 'inherit',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      height: '100%',
+                      borderRadius: 3,
+                      bgcolor: 'background.paper',
+                      borderColor: 'divider',
+                      borderTop: '3px solid',
+                      borderTopColor: accentColor,
+                      boxShadow: theme.shadows[1],
+                      transition: 'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: theme.shadows[4],
+                        borderColor: accentColor
+                      }
+                    }}
+                  >
+                    <CardContent sx={{ p: 2, '&:last-child': { pb: 1.75 }, display: 'flex', flexDirection: 'column', flex: 1, gap: 1.5 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                          <Box
+                            sx={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: 2,
+                              display: 'grid',
+                              placeItems: 'center',
+                              bgcolor: isOverAllocated ? 'rgba(211, 47, 47, 0.12)' : 'rgba(94, 53, 177, 0.12)',
+                              color: accentColor,
+                              flexShrink: 0
+                            }}
+                          >
+                            <IconCash size={20} />
+                          </Box>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.3 }} noWrap>
+                              {advance.projectName}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 600 }} noWrap>
+                              العميل: {advance.clientName || 'غير محدد'} · الدافع: {advance.payerName || 'غير محدد'}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+                          <Chip
+                            size="small"
+                            label={advance.balanceStatus}
+                            color={isOverAllocated ? 'error' : 'success'}
+                            sx={{ fontWeight: 700, height: 24 }}
+                          />
+                          <IconButton
+                            aria-label="حذف الدفعة"
+                            size="small"
+                            color="error"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              void remove(advance);
+                            }}
+                          >
+                            <IconTrash size={17} />
+                          </IconButton>
+                        </Stack>
+                      </Stack>
+
+                      <Box
+                        sx={{
+                          px: 1.5,
+                          py: 1.1,
+                          borderRadius: 2,
+                          bgcolor: 'action.hover',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 1
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                          قيمة الدفعة
+                        </Typography>
+                        <Typography
+                          variant="h4"
+                          sx={{
+                            fontWeight: 900,
+                            color: accentColor,
+                            fontVariantNumeric: 'tabular-nums'
                           }}
                         >
-                          <IconTrash size={17} />
-                        </IconButton>
-                      </Stack>
-                    </Stack>
-                    <Stack spacing={0.75} sx={{ mt: 2 }}>
-                      <Stack direction="row" justifyContent="space-between">
-                        <Typography color="text.secondary">قيمة الدفعة</Typography>
-                        <Typography fontWeight={800} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {formatEmgMoney(advance.amount, advance.currency === 'EGP' ? 'ج.م' : advance.currency)}
+                          {formatEmgMoney(advance.amount, currencyLabel)}
                         </Typography>
+                      </Box>
+
+                      <Stack spacing={0.75}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" color="text.secondary">
+                            المخصص
+                          </Typography>
+                          <Typography variant="body2" fontWeight={700} sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {formatEmgMoney(advance.allocatedAmount, currencyLabel)}
+                          </Typography>
+                        </Stack>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" color="text.secondary">
+                            غير مخصص من الإيصال
+                          </Typography>
+                          <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {formatEmgMoney(advance.unallocatedAmount, currencyLabel)}
+                          </Typography>
+                        </Stack>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" color="text.secondary">
+                            زيادة التخصيص
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            fontWeight={700}
+                            color={isOverAllocated ? 'error.main' : 'text.secondary'}
+                            sx={{ fontVariantNumeric: 'tabular-nums' }}
+                          >
+                            {formatEmgMoney(advance.dueFromPayer, currencyLabel)}
+                          </Typography>
+                        </Stack>
                       </Stack>
-                      <Stack direction="row" justifyContent="space-between">
-                        <Typography color="text.secondary">المخصص</Typography>
-                        <Typography sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {formatEmgMoney(advance.allocatedAmount, advance.currency === 'EGP' ? 'ج.م' : advance.currency)}
+
+                      <Box sx={{ mt: 'auto' }}>
+                        <Divider sx={{ mb: 1.1 }} />
+                        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                          <Stack direction="row" spacing={0.5} alignItems="center" color="text.secondary">
+                            <IconCalendar size={14} />
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                              {advance.paymentDate ? new Date(advance.paymentDate).toLocaleDateString('ar-EG-u-nu-latn') : 'التاريخ غير مدون'}
+                            </Typography>
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }} noWrap>
+                            {advance.paymentMethod} · {advance.status}
+                          </Typography>
+                        </Stack>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
+            {recognizedHistoricalReceipts.slice((receiptsPage - 1) * 24, receiptsPage * 24).map((row) => {
+              const isWarning = row.basis === 'conflicting_ownership';
+              const accentColor = isWarning ? theme.vars.palette.warning.main : theme.vars.palette.secondary.main;
+              const chipColor: 'warning' | 'secondary' = isWarning ? 'warning' : 'secondary';
+
+              return (
+                <Grid key={`receipt-hist-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      height: '100%',
+                      borderRadius: 3,
+                      bgcolor: 'background.paper',
+                      borderColor: 'divider',
+                      borderTop: '3px solid',
+                      borderTopColor: accentColor,
+                      boxShadow: theme.shadows[1],
+                      transition: 'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: theme.shadows[4],
+                        borderColor: accentColor
+                      }
+                    }}
+                  >
+                    <CardActionArea
+                      onClick={() => setSelectedRecord(row)}
+                      sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'space-between' }}
+                    >
+                      <CardContent sx={{ width: '100%', p: 2, '&:last-child': { pb: 1.75 }, display: 'flex', flexDirection: 'column', flex: 1, gap: 1.5 }}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.25}>
+                          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                            <Box
+                              sx={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 2,
+                                display: 'grid',
+                                placeItems: 'center',
+                                bgcolor: isWarning ? 'rgba(237, 108, 2, 0.12)' : 'rgba(94, 53, 177, 0.12)',
+                                color: accentColor,
+                                flexShrink: 0
+                              }}
+                            >
+                              <IconCash size={20} />
+                            </Box>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.3 }} noWrap>
+                                {row.category || row.sheet}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }} noWrap>
+                                مشروع: {row.projectName}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                          <Chip
+                            size="small"
+                            label={recordKind(row)}
+                            color={chipColor}
+                            variant="filled"
+                            sx={{ fontWeight: 700, height: 24, flexShrink: 0 }}
+                          />
+                        </Stack>
+
+                        <Box
+                          sx={{
+                            px: 1.5,
+                            py: 1.1,
+                            borderRadius: 2,
+                            bgcolor: 'action.hover',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 1
+                          }}
+                        >
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                            القيمة المسجلة
+                          </Typography>
+                          <Typography
+                            variant="h4"
+                            sx={{
+                              fontWeight: 900,
+                              color: accentColor,
+                              fontVariantNumeric: 'tabular-nums'
+                            }}
+                          >
+                            {formatEmgMoney(row.amount, row.currency === 'EGP' ? 'ج.م' : row.currency)}
+                          </Typography>
+                        </Box>
+
+                        <Typography
+                          variant="body2"
+                          color="text.primary"
+                          sx={{
+                            minHeight: '2.6em',
+                            lineHeight: 1.45,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          {row.description || 'بدون ملاحظات إضافية في المصدر'}
                         </Typography>
-                      </Stack>
-                      <Stack direction="row" justifyContent="space-between">
-                        <Typography color="text.secondary">غير مخصص من الإيصال</Typography>
-                        <Typography color="primary.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {formatEmgMoney(advance.unallocatedAmount, advance.currency === 'EGP' ? 'ج.م' : advance.currency)}
-                        </Typography>
-                      </Stack>
-                      <Stack direction="row" justifyContent="space-between">
-                        <Typography color="text.secondary">زيادة التخصيص</Typography>
-                        <Typography color="error.main" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                          {formatEmgMoney(advance.dueFromPayer, advance.currency === 'EGP' ? 'ج.م' : advance.currency)}
-                        </Typography>
-                      </Stack>
-                    </Stack>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-                      {advance.paymentDate ? new Date(advance.paymentDate).toLocaleDateString('ar-EG-u-nu-latn') : 'التاريخ غير مدون'} · {advance.paymentMethod} · {advance.status}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-            {recognizedHistoricalReceipts.map(renderHistoricalRow)}
+
+                        <Box sx={{ mt: 'auto' }}>
+                          <Divider sx={{ mb: 1.1 }} />
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                            <Stack direction="row" spacing={0.5} alignItems="center" color="text.secondary">
+                              <IconCalendar size={14} />
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                                {row.date ? new Date(row.date).toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}
+                              </Typography>
+                            </Stack>
+                            <Tooltip title={`${row.workbook} · ${row.sheet}!${row.cell}`}>
+                              <Stack
+                                direction="row"
+                                spacing={0.5}
+                                alignItems="center"
+                                sx={{
+                                  px: 0.9,
+                                  py: 0.25,
+                                  borderRadius: 1.5,
+                                  bgcolor: 'action.hover',
+                                  color: 'text.secondary'
+                                }}
+                              >
+                                <IconFileSpreadsheet size={13} />
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.72rem' }}>
+                                  {row.cell}
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          </Stack>
+                        </Box>
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
+              );
+            })}
           </Grid>
+        )}
+        {!loading && recognizedHistoricalReceipts.length > 24 && (
+          <Stack alignItems="center" sx={{ mt: 2.5 }}>
+            <Pagination
+              color="secondary"
+              shape="rounded"
+              page={receiptsPage}
+              count={Math.ceil(recognizedHistoricalReceipts.length / 24)}
+              onChange={(_, nextPage) => setReceiptsPage(nextPage)}
+            />
+          </Stack>
         )}
         {!loading && ledger && !directReceipts.length && !advances.length && !recognizedHistoricalReceipts.length && (
           <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
-            لا توجد دفعات تحت الحساب لهذا الاختيار.
+            {allocationAndReferenceRows.length > 0
+              ? 'لا توجد دفعات مقبوضة مثبتة لهذا الاختيار؛ راجع سجل التوزيعات والمراجع التاريخية أدناه.'
+              : 'لا توجد دفعات مقبوضة مسجلة لهذا الاختيار.'}
           </Typography>
         )}
       </MainCard>
@@ -504,18 +739,279 @@ export default function EmgAdvances() {
           sx={{ borderRadius: 3, mt: 2.5 }}
         >
           <Grid container spacing={2}>
-            {!showEvidence && ordinaryAllocations.map(row => (
-              <Grid key={`allocation-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
-                <Card variant="outlined"><CardActionArea component={Link} to={`/emg/advances/${row.advancePaymentId}`}><CardContent>
-                  <Typography variant="subtitle1">{row.accountCategory}</Typography>
-                  <Typography variant="h4">{formatEmgMoney(row.amount, row.currency)}</Typography>
-                  <Typography variant="body2">{row.notes}</Typography>
-                  <Typography variant="caption">{row.allocationDate.slice(0, 10)} · دفعة #{row.advancePaymentId}
-                    {row.siteMovementId && ` · حركة موقع #${row.siteMovementId}`}{row.supplierPaymentId && ` · دفعة مورد #${row.supplierPaymentId}`}</Typography>
-                </CardContent></CardActionArea></Card>
-              </Grid>
-            ))}
-            {allocationAndReferenceRows.slice((page - 1) * 24, page * 24).map(renderHistoricalRow)}
+            {!showEvidence && ordinaryAllocations.map((row) => {
+              const currencyLabel = row.currency === 'EGP' ? 'ج.م' : row.currency;
+              const accentColor = theme.vars.palette.primary.main;
+              return (
+                <Grid key={`allocation-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      height: '100%',
+                      borderRadius: 3,
+                      bgcolor: 'background.paper',
+                      borderColor: 'divider',
+                      borderTop: '3px solid',
+                      borderTopColor: accentColor,
+                      boxShadow: theme.shadows[1],
+                      transition: 'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: theme.shadows[4],
+                        borderColor: accentColor
+                      }
+                    }}
+                  >
+                    <CardActionArea
+                      component={Link}
+                      to={`/emg/advances/${row.advancePaymentId}`}
+                      sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'space-between' }}
+                    >
+                      <CardContent sx={{ width: '100%', p: 2, '&:last-child': { pb: 1.75 }, display: 'flex', flexDirection: 'column', flex: 1, gap: 1.5 }}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.25}>
+                          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                            <Box
+                              sx={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 2,
+                                display: 'grid',
+                                placeItems: 'center',
+                                bgcolor: 'rgba(25, 118, 210, 0.12)',
+                                color: accentColor,
+                                flexShrink: 0
+                              }}
+                            >
+                              <IconReceipt size={20} />
+                            </Box>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.3 }} noWrap>
+                                {row.accountCategory}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }} noWrap>
+                                دفعة #{row.advancePaymentId}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                          <Chip size="small" label="توزيع تشغيلي" color="primary" variant="outlined" sx={{ fontWeight: 700, height: 24, flexShrink: 0 }} />
+                        </Stack>
+
+                        <Box
+                          sx={{
+                            px: 1.5,
+                            py: 1.1,
+                            borderRadius: 2,
+                            bgcolor: 'action.hover',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 1
+                          }}
+                        >
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                            قيمة التوزيع
+                          </Typography>
+                          <Typography variant="h4" sx={{ fontWeight: 900, color: accentColor, fontVariantNumeric: 'tabular-nums' }}>
+                            {formatEmgMoney(row.amount, currencyLabel)}
+                          </Typography>
+                        </Box>
+
+                        <Typography
+                          variant="body2"
+                          color="text.primary"
+                          sx={{
+                            minHeight: '2.6em',
+                            lineHeight: 1.45,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          {row.notes || 'توزيع مسجل على بند المشروع'}
+                        </Typography>
+
+                        <Box sx={{ mt: 'auto' }}>
+                          <Divider sx={{ mb: 1.1 }} />
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                            <Stack direction="row" spacing={0.5} alignItems="center" color="text.secondary">
+                              <IconCalendar size={14} />
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                                {row.allocationDate ? new Date(row.allocationDate).toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}
+                              </Typography>
+                            </Stack>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }} noWrap>
+                              {row.siteMovementId ? `حركة موقع #${row.siteMovementId}` : row.supplierPaymentId ? `دفعة مورد #${row.supplierPaymentId}` : `دفعة #${row.advancePaymentId}`}
+                            </Typography>
+                          </Stack>
+                        </Box>
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
+              );
+            })}
+            {allocationAndReferenceRows.slice((page - 1) * 24, page * 24).map((row) => {
+              const isFunding = row.fundsProject && !row.isAllocation;
+              const isWarning = row.basis === 'conflicting_ownership';
+              const accentColor = isWarning
+                ? theme.vars.palette.warning.main
+                : isFunding
+                  ? theme.vars.palette.secondary.main
+                  : theme.vars.palette.primary.main;
+              const chipColor: 'warning' | 'secondary' | 'primary' | 'default' = isWarning
+                ? 'warning'
+                : isFunding
+                  ? 'secondary'
+                  : row.isAllocation
+                    ? 'primary'
+                    : 'default';
+
+              return (
+                <Grid key={`source-${row.id}`} size={{ xs: 12, md: 6, xl: 4 }}>
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      height: '100%',
+                      borderRadius: 3,
+                      bgcolor: 'background.paper',
+                      borderColor: 'divider',
+                      borderTop: '3px solid',
+                      borderTopColor: accentColor,
+                      boxShadow: theme.shadows[1],
+                      transition: 'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: theme.shadows[4],
+                        borderColor: accentColor
+                      }
+                    }}
+                  >
+                    <CardActionArea
+                      onClick={() => setSelectedRecord(row)}
+                      sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'space-between' }}
+                    >
+                      <CardContent sx={{ width: '100%', p: 2, '&:last-child': { pb: 1.75 }, display: 'flex', flexDirection: 'column', flex: 1, gap: 1.5 }}>
+                        {/* Header: Icon + Category/Project + Semantic Status Chip */}
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.25}>
+                          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                            <Box
+                              sx={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 2,
+                                display: 'grid',
+                                placeItems: 'center',
+                                bgcolor: isWarning
+                                  ? 'rgba(237, 108, 2, 0.12)'
+                                  : isFunding
+                                    ? 'rgba(94, 53, 177, 0.12)'
+                                    : 'rgba(25, 118, 210, 0.12)',
+                                color: accentColor,
+                                flexShrink: 0
+                              }}
+                            >
+                              {isFunding ? <IconCash size={20} /> : <IconReceipt size={20} />}
+                            </Box>
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1.3 }} noWrap>
+                                {row.category || row.sheet}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }} noWrap>
+                                مشروع: {row.projectName}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                          <Chip
+                            size="small"
+                            label={recordKind(row)}
+                            color={chipColor}
+                            variant={isFunding || isWarning ? 'filled' : 'outlined'}
+                            sx={{ fontWeight: 700, height: 24, flexShrink: 0 }}
+                          />
+                        </Stack>
+
+                        {/* Highlighted Amount Box */}
+                        <Box
+                          sx={{
+                            px: 1.5,
+                            py: 1.1,
+                            borderRadius: 2,
+                            bgcolor: 'action.hover',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 1
+                          }}
+                        >
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                            {row.isAllocation ? 'قيمة التوزيع' : 'القيمة المسجلة'}
+                          </Typography>
+                          <Typography
+                            variant="h4"
+                            sx={{
+                              fontWeight: 900,
+                              color: accentColor,
+                              fontVariantNumeric: 'tabular-nums'
+                            }}
+                          >
+                            {formatEmgMoney(row.amount, row.currency === 'EGP' ? 'ج.م' : row.currency)}
+                          </Typography>
+                        </Box>
+
+                        {/* Description */}
+                        <Typography
+                          variant="body2"
+                          color="text.primary"
+                          sx={{
+                            minHeight: '2.6em',
+                            lineHeight: 1.45,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          {row.description || 'بدون ملاحظات إضافية في المصدر'}
+                        </Typography>
+
+                        {/* Footer: Date + Excel Cell Reference Badge */}
+                        <Box sx={{ mt: 'auto' }}>
+                          <Divider sx={{ mb: 1.1 }} />
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                            <Stack direction="row" spacing={0.5} alignItems="center" color="text.secondary">
+                              <IconCalendar size={14} />
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                                {row.date ? new Date(row.date).toLocaleDateString('ar-EG-u-nu-latn', { timeZone: 'UTC' }) : 'التاريخ غير مدون'}
+                              </Typography>
+                            </Stack>
+                            <Tooltip title={`${row.workbook} · ${row.sheet}!${row.cell}`}>
+                              <Stack
+                                direction="row"
+                                spacing={0.5}
+                                alignItems="center"
+                                sx={{
+                                  px: 0.9,
+                                  py: 0.25,
+                                  borderRadius: 1.5,
+                                  bgcolor: 'action.hover',
+                                  color: 'text.secondary'
+                                }}
+                              >
+                                <IconFileSpreadsheet size={13} />
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.72rem' }}>
+                                  {row.cell}
+                                </Typography>
+                              </Stack>
+                            </Tooltip>
+                          </Stack>
+                        </Box>
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
+              );
+            })}
           </Grid>
           {allocationAndReferenceRows.length > 24 && (
             <Stack alignItems="center" sx={{ mt: 2.5 }}>

@@ -51,7 +51,7 @@ import {
 } from 'api/emg';
 import useAuth from 'hooks/useAuth';
 
-const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const formatMoney = (value: number, currency: string) => `${money.format(value)} ${currency}`;
 
 export default function EmgSiteMovementDetails() {
@@ -298,7 +298,7 @@ export default function EmgSiteMovementDetails() {
             ['نوع الحركة', movement.movementType],
             ['البند', movement.expenseCategory || '—'],
             ['المورد أو المقاول', movement.supplierName || '—'],
-            ['تاريخ الحركة', new Date(movement.movementDate).toLocaleDateString('ar-EG')],
+            ['تاريخ الحركة', new Date(movement.movementDate).toLocaleDateString('ar-EG-u-nu-latn')],
             ['الكمية', movement.quantity == null ? '—' : `${movement.quantity} ${movement.unit || ''}`],
             ['سعر الوحدة', movement.unitPrice == null ? '—' : formatMoney(movement.unitPrice, movement.currency)],
             ['الإجمالي', formatMoney(movement.totalAmount, movement.currency)],
@@ -374,7 +374,7 @@ export default function EmgSiteMovementDetails() {
                             {file.originalFileName}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {Math.ceil(file.sizeInBytes / 1024)} ك.ب · {new Date(file.uploadedAtUtc).toLocaleString('ar-EG')}
+                            {Math.ceil(file.sizeInBytes / 1024)} ك.ب · {new Date(file.uploadedAtUtc).toLocaleString('ar-EG-u-nu-latn')}
                           </Typography>
                         </Box>
                       </Stack>
@@ -407,7 +407,7 @@ export default function EmgSiteMovementDetails() {
                     {item.action} · {item.currentStatus}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    من {item.previousStatus} · {new Date(item.actionDateUtc).toLocaleString('ar-EG')}
+                    من {item.previousStatus} · {new Date(item.actionDateUtc).toLocaleString('ar-EG-u-nu-latn')}
                   </Typography>
                 </Box>
               ))}

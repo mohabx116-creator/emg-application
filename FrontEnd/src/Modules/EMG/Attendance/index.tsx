@@ -29,7 +29,7 @@ import MainCard from 'ui-component/cards/MainCard';
 import { checkInAttendance, checkOutAttendance, correctEmgTransaction, deleteEmgTransaction, EmgAttendance as AttendanceRecord, getEmgAttendance, getTodayAttendance } from 'api/emg';
 
 const formatTime = (value: string | null) =>
-  value ? new Date(value).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—';
+  value ? new Date(value).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' }) : '—';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 

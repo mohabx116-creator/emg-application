@@ -3,6 +3,7 @@ import { IconCash, IconReceipt, IconWallet } from '@tabler/icons-react';
 
 const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 
+
 export function formatFinancialAmount(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return 'غير محدد';
   const num = value;

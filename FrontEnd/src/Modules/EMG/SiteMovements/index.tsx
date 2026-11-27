@@ -3,22 +3,14 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
-  Autocomplete,
   Box,
   Button,
   Card,
   CardContent,
   Chip,
-  CircularProgress,
-  Collapse,
   Divider,
   Drawer,
-  FormControl,
-  Grid,
   IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   Table,
   TableBody,
@@ -26,22 +18,14 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
   useMediaQuery,
   useTheme
 } from '@mui/material';
 import {
-  IconCamera,
   IconExternalLink,
   IconEye,
-  IconPaperclip,
-  IconPlus,
-  IconReceipt,
   IconTrash,
-  IconUserPlus,
   IconX
 } from '@tabler/icons-react';
 import {
@@ -65,37 +49,7 @@ import useAuth from 'hooks/useAuth';
 import { invalidateEmgCache, useEmgSuppliersCache } from 'hooks/useEmgData';
 import { formatEmgMoney, getLocalIsoDate } from 'utils/emgFormatting';
 import WorkSectionShell, { WorkSectionSkeleton, WorkStatusChip } from '../WorkSectionShell';
-
-type InvoiceLine = {
-  id: string;
-  description: string;
-  unit: string;
-  quantity: string;
-  unitPrice: string;
-  amount: string;
-};
-
-type PaymentMode = 'cash' | 'credit' | 'partial';
-
-type InvoiceHeaderForm = {
-  invoiceNumber: string;
-  movementType: string;
-  movementDate: string;
-  expenseCategory: string;
-  supplierId: string;
-  contractorId: string;
-  counterpartyType: 'مورد' | 'مقاول' | 'بدون طرف';
-  currency: string;
-  fundingSource: string;
-  recipient: string;
-  workCategory: string;
-  paidTo: string;
-  paymentMethod: string;
-  paymentSource: string;
-  paymentMode: PaymentMode;
-  partialPaidAmount: string;
-  details: string;
-};
+import NewTransactionModalForm, { InvoiceHeaderForm, InvoiceLine, PaymentMode } from './NewTransactionModalForm';
 
 function generateInvoiceNumber(): string {
   const now = new Date();
@@ -239,7 +193,7 @@ export default function EmgSiteMovements() {
         const result = await suggestEmgEntry({
           projectId: id,
           description: primaryDescription,
-            movementType: header.movementType,
+          movementType: header.movementType,
           unit: lines[0]?.unit || null,
           supplierName: activeSuppliers.find((item) => String(item.id) === header.supplierId)?.name || null,
           quantity: lines[0]?.quantity ? Number(lines[0].quantity) : null,
@@ -387,21 +341,23 @@ export default function EmgSiteMovements() {
           if (linked) createdMovements.push(linked);
         }
       } else {
-        const created = await createEmgSiteMovementBatch({ movements: validLines.map((line, i) => {
-          const refCode = validLines.length > 1 ? `${header.invoiceNumber}-${i + 1}` : header.invoiceNumber;
-          return {
-            projectId: id, supplierId: header.counterpartyType === 'مورد' && header.supplierId ? Number(header.supplierId) : null,
-            contractorId: header.counterpartyType === 'مقاول' && header.contractorId ? Number(header.contractorId) : null,
-            counterpartyType: header.counterpartyType, currency: header.currency, fundingSource: header.fundingSource || null,
-            recipient: header.recipient || null, workCategory: header.workCategory || null, movementType: header.movementType,
-            description: line.description.trim(), unit: line.unit || null,
-            quantity: line.quantity ? Number(line.quantity) : null, unitPrice: line.unitPrice ? Number(line.unitPrice) : null,
-            amount: line.amount ? Number(line.amount) : null, movementDate: header.movementDate,
-            reference: refCode || null, details: combinedDetails,
-            expenseCategory: header.movementType === 'مصروفات' ? header.expenseCategory : null,
-            paidTo: header.paidTo || null, paymentMethod: header.paymentMethod || 'نقدي', isPaid: header.paymentMode !== 'credit'
-          };
-        }) });
+        const created = await createEmgSiteMovementBatch({
+          movements: validLines.map((line, i) => {
+            const refCode = validLines.length > 1 ? `${header.invoiceNumber}-${i + 1}` : header.invoiceNumber;
+            return {
+              projectId: id, supplierId: header.counterpartyType === 'مورد' && header.supplierId ? Number(header.supplierId) : null,
+              contractorId: header.counterpartyType === 'مقاول' && header.contractorId ? Number(header.contractorId) : null,
+              counterpartyType: header.counterpartyType, currency: header.currency, fundingSource: header.fundingSource || null,
+              recipient: header.recipient || null, workCategory: header.workCategory || null, movementType: header.movementType,
+              description: line.description.trim(), unit: line.unit || null,
+              quantity: line.quantity ? Number(line.quantity) : null, unitPrice: line.unitPrice ? Number(line.unitPrice) : null,
+              amount: line.amount ? Number(line.amount) : null, movementDate: header.movementDate,
+              reference: refCode || null, details: combinedDetails,
+              expenseCategory: header.movementType === 'مصروفات' ? header.expenseCategory : null,
+              paidTo: header.paidTo || null, paymentMethod: header.paymentMethod || 'نقدي', isPaid: header.paymentMode !== 'credit'
+            };
+          })
+        });
         createdMovements.push(...created);
         attachmentEntityId = created[0]?.id ?? null;
       }
@@ -486,459 +442,50 @@ export default function EmgSiteMovements() {
   if (!project && loading) return <WorkSectionSkeleton />;
   if (!project) return <Alert severity="error" action={<Button onClick={load}>إعادة المحاولة</Button>}>{projectError}</Alert>;
 
-  const selectedSupplierObj = activeSuppliers.find((s) => String(s.id) === header.supplierId) || null;
-  const selectedContractorObj = activeContractors.find((s) => String(s.id) === header.contractorId) || null;
-
   const createForm = (
-    <Box component="form" onSubmit={(e) => void submitInvoice(e, false)}>
-      <Stack spacing={2.25}>
-        {/* Invoice Header */}
-        <Grid container spacing={1.75}>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField
-              fullWidth
-              size="small"
-              label="رقم الفاتورة (تلقائي)"
-              value={header.invoiceNumber}
-              helperText="يُنشئ النظام الرقم النهائي عند الحفظ"
-              InputProps={{ readOnly: true }}
-            />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 4 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>نوع الحركة</InputLabel>
-              <Select value={header.movementType} label="نوع الحركة" onChange={(e) => updateHeader('movementType', e.target.value)}>
-                <MenuItem value="مصروفات">مصروفات</MenuItem>
-                <MenuItem value="وارد">وارد</MenuItem>
-                <MenuItem value="صادر">صادر</MenuItem>
-                <MenuItem value="توريدات">توريدات</MenuItem>
-                <MenuItem value="عمالة">عمالة</MenuItem>
-                <MenuItem value="معدات">معدات</MenuItem>
-                <MenuItem value="مستجدات">مستجدات</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6 }}><TextField fullWidth select label="العملة" value={header.currency} onChange={e => updateHeader('currency', e.target.value)}>
-            <MenuItem value="EGP">EGP</MenuItem><MenuItem value="USD">USD</MenuItem></TextField></Grid>
-          <Grid size={{ xs: 6, sm: 4 }}>
-            <TextField
-              fullWidth
-              size="small"
-              required
-              type="date"
-              label="التاريخ"
-              value={header.movementDate}
-              onChange={(e) => updateHeader('movementDate', e.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 3 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>الطرف</InputLabel>
-              <Select value={header.counterpartyType} label="الطرف" onChange={(e) => {
-                const value = e.target.value as InvoiceHeaderForm['counterpartyType'];
-                updateHeader('counterpartyType', value);
-                if (value !== 'مورد') updateHeader('supplierId', '');
-                if (value !== 'مقاول') updateHeader('contractorId', '');
-              }}>
-                <MenuItem value="بدون طرف">بدون طرف</MenuItem>
-                <MenuItem value="مورد">مورد</MenuItem>
-                <MenuItem value="مقاول">مقاول</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-
-          {/* Exclusive supplier/contractor selector */}
-          <Grid size={{ xs: 12, sm: 7 }}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              {header.counterpartyType === 'مورد' ? <Autocomplete
-                fullWidth
-                size="small"
-                options={activeSuppliers}
-                value={selectedSupplierObj}
-                getOptionLabel={(option) => `${option.name}${option.supplierType ? ` · ${option.supplierType}` : ''}`}
-                onChange={(_, val) => updateHeader('supplierId', val ? String(val.id) : '')}
-                renderInput={(params) => <TextField {...params} label="المورد" placeholder="ابحث عن مورد..." />}
-              /> : header.counterpartyType === 'مقاول' ? <Autocomplete
-                fullWidth
-                size="small"
-                options={activeContractors}
-                value={selectedContractorObj}
-                getOptionLabel={(option) => option.name}
-                onChange={(_, val) => updateHeader('contractorId', val ? String(val.id) : '')}
-                renderInput={(params) => <TextField {...params} label="المقاول" placeholder="ابحث عن مقاول..." />}
-              /> : <TextField fullWidth size="small" label="الطرف" value="بدون طرف" InputProps={{ readOnly: true }} />}
-              {canCreateSupplier && header.counterpartyType === 'مورد' && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => setInlineSupplierOpen((prev) => !prev)}
-                  startIcon={<IconUserPlus size={16} />}
-                  sx={{ whiteSpace: 'nowrap', minHeight: 40, borderRadius: 2 }}
-                >
-                  أخرى — إضافة جديد
-                </Button>
-              )}
-              {canCreateSupplier && header.counterpartyType === 'مقاول' && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => setInlineContractorOpen((prev) => !prev)}
-                  startIcon={<IconUserPlus size={16} />}
-                  sx={{ whiteSpace: 'nowrap', minHeight: 40, borderRadius: 2 }}
-                >
-                  أخرى — إضافة جديد
-                </Button>
-              )}
-            </Stack>
-          </Grid>
-
-          <Grid size={{ xs: 12, sm: 5 }}>
-            <TextField
-              fullWidth
-              size="small"
-              required={header.movementType === 'مصروفات'}
-              label="بند المصروف"
-              value={header.expenseCategory}
-              onChange={(e) => updateHeader('expenseCategory', e.target.value)}
-              placeholder="مثال: نقل، أسمنت، عمالة"
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <FormControl fullWidth size="small"><InputLabel>مصدر الدفع</InputLabel>
-              <Select value={header.paymentSource} label="مصدر الدفع" onChange={(e) => updateHeader('paymentSource', e.target.value)}>
-                <MenuItem value="مكتب">المكتب</MenuItem><MenuItem value="مالك مباشر">دفع مباشر من المالك</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth size="small" label="مصدر التمويل" value={header.fundingSource} onChange={(e) => updateHeader('fundingSource', e.target.value)} /></Grid>
-          <Grid size={{ xs: 12, sm: 4 }}><TextField fullWidth size="small" label="المستلم" value={header.recipient} onChange={(e) => updateHeader('recipient', e.target.value)} /></Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <Autocomplete
-              freeSolo
-              options={workCategories}
-              value={header.workCategory}
-              onInputChange={(_, value) => updateHeader('workCategory', value)}
-              onChange={(_, value) => updateHeader('workCategory', typeof value === 'string' ? value : '')}
-              renderInput={(params) => <TextField {...params} fullWidth size="small" label="التصنيف" onBlur={() => void ensureWorkCategory()} />}
-            />
-          </Grid>
-        </Grid>
-
-        {/* Inline Supplier Creation Panel — preserves all form inputs */}
-        <Collapse in={inlineSupplierOpen}>
-          <Card variant="outlined" sx={{ borderRadius: 2.5, bgcolor: 'action.hover' }}>
-            <CardContent sx={{ p: 1.75, '&:last-child': { pb: 1.75 } }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1.25 }}>
-                إضافة مورد سريع (مع الاحتفاظ ببيانات الفاتورة الحالية)
-              </Typography>
-              <Grid container spacing={1.25} alignItems="center">
-                <Grid size={{ xs: 12, sm: 4 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="اسم المورد *"
-                    value={inlineSupplierName}
-                    onChange={(e) => setInlineSupplierName(e.target.value)}
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 3 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="التصنيف"
-                    value={inlineSupplierType}
-                    onChange={(e) => setInlineSupplierType(e.target.value)}
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 3 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="رقم الهاتف"
-                    value={inlineSupplierPhone}
-                    onChange={(e) => setInlineSupplierPhone(e.target.value)}
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 2 }}>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    size="small"
-                    disabled={creatingSupplier || !inlineSupplierName.trim()}
-                    onClick={() => void handleCreateInlineSupplier()}
-                    sx={{ minHeight: 40, fontWeight: 700 }}
-                  >
-                    {creatingSupplier ? '...' : 'إضافة'}
-                  </Button>
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
-        </Collapse>
-
-        <Collapse in={inlineContractorOpen}>
-          <Card variant="outlined" sx={{ borderRadius: 2.5, bgcolor: 'action.hover' }}>
-            <CardContent sx={{ p: 1.75, '&:last-child': { pb: 1.75 } }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1.25 }}>
-                إضافة مقاول سريع (مع الاحتفاظ ببيانات الحركة الحالية)
-              </Typography>
-              <Grid container spacing={1.25} alignItems="center">
-                <Grid size={{ xs: 12, sm: 5 }}>
-                  <TextField fullWidth size="small" label="اسم المقاول *" value={inlineContractorName} onChange={(e) => setInlineContractorName(e.target.value)} />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 5 }}>
-                  <TextField fullWidth size="small" label="رقم الهاتف" value={inlineContractorPhone} onChange={(e) => setInlineContractorPhone(e.target.value)} />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 2 }}>
-                  <Button fullWidth variant="contained" size="small" disabled={creatingContractor || !inlineContractorName.trim()} onClick={() => void handleCreateInlineContractor()} sx={{ minHeight: 40, fontWeight: 700 }}>
-                    {creatingContractor ? '...' : 'إضافة'}
-                  </Button>
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
-        </Collapse>
-
-        {/* Multi-Line Invoice Items */}
-        <Box>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-              بنود الفاتورة ({lines.length})
-            </Typography>
-            <Button size="small" variant="outlined" startIcon={<IconPlus size={15} />} onClick={addLine} sx={{ borderRadius: 2, fontWeight: 700 }}>
-              إضافة بند آخر
-            </Button>
-          </Stack>
-
-          <Stack spacing={1.25}>
-            {lines.map((line, index) => (
-              <Card key={line.id} variant="outlined" sx={{ borderRadius: 2.5 }}>
-                <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                    <Chip size="small" label={`بند #${index + 1}`} color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography variant="subtitle2" color="primary.main" sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                        {formatEmgMoney(computeLineTotal(line), header.currency)}
-                      </Typography>
-                      {lines.length > 1 && (
-                        <IconButton size="small" color="error" onClick={() => removeLine(line.id)} aria-label="حذف البند">
-                          <IconX size={16} />
-                        </IconButton>
-                      )}
-                    </Stack>
-                  </Stack>
-
-                  <Grid container spacing={1.25}>
-                    <Grid size={{ xs: 12 }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        required
-                        label="وصف البند"
-                        value={line.description}
-                        onChange={(e) => updateLine(line.id, 'description', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid size={{ xs: 4, sm: 3 }}>
-                      <TextField fullWidth size="small" label="الوحدة" value={line.unit} onChange={(e) => updateLine(line.id, 'unit', e.target.value)} />
-                    </Grid>
-                    <Grid size={{ xs: 4, sm: 3 }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        type="number"
-                        inputProps={{ inputMode: 'decimal', min: 0, step: 'any' }}
-                        label="الكمية"
-                        value={line.quantity}
-                        onChange={(e) => updateLine(line.id, 'quantity', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid size={{ xs: 4, sm: 3 }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        type="number"
-                        inputProps={{ inputMode: 'decimal', min: 0, step: 'any' }}
-                        label="سعر الوحدة"
-                        value={line.unitPrice}
-                        onChange={(e) => updateLine(line.id, 'unitPrice', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid size={{ xs: 12, sm: 3 }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        type="number"
-                        inputProps={{ inputMode: 'decimal', min: 0, step: 'any' }}
-                        label="أو مبلغ مباشر"
-                        value={line.amount}
-                        onChange={(e) => updateLine(line.id, 'amount', e.target.value)}
-                      />
-                    </Grid>
-                  </Grid>
-                </CardContent>
-              </Card>
-            ))}
-          </Stack>
-        </Box>
-
-        {/* Smart Suggestion */}
-        {suggesting && (
-          <Typography variant="caption" color="text.secondary">
-            جاري تحليل وصف البند...
-          </Typography>
-        )}
-        {suggestion && (
-          <Card variant="outlined" sx={{ borderRadius: 2, borderColor: 'success.main', bgcolor: 'rgba(16, 185, 129, 0.06)' }}>
-            <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                <Box>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                    اقتراح ذكي · {Math.round(suggestion.confidence * 100)}%
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {suggestion.suggestedExpenseCategory} · {suggestion.suggestedEntryKind}
-                  </Typography>
-                </Box>
-                <Button size="small" variant="outlined" onClick={applySuggestion}>
-                  تطبيق
-                </Button>
-              </Stack>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Payment Mode (Cash / Credit / Partial) & Grand Total */}
-        <Grid container spacing={1.75} alignItems="center">
-          <Grid size={{ xs: 12, sm: 7 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block', mb: 0.75 }}>
-              حالة السداد
-            </Typography>
-            <ToggleButtonGroup
-              fullWidth
-              exclusive
-              size="small"
-              value={header.paymentMode}
-              onChange={(_, val: PaymentMode | null) => val && updateHeader('paymentMode', val)}
-            >
-              <ToggleButton value="cash" sx={{ fontWeight: 700 }}>
-                نقدي (مدفوع)
-              </ToggleButton>
-              <ToggleButton value="credit" sx={{ fontWeight: 700 }}>
-                آجل
-              </ToggleButton>
-              <ToggleButton value="partial" sx={{ fontWeight: 700 }}>
-                دفع جزئي
-              </ToggleButton>
-            </ToggleButtonGroup>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 5 }}>
-            <Box sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid', borderColor: 'primary.light', bgcolor: 'rgba(30, 136, 229, 0.06)' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                إجمالي الفاتورة ({lines.length} {lines.length === 1 ? 'بند' : 'بنود'})
-              </Typography>
-              <Typography variant="h3" color="primary.main" sx={{ fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>
-                {formatEmgMoney(grandTotal, header.currency)}
-              </Typography>
-            </Box>
-          </Grid>
-
-          {header.paymentMode === 'partial' && (
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField
-                fullWidth
-                size="small"
-                type="number"
-                inputProps={{ inputMode: 'decimal', min: 0, step: 'any' }}
-                label={`المبلغ المدفوع الآن (${header.currency})`}
-                value={header.partialPaidAmount}
-                onChange={(e) => updateHeader('partialPaidAmount', e.target.value)}
-                helperText="يتم توثيق الجزء المسدد مع تفاصيل الحركة"
-              />
-            </Grid>
-          )}
-          <Grid size={{ xs: 12, sm: header.paymentMode === 'partial' ? 6 : 6 }}>
-            <TextField fullWidth size="small" label="دُفع إلى" value={header.paidTo} onChange={(e) => updateHeader('paidTo', e.target.value)} />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>
-            <TextField
-              fullWidth
-              size="small"
-              label="طريقة الدفع"
-              value={header.paymentMethod}
-              onChange={(e) => updateHeader('paymentMethod', e.target.value)}
-              disabled={header.paymentMode === 'credit'}
-            />
-          </Grid>
-          <Grid size={{ xs: 12 }}>
-            <TextField fullWidth size="small" multiline minRows={2} label="ملاحظات إضافية" value={header.details} onChange={(e) => updateHeader('details', e.target.value)} />
-          </Grid>
-        </Grid>
-
-        {/* Camera Capture + Multiple Optional Attachments */}
-        <Box>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-            <Button component="label" variant="outlined" startIcon={<IconCamera size={18} />} sx={{ borderRadius: 2, minHeight: 42 }}>
-              التقاط صورة الفاتورة بالكاميرا
-              <input hidden type="file" accept="image/*" capture="environment" onChange={(e) => handleAddFiles(e.target.files)} />
-            </Button>
-            <Button component="label" variant="outlined" startIcon={<IconPaperclip size={18} />} sx={{ borderRadius: 2, minHeight: 42 }}>
-              إرفاق ملفات (متعدد اختياري)
-              <input
-                hidden
-                multiple
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.doc,.docx"
-                onChange={(e) => handleAddFiles(e.target.files)}
-              />
-            </Button>
-          </Stack>
-          {attachments.length > 0 && (
-            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 1.25 }}>
-              {attachments.map((file, idx) => (
-                <Chip
-                  key={`${file.name}-${idx}`}
-                  size="small"
-                  label={file.name}
-                  onDelete={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
-                />
-              ))}
-            </Stack>
-          )}
-        </Box>
-
-        <Divider />
-
-        {/* Submit Actions */}
-        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="flex-end" spacing={1.25}>
-          <Button onClick={() => setCreateOpen(false)} disabled={saving} color="inherit" sx={{ borderRadius: 2, fontWeight: 700, minHeight: 44 }}>
-            إلغاء
-          </Button>
-          <Button
-            type="button"
-            disabled={saving}
-            variant="outlined"
-            color="primary"
-            onClick={(e) => void submitInvoice(e, true)}
-            sx={{ borderRadius: 2, fontWeight: 700, minHeight: 44 }}
-          >
-            حفظ وإضافة حركة أخرى
-          </Button>
-          <Button
-            type="submit"
-            disabled={saving}
-            variant="contained"
-            color="secondary"
-            startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <IconReceipt size={18} />}
-            sx={{ borderRadius: 2, fontWeight: 700, px: 3, minHeight: 44 }}
-          >
-            {saving ? 'جاري الحفظ والترحيل...' : 'حفظ وترحيل الفاتورة'}
-          </Button>
-        </Stack>
-      </Stack>
-    </Box>
+    <NewTransactionModalForm
+      project={project}
+      header={header}
+      lines={lines}
+      attachments={attachments}
+      activeSuppliers={activeSuppliers}
+      activeContractors={activeContractors}
+      workCategories={workCategories}
+      canCreateSupplier={canCreateSupplier}
+      saving={saving}
+      suggesting={suggesting}
+      suggestion={suggestion}
+      grandTotal={grandTotal}
+      computeLineTotal={computeLineTotal}
+      updateHeader={updateHeader}
+      updateLine={updateLine}
+      addLine={addLine}
+      removeLine={removeLine}
+      handleAddFiles={handleAddFiles}
+      onRemoveAttachment={(idx) => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+      ensureWorkCategory={ensureWorkCategory}
+      applySuggestion={applySuggestion}
+      onClose={() => !saving && setCreateOpen(false)}
+      onSubmit={submitInvoice}
+      inlineSupplierOpen={inlineSupplierOpen}
+      setInlineSupplierOpen={setInlineSupplierOpen}
+      inlineSupplierName={inlineSupplierName}
+      setInlineSupplierName={setInlineSupplierName}
+      inlineSupplierType={inlineSupplierType}
+      setInlineSupplierType={setInlineSupplierType}
+      inlineSupplierPhone={inlineSupplierPhone}
+      setInlineSupplierPhone={setInlineSupplierPhone}
+      creatingSupplier={creatingSupplier}
+      onCreateInlineSupplier={handleCreateInlineSupplier}
+      inlineContractorOpen={inlineContractorOpen}
+      setInlineContractorOpen={setInlineContractorOpen}
+      inlineContractorName={inlineContractorName}
+      setInlineContractorName={setInlineContractorName}
+      inlineContractorPhone={inlineContractorPhone}
+      setInlineContractorPhone={setInlineContractorPhone}
+      creatingContractor={creatingContractor}
+      onCreateInlineContractor={handleCreateInlineContractor}
+    />
   );
 
   return (
@@ -947,7 +494,7 @@ export default function EmgSiteMovements() {
         project={project}
         activeSection="movements"
         title="حركات الموقع اليومية"
-        addButtonLabel="إضافة حركة / فاتورة"
+        addButtonLabel="تسجيل حركة جديدة"
         canCreate={canCreate}
         onOpenCreate={() => setCreateOpen(true)}
         onRefresh={load}
@@ -971,9 +518,10 @@ export default function EmgSiteMovements() {
         onPageChange={setPage}
         onRowsPerPageChange={setRowsPerPage}
         createModalOpen={createOpen}
-        createModalTitle="تسجيل حركة موقع / فاتورة جديدة"
+        createModalTitle="تسجيل حركة جديدة"
         onCloseCreateModal={() => !saving && setCreateOpen(false)}
         createModalContent={createForm}
+        customModalLayout
       >
         {/* Mobile-First Transaction Cards (< md) — Zero Horizontal Scrolling */}
         {downMD ? (
@@ -1014,7 +562,7 @@ export default function EmgSiteMovements() {
 
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" color="text.secondary">
-                            {new Date(movement.movementDate).toLocaleDateString('ar-EG')} · {movement.supplierName || 'بدون مورد'} ·{' '}
+                            {new Date(movement.movementDate).toLocaleDateString('ar-EG-u-nu-latn')} · {movement.supplierName || 'بدون مورد'} ·{' '}
                             {movement.isPaid ? movement.paymentMethod || 'نقدي' : 'آجل'}
                           </Typography>
                           <WorkStatusChip status={movement.status} />
@@ -1084,7 +632,7 @@ export default function EmgSiteMovements() {
                 ) : (
                   paginated.map((movement) => (
                     <TableRow key={movement.id} hover>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(movement.movementDate).toLocaleDateString('ar-EG')}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(movement.movementDate).toLocaleDateString('ar-EG-u-nu-latn')}</TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Button
                           size="small"
@@ -1188,7 +736,7 @@ export default function EmgSiteMovements() {
                 ['الوصف', drawerMovement.description],
                 ['البند', drawerMovement.expenseCategory || '—'],
                 ['المورد', drawerMovement.supplierName || 'بدون مورد'],
-                ['التاريخ', new Date(drawerMovement.movementDate).toLocaleDateString('ar-EG')],
+                ['التاريخ', new Date(drawerMovement.movementDate).toLocaleDateString('ar-EG-u-nu-latn')],
                 ['الكمية × السعر', drawerMovement.quantity ? `${drawerMovement.quantity} ${drawerMovement.unit || ''} × ${drawerMovement.unitPrice ?? 0}` : 'مبلغ مباشر'],
                 ['دُفع إلى', drawerMovement.paidTo || '—'],
                 ['التفاصيل', drawerMovement.details || '—']

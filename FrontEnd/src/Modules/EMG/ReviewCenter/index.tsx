@@ -502,7 +502,7 @@ export default function ReviewCenter() {
 
                               <Typography variant="body2">{item.description || 'بدون بيان'}</Typography>
                               <Typography variant="h4" color="primary.main" sx={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-                                {item.amount.toLocaleString('ar-EG')} ج.م
+                                {item.amount.toLocaleString('en-US')} ج.م
                               </Typography>
 
                               {item.entityType === 'supplier-supply' && item.status === 'مقبول فنياً' && (
@@ -678,7 +678,7 @@ export default function ReviewCenter() {
                                 <Box sx={{ flex: 1 }}>
                                   <Typography fontWeight={700}>
                                     {settlementLabels[record.businessEventType] || record.businessEventType} ·{' '}
-                                    {record.amount?.toLocaleString('ar-EG') || 'بدون قيمة'} {localizeCurrency(record.currency)}
+                                    {record.amount?.toLocaleString('en-US') || 'بدون قيمة'} {localizeCurrency(record.currency)}
                                   </Typography>
                                   <Typography variant="body2" color="text.secondary">
                                     {record.sheetName} / {record.sourceCoordinate} · {record.stream}

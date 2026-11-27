@@ -141,7 +141,7 @@ export default function EmgImports() {
       if (isRevalidate) {
         const result = await axios.post<ImportValidation>('/api/universal-import/revalidate', request);
         setValidation({ result: result.data, input: requestKey });
-        setRevalidatedAt(new Date().toLocaleTimeString('ar-EG'));
+        setRevalidatedAt(new Date().toLocaleTimeString('ar-EG-u-nu-latn'));
         return;
       }
       const formData = new FormData();

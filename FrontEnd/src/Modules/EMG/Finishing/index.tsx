@@ -387,7 +387,7 @@ export default function EmgFinishing() {
                         </Typography>
                       </Stack>
                       <Typography variant="caption" color="text.secondary">
-                        {new Date(record.workDate).toLocaleDateString('ar-EG')} · {record.quantity} {record.unit} × {formatEmgMoney(record.unitPrice, '')} · {record.areaName || '—'}
+                        {new Date(record.workDate).toLocaleDateString('ar-EG-u-nu-latn')} · {record.quantity} {record.unit} × {formatEmgMoney(record.unitPrice, '')} · {record.areaName || '—'}
                       </Typography>
                       <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <WorkStatusChip status={record.status} />
@@ -441,7 +441,7 @@ export default function EmgFinishing() {
                 ) : (
                   paginated.map((record) => (
                     <TableRow key={record.id} hover>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.workDate).toLocaleDateString('ar-EG')}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.workDate).toLocaleDateString('ar-EG-u-nu-latn')}</TableCell>
                       <TableCell sx={{ maxWidth: 300 }}>
                         <Typography variant="body2" fontWeight={700}>
                           {record.description}

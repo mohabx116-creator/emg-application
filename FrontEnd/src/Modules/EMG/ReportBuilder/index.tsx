@@ -47,7 +47,7 @@ import {
 import { hasPermission as userHasPermission } from '../roleAccess';
 import { localizeCategory, localizeDiagnosticText, localizeGroupLabel } from '../reportLabels';
 
-const money = new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatMoney = (value: number | null | undefined) => (value === null || value === undefined ? '—' : `${money.format(value)} ج.م`);
 const dimensions = [['operational-cost', 'تكلفة تشغيلية'], ['supplier-supply', 'توريدات الموردين'], ['supplier-payment', 'مدفوعات الموردين'], ['owner-funding', 'تمويل المالك'], ['advance-allocation', 'توزيعات الدفعات'], ['office-payment', 'مدفوعات المكتب'], ['unresolved', 'غير محسوم']] as const;
 const presets = [['master', 'النموذج المجمع الأصلي'], ['detail', 'التفصيل المالي للمشروع'], ['party', 'كشف المقاول/المورد'], ['management', 'ملخص الإدارة']] as const;
@@ -65,7 +65,7 @@ function transactionValue(row: EmgReportBuilderPreview['transactions'][number], 
     case 'project': return `${row.projectCode} · ${row.projectName}`;
     case 'category': return categoryLabelMap[row.category] || row.category;
     case 'party': return row.party || 'غير محدد';
-    case 'date': return row.transactionDate ? new Date(row.transactionDate).toLocaleDateString('ar-EG') : '—';
+    case 'date': return row.transactionDate ? new Date(row.transactionDate).toLocaleDateString('ar-EG-u-nu-latn') : '—';
     case 'importedAmount': return formatMoney(row.importedAmount);
     case 'currentAmount': return formatMoney(row.currentAmount);
     case 'unresolvedAmount': return formatMoney(row.unresolvedAmount);

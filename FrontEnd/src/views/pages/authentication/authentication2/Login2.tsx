@@ -171,13 +171,12 @@ export default function Login() {
       >
         <Grid
           container
-          spacing={{ xs: 4, md: 6 }}
+          spacing={{ xs: 3, md: 6 }}
           alignItems="center"
           justifyContent="space-between"
           sx={{
             width: '100%',
-            // Explicit LTR track order so Logo is visually on the LEFT and Login Form is on the RIGHT
-            direction: 'ltr'
+            flexDirection: { xs: 'row', md: isAr ? 'row-reverse' : 'row' }
           }}
         >
           {/* LEFT COLUMN: Enlarged Company Logo occupying the previous card area */}
@@ -270,8 +269,7 @@ export default function Login() {
             sx={{
               display: 'flex',
               flexDirection: 'column',
-              alignItems: { xs: 'center', md: 'flex-end' },
-              direction: isAr ? 'rtl' : 'ltr'
+              alignItems: { xs: 'center', md: 'flex-end' }
             }}
           >
             <AuthCardWrapper

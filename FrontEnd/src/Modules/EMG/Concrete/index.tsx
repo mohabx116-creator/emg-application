@@ -338,7 +338,7 @@ export default function EmgConcrete() {
               ) : (
                 paginated.map((record) => (
                   <TableRow key={record.id} hover>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.pourDate).toLocaleDateString('ar-EG')}</TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.pourDate).toLocaleDateString('ar-EG-u-nu-latn')}</TableCell>
                     <TableCell sx={{ maxWidth: 280 }}>
                       <Typography variant="body2" fontWeight={700}>{record.description}</Typography>
                       <Typography variant="caption" color="text.secondary">{record.elementType || '—'}</Typography>

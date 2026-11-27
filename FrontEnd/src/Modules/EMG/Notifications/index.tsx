@@ -180,7 +180,7 @@ export default function EmgNotifications() {
                             {item.message}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                            {new Date(item.createdAtUtc).toLocaleString('ar-EG')}
+                            {new Date(item.createdAtUtc).toLocaleString('ar-EG-u-nu-latn')}
                           </Typography>
                         </Box>
                       </Stack>

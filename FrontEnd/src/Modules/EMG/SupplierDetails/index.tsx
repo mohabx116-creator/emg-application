@@ -45,7 +45,7 @@ import {
 } from 'api/emg';
 import useAuth from 'hooks/useAuth';
 
-const money = new Intl.NumberFormat('ar-EG', { maximumFractionDigits: 2 });
+const money = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 const fmt = (v: number) => `${money.format(v || 0)} ج.م`;
 const today = new Date().toISOString().slice(0, 10);
 
@@ -322,7 +322,7 @@ export default function SupplierDetails() {
                           {item.projectName} · {item.quantity} {item.unit} · {item.supplyType}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {new Date(item.supplyDate).toLocaleDateString('ar-EG')}
+                          {new Date(item.supplyDate).toLocaleDateString('ar-EG-u-nu-latn')}
                           {item.invoiceNumber ? ` · فاتورة ${item.invoiceNumber}` : ''}
                         </Typography>
                       </Box>
@@ -371,7 +371,7 @@ export default function SupplierDetails() {
                       <Box>
                         <Typography fontWeight={700}>{item.projectName || 'دفعة عامة'}</Typography>
                         <Typography variant="body2" color="text.secondary">
-                          {item.paymentMethod} · {new Date(item.paymentDate).toLocaleDateString('ar-EG')} · {item.reference || 'بدون مرجع'}
+                          {item.paymentMethod} · {new Date(item.paymentDate).toLocaleDateString('ar-EG-u-nu-latn')} · {item.reference || 'بدون مرجع'}
                         </Typography>
                       </Box>
                       <Stack direction="row" spacing={1} alignItems="center">

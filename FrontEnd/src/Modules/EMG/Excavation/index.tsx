@@ -353,7 +353,7 @@ export default function EmgExcavation() {
               ) : (
                 paginated.map((record) => (
                   <TableRow key={record.id} hover>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.excavationDate).toLocaleDateString('ar-EG')}</TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(record.excavationDate).toLocaleDateString('ar-EG-u-nu-latn')}</TableCell>
                     <TableCell sx={{ maxWidth: 300 }}>
                       <Typography variant="body2" fontWeight={700}>{record.description}</Typography>
                       <Typography variant="caption" color="text.secondary">

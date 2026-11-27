@@ -97,20 +97,32 @@ export default function ProfileSection() {
   return (
     <>
       <Chip
-        slotProps={{ label: { sx: { lineHeight: 0 } } }}
-        sx={{ ml: 2, height: '48px', alignItems: 'center', borderRadius: '27px' }}
+        slotProps={{ label: { sx: { lineHeight: 0, px: { xs: 0.75, sm: 1.5 } } } }}
+        sx={{
+          ml: { xs: 0, sm: 0.75, md: 2 },
+          height: { xs: '38px', sm: '48px' },
+          alignItems: 'center',
+          borderRadius: '27px',
+          flexShrink: 0
+        }}
         icon={
           <Avatar
             src={User1}
             alt="user-images"
-            sx={{ typography: 'mediumAvatar', margin: '8px 0 8px 8px !important', cursor: 'pointer' }}
+            sx={{
+              typography: 'mediumAvatar',
+              width: { xs: 28, sm: 34 },
+              height: { xs: 28, sm: 34 },
+              margin: { xs: '4px 0 4px 4px !important', sm: '8px 0 8px 8px !important' },
+              cursor: 'pointer'
+            }}
             ref={anchorRef}
             aria-controls={open ? 'menu-list-grow' : undefined}
             aria-haspopup="true"
             color="inherit"
           />
         }
-        label={<IconSettings stroke={1.5} size="24px" />}
+        label={<IconSettings stroke={1.5} size="20px" />}
         ref={anchorRef}
         aria-controls={open ? 'menu-list-grow' : undefined}
         aria-haspopup="true"
