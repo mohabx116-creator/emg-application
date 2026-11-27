@@ -2,6 +2,12 @@ using ClosedXML.Excel;
 using EMG.Infrastructure.Db;
 using Microsoft.EntityFrameworkCore;
 
+if (args is ["--verify-primary-tables"])
+{
+    await PrimaryReportChecks.RunAsync();
+    return;
+}
+
 if (args is ["--historical-sections", var auditPath])
 {
     await HistoricalSectionChecks.RunAsync(auditPath);

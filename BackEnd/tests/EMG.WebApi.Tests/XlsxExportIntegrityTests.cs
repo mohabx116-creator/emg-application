@@ -191,6 +191,47 @@ public sealed class XlsxExportIntegrityTests
     }
 
     [Fact]
+    public void ExtendedPrimaryTablesKeepSignedRowsFormulasStylesAndFooter()
+    {
+        var movements = Enumerable.Range(1, 49).Select(i => Movement(i, "QA") with { Reference = $"Site!J{i}" }).ToArray();
+        var steel = Enumerable.Range(1, 48).Select(i => Item(i, "الحديد") with { TotalAmount = -i }).ToArray();
+        var report = CreateReport(movements: movements, steels: steel);
+        var bytes = XlsxBuilder.Build(report, null);
+        AssertOpenXmlValid(bytes);
+        using var archive = new ZipArchive(new MemoryStream(bytes));
+        XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        XDocument Read(string path) => XDocument.Load(archive.GetEntry(path)!.Open());
+        var site = Read("xl/worksheets/sheet4.xml").Descendants(ns + "c").ToDictionary(c => (string)c.Attribute("r")!);
+        Assert.Equal("Site!J49", site["K58"].Value);
+        Assert.Equal("I58*F58", site["J58"].Element(ns + "f")!.Value);
+        Assert.Equal((string?)site["J51"].Attribute("s"), (string?)site["J58"].Attribute("s"));
+        Assert.Equal("A9:K58", (string?)Read("xl/tables/table2.xml").Root!.Attribute("ref"));
+        var metal = Read("xl/worksheets/sheet2.xml");
+        Assert.Contains(metal.Descendants(ns + "mergeCell"), m => (string?)m.Attribute("ref") == "A55:B55");
+        Assert.Equal(-48m, (decimal)metal.Descendants(ns + "c").Single(c => (string?)c.Attribute("r") == "F54").Element(ns + "v")!);
+    }
+
+    [Fact]
+    public void AllocationFundedSchedulePrintsIndependentReceiptAndAllocationWithSourceDate()
+    {
+        var date = new DateTime(2026, 7, 30);
+        var source = new ProjectScheduleRow(date, "الموقع", 100000m, "EGP", "بيان", "Test!B4");
+        var data = CreateReport() with { RecognizedFunding = [source], Allocations = [source] };
+        var bytes = XlsxBuilder.Build(data, null);
+        AssertOpenXmlValid(bytes);
+        using var archive = new ZipArchive(new MemoryStream(bytes));
+        XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        var cells = XDocument.Load(archive.GetEntry("xl/worksheets/sheet5.xml")!.Open())
+            .Descendants(ns + "c").ToDictionary(c => (string)c.Attribute("r")!);
+        Assert.Equal(100000m, (decimal)cells["B4"].Element(ns + "v")!);
+        Assert.Equal(100000m, (decimal)cells["N4"].Element(ns + "v")!);
+        Assert.Equal(date.ToOADate(), (double)cells["O4"].Element(ns + "v")!);
+        Assert.Equal(date.ToOADate(), (double)cells["A4"].Element(ns + "v")!);
+        Assert.Contains("Test!B4", cells["P4"].Value);
+        Assert.Contains("Test!B4", cells["M4"].Value);
+    }
+
+    [Fact]
     public void SupplierWorkbookAmountsAreNumericAndInvoiceIdentifiersRemainText()
     {
         var date = new DateTime(2025, 1, 15);

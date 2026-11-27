@@ -168,7 +168,7 @@ public sealed class FinalAccountsService(EmgDbContext db) : IFinalAccountsServic
         };
     }
 
-    private static string FundingCategory(string label)
+    internal static string FundingCategory(string label)
     {
         var account = System.Text.RegularExpressions.Regex.Replace(label.Trim(), @"^(?:دفعات|دفات|دفعه)\s+(?:تحت\s+)?(?:ال)?حساب\s+", "");
         return account.StartsWith("لل", StringComparison.Ordinal) ? "ال" + account[2..] : account;

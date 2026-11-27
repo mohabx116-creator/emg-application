@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using EMG.Api.Modules.Advances.Services;
 using EMG.Api.Modules.FinalAccounts.Dtos;
 using EMG.Api.Modules.Reports.Dtos;
 using EMG.Infrastructure.Db;
@@ -74,13 +75,32 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
             .Select(item => new ProjectWorkRow(item.Id, item.WorkDate, item.Supplier == null ? string.Empty : item.Supplier.Name, item.AccountCategory, item.WorkType, item.Description, item.Unit, item.Quantity, item.UnitPrice, item.TotalAmount, item.AreaName ?? string.Empty, string.Empty, string.Empty, item.Status, item.Notes ?? string.Empty)).ToListAsync(cancellationToken);
         var recovered = await db.HistoricalWorkLines.AsNoTracking().Where(w => w.Batch.ProjectId == projectId)
             .OrderBy(w => w.Sheet).ThenBy(w => w.SourceRow).ThenBy(w => w.Cell).ToListAsync(cancellationToken);
-        foreach (var w in recovered.Where(w => w.OperationalId == null))
+        // The source row retains its original date, category and narrative even when linked
+        // to a conventional record. Replace that projection once, keeping ordinary new rows.
+        var linked = recovered.Where(w => w.OperationalId.HasValue)
+            .Select(w => (w.OperationalTable, Id: (long)w.OperationalId!.Value)).ToHashSet();
+        var posted = movements.Select(w => (Key: ("SiteMovement", w.Id), w.Amount))
+            .Concat(finishings.Select(w => (("FinishingRecord", w.Id), w.TotalAmount)))
+            .Concat(steels.Select(w => (("SteelRecord", w.Id), w.TotalAmount)))
+            .Concat(excavations.Select(w => (("ExcavationRecord", w.Id), w.TotalAmount)))
+            .Concat(concretes.Select(w => (("ConcreteRecord", w.Id), w.TotalAmount)))
+            .ToDictionary(row => row.Item1, row => row.Item2);
+        movements.RemoveAll(w => linked.Contains(("SiteMovement", w.Id)));
+        finishings.RemoveAll(w => linked.Contains(("FinishingRecord", w.Id)));
+        steels.RemoveAll(w => linked.Contains(("SteelRecord", w.Id)));
+        excavations.RemoveAll(w => linked.Contains(("ExcavationRecord", w.Id)));
+        concretes.RemoveAll(w => linked.Contains(("ConcreteRecord", w.Id)));
+        foreach (var w in recovered)
         {
+            var id = (long?)w.OperationalId ?? w.Id;
+            var amount = w.Amount;
+            if (w.OperationalId.HasValue && !posted.TryGetValue((w.OperationalTable!, id), out amount))
+                continue;
             var reference = $"{w.Sheet}!{w.Cell}";
             if (w.Family == "site")
             {
-                movements.Add(new(w.Id, w.WorkDate, "أعمال الموقع", w.Description, w.Party, w.Unit, w.Quantity,
-                    w.Rate, w.Amount, w.Category, "مرحّل", reference, w.Currency));
+                movements.Add(new(id, w.WorkDate, "أعمال الموقع", w.Description, w.Party, w.Unit, w.Quantity,
+                    w.Rate, amount, w.Category, "مرحّل", reference, w.Currency));
                 continue;
             }
             var list = w.Family switch
@@ -90,10 +110,29 @@ public sealed class ReportsService(EmgDbContext db, IFinalAccountsService finalA
                 "excavation" => excavations,
                 _ => finishings
             };
-            list.Add(new(w.Id, w.WorkDate, w.Party, w.Category, w.Description, w.Description, w.Unit,
-                w.Quantity, w.Rate, w.Amount, "", "", "", "مرحّل", reference, w.Family, w.Progress));
+            list.Add(new(id, w.WorkDate, w.Party, w.Category, w.Description, w.Description, w.Unit,
+                w.Quantity, w.Rate, amount, "", "", "", "مرحّل", reference, w.Family, w.Progress, w.Currency));
         }
+        var ledger = await new AdvancesService(db).GetLedgerAsync(projectId, userId, isAdmin, cancellationToken);
+        if (ledger is null) return null;
+        var recognized = ledger.FundingEntries.Select(entry => entry switch
+        {
+            { Advance: { } r } => new ProjectScheduleRow(r.PaymentDate, "دفعة عميل", r.Amount, r.Currency, r.Notes, r.Reference),
+            { Historical: { } h } => new ProjectScheduleRow(h.Date, h.Category, h.Amount, h.Currency, h.Description, $"{h.Sheet}!{h.Cell}"),
+            { Direct: { } d } => new ProjectScheduleRow(d.Date, d.Source, d.Amount, d.Currency, d.Party, d.Reference),
+            _ => throw new InvalidDataException("Missing recognized funding row.")
+        }).ToList();
+        var allocations = ledger.AllocationEntries.Select(entry => entry switch
+        {
+            { Allocation: { } a } => new ProjectScheduleRow(a.AllocationDate, a.AccountCategory, a.Amount, entry.Currency,
+                a.Notes, $"توزيع {a.Id} / دفعة {a.AdvancePaymentId}"),
+            { Historical: { } h } => new ProjectScheduleRow(h.Date, FinalAccountsService.FundingCategory(h.Category),
+                h.Amount, h.Currency, h.Description, $"{h.Sheet}!{h.Cell}"),
+            _ => throw new InvalidDataException("Missing recognized allocation row.")
+        }).ToList();
         return new ProjectReportSummary(finalAccount, movements, advances, supplies, payments, excavations, concretes, steels, finishings) {
+            RecognizedFunding = recognized,
+            Allocations = allocations,
             ContractorPayments = contractorPayments,
             HistoricalWorks = recovered.Select(w => new HistoricalWorkDetail(w.Sheet,w.Cell,w.Family,w.Category,w.Currency,w.Amount,w.WorkDate,
                 w.Description,w.Party,w.Unit,w.Quantity,w.Rate,w.Progress)).ToList(),

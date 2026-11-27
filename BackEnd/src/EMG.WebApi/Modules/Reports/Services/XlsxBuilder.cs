@@ -6,14 +6,24 @@ using EMG.Api.Modules.Reports.Dtos;
 
 namespace EMG.Api.Modules.Reports.Services;
 
-internal static class XlsxBuilder
+internal static partial class XlsxBuilder
 {
     private const int SiteTemplateRows = 42;
 
     public static byte[] Build(ProjectReportSummary report, OperationalAuditSummary? audit)
     {
         var templatePath = Path.Combine(AppContext.BaseDirectory, "Modules", "Reports", "Templates", "ProjectReportTemplate.xlsx");
-        if (File.Exists(templatePath)) return BuildFromTemplate(templatePath, report, audit);
+        if (File.Exists(templatePath))
+        {
+            var primary = report with
+            {
+                Excavations = report.Excavations.Where(r => r.Currency == "EGP").ToList(),
+                Steels = report.Steels.Where(r => r.Currency == "EGP").ToList(),
+                Concretes = report.Concretes.Where(r => r.Currency == "EGP").ToList(),
+                Finishings = report.Finishings.Where(r => r.Currency == "EGP").ToList()
+            };
+            return BuildFromTemplate(templatePath, primary, audit, report);
+        }
 
         var historical = HistoricalSheets(report);
         var sheetCount = 6 + historical.Count;
@@ -155,10 +165,25 @@ internal static class XlsxBuilder
         return Sheet(rows, numericColumns: new HashSet<int> { 6 });
     }
 
-    private static byte[] BuildFromTemplate(string templatePath, ProjectReportSummary report, OperationalAuditSummary? audit)
+    private static byte[] BuildFromTemplate(string templatePath, ProjectReportSummary report, OperationalAuditSummary? audit, ProjectReportSummary allCurrencies)
     {
-        var details = DetailSheets(report);
         using var source = ZipFile.OpenRead(templatePath);
+        var details = DetailSheets(report);
+        AddAdditionalPrimarySheets(source, report, details);
+        foreach (var group in allCurrencies.Movements.Where(r => r.Currency != "EGP" && r.Type != "وارد").GroupBy(r => r.Currency))
+            details.Add(($"الموقع {group.Key}", MovementsSheet(group.ToList())));
+        foreach (var group in allCurrencies.Excavations.Concat(allCurrencies.Steels).Concat(allCurrencies.Concretes)
+                     .Concat(allCurrencies.Finishings).Where(r => r.Currency != "EGP").GroupBy(r => r.Currency))
+            details.Add(($"أعمال {group.Key}", WorkSheet(group.ToList())));
+        var tableRows = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (number, end) in new[] { (1, 29), (4, 51), (7, 45), (8, 45), (9, 45), (10, 45), (11, 45) })
+        {
+            using var links = source.GetEntry($"xl/worksheets/_rels/sheet{number}.xml.rels")!.Open();
+            var table = XDocument.Load(links).Root!.Elements()
+                .Single(e => ((string?)e.Attribute("Type"))?.EndsWith("/table", StringComparison.Ordinal) == true);
+            tableRows["xl/tables/" + Path.GetFileName((string)table.Attribute("Target")!)] =
+                Math.Max(end, DetailStart(number) + DetailCount(report, number) - 1);
+        }
         using var output = new MemoryStream();
         using (var archive = new ZipArchive(output, ZipArchiveMode.Create, true))
         {
@@ -222,6 +247,17 @@ internal static class XlsxBuilder
                     using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false));
                     workbook.Save(writer, SaveOptions.DisableFormatting);
                 }
+                else if (tableRows.TryGetValue(entry.FullName, out var end))
+                {
+                    var table = XDocument.Load(input);
+                    foreach (var reference in table.Descendants().Attributes("ref"))
+                    {
+                        var range = reference.Value.Split(':');
+                        if (range.Length == 2)
+                            reference.Value = range[0] + ":" + Column(ColumnIndex(range[1]) - 1) + end;
+                    }
+                    table.Save(stream, SaveOptions.DisableFormatting);
+                }
                 else if (entry.FullName.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase) && entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
                 {
                     using var reader = new StreamReader(input, System.Text.Encoding.UTF8);
@@ -259,10 +295,11 @@ internal static class XlsxBuilder
             if (type is null || type == "n") cell.Element(ns + "v")?.Remove();
         }
 
-        if (number == 5) PopulateAdvancesTemplate(worksheet, report, ns);
+        var extra = ExpandDetails(worksheet, number, DetailCount(report, number), ns);
+        if (number == 5) PopulateAdvancesTemplate(worksheet, report, ns, extra);
         else if (number == 6) PopulateFinalAccountTemplate(worksheet, report.FinalAccount, ns);
         else if (number == 4) PopulateSiteTemplate(worksheet, report, ns);
-        else PopulateWorkTemplate(worksheet, number, report, ns);
+        else PopulateWorkTemplate(worksheet, number, report, ns, extra);
 
         // SetCell may create a missing address after the cells already present
         // in a template row. Excel requires cells in each row to be ordered by
@@ -270,9 +307,8 @@ internal static class XlsxBuilder
         NormalizeCellOrder(worksheet, ns);
     }
 
-    private static void PopulateAdvancesTemplate(XElement worksheet, ProjectReportSummary report, XNamespace ns)
+    private static void PopulateAdvancesTemplate(XElement worksheet, ProjectReportSummary report, XNamespace ns, int extra)
     {
-        var advances = report.Advances.Where(item => item.Currency == "EGP").ToList();
         var account = report.FinalAccount;
         SetText(worksheet, "A1", $"كشف حساب العميل بالدفعات الموزعه / النقديه / شيكات / تحويل -- بتاريخ : {DateTime.Now:yyyy/MM/dd}", ns);
         SetText(worksheet, "N1", $"الدفعات الرئسية : {account.PayerName}", ns);
@@ -280,21 +316,43 @@ internal static class XlsxBuilder
         var headers = new[] { "التاريخ", "دفعات تحت الحساب للموقع", "دفعات تحت الحساب للعرب", "دفعات تحت حساب المقاول", "دفعات تحت حساب المحطه", "دفعات حساب الحديد", "دفعات تحت حساب المباني", "دفعات تحت حساب المحاره", "دفعات تحت حساب العزل", "دفعات تحت حساب الكهرباء", "دفعات تحت حساب السباكه", "دفعات تحت حساب المكتب", "ملاحظات", "الدفعه", "تاريخ" };
         for (var i = 0; i < headers.Length; i++) SetText(worksheet, $"{Column(i)}3", headers[i], ns);
         var categories = new[] { "الموقع", "العرب", "المقاول", "المحطة", "الحديد", "المباني", "المحارة", "العزل", "الكهرباء", "السباكة", "المكتب" };
-        for (var row = 4; row <= 17; row++) ClearRow(worksheet, row, ns);
-        for (var i = 0; i < advances.Count && i < 14; i++)
+        var receipts = report.RecognizedFunding.Where(r => r.Currency == "EGP").ToArray();
+        var allocations = report.Allocations.Where(r => r.Currency == "EGP").ToArray();
+        if (report.RecognizedFunding.Count == 0 && report.HistoricalFunding.Count == 0 && report.Advances.Count > 0)
+            receipts = report.Advances.Where(r => r.Currency == "EGP").Select(r => new ProjectScheduleRow(
+                r.Date, "دفعة عميل", r.Amount, r.Currency, r.Narrative, r.Reference)).ToArray();
+        var extraCategories = allocations.Select(a => a.Category).Except(categories).Order(StringComparer.Ordinal).ToArray();
+        var categoryColumns = categories.Select((name, i) => (name, col: Column(i + 1)))
+            .Concat(extraCategories.Select((name, i) => (name, col: Column(16 + i)))).ToDictionary(c => c.name, c => c.col);
+        SetText(worksheet, "M3", "بيان التوزيع ومرجعه", ns);
+        SetText(worksheet, "N3", "تمويل العميل (EGP)", ns);
+        SetText(worksheet, "O3", "تاريخ التمويل", ns);
+        SetText(worksheet, "P3", "بيان التمويل ومرجعه", ns);
+        foreach (var category in extraCategories)
+            SetText(worksheet, categoryColumns[category] + "3", category, ns);
+        for (var row = 4; row <= 17 + extra; row++) ClearRow(worksheet, row, ns);
+        for (var i = 0; i < allocations.Length; i++)
         {
-            var item = advances[i];
+            var allocation = allocations[i];
             var row = i + 4;
-            if (item.Date.HasValue) SetNumber(worksheet, $"A{row}", ExcelDate(item.Date.Value), ns);
-            for (var c = 0; c < categories.Length; c++) SetNumber(worksheet, $"{Column(c + 1)}{row}", Value(item.AllocationsByCategory, categories[c]), ns);
-            SetText(worksheet, $"M{row}", item.PayerName, ns);
-            SetNumber(worksheet, $"N{row}", item.Amount, ns);
-            SetText(worksheet, $"O{row}", string.IsNullOrWhiteSpace(item.Narrative) ? item.Date?.ToString("yyyy-MM-dd") ?? string.Empty : item.Narrative, ns);
+            SetDate(worksheet, $"A{row}", allocation.Date, ns);
+            SetNumber(worksheet, categoryColumns[allocation.Category] + row, allocation.Amount, ns);
+            SetText(worksheet, $"M{row}", ScheduleDescription(allocation), ns);
         }
-        var totalRow = 19;
+        for (var i = 0; i < receipts.Length; i++)
+        {
+            var receipt = receipts[i];
+            var row = i + 4;
+            SetNumber(worksheet, $"N{row}", receipt.Amount, ns);
+            SetDate(worksheet, $"O{row}", receipt.Date, ns);
+            GetCells(worksheet, ns)[$"O{row}"].SetAttributeValue("s", (string?)GetCells(worksheet, ns)[$"A{row}"].Attribute("s"));
+            SetText(worksheet, $"P{row}", ScheduleDescription(receipt), ns);
+        }
+        var totalRow = 19 + extra;
         SetText(worksheet, $"A{totalRow}", "اجمالي دفعات", ns);
-        for (var c = 0; c < categories.Length; c++) SetNumber(worksheet, $"{Column(c + 1)}{totalRow}", Value(account.IncomingByCategory, categories[c]), ns);
-        SetNumber(worksheet, $"M{totalRow}", account.IncomingByCategory.Values.Sum(), ns);
+        foreach (var (category, column) in categoryColumns)
+            SetFormula(worksheet, column + totalRow, $"SUM({column}4:{column}{totalRow - 2})", Value(account.IncomingByCategory, category), ns);
+        SetFormula(worksheet, $"M{totalRow}", $"SUM({string.Join(",", categoryColumns.Values.Select(c => c + totalRow))})", account.IncomingByCategory.Values.Sum(), ns);
         ClearCell(worksheet, $"N{totalRow}", ns); ClearCell(worksheet, $"O{totalRow}", ns);
 
         var workCategories = new[] { "الموقع", "العرب", "المقاول", "المحطة", "الحديد", "المباني", "المحارة", "العزل", "الكهرباء", "السباكة" };
@@ -303,34 +361,34 @@ internal static class XlsxBuilder
             var category = workCategories[c];
             var work = Value(account.OutgoingByCategory, category);
             var paid = Value(account.IncomingByCategory, category);
-            SetText(worksheet, $"{Column(c + 1)}20", $"ح/ {category}", ns);
-            SetNumber(worksheet, $"{Column(c + 1)}21", work, ns);
-            SetNumber(worksheet, $"{Column(c + 1)}22", work - paid, ns);
+            SetText(worksheet, $"{Column(c + 1)}{20 + extra}", $"ح/ {category}", ns);
+            SetNumber(worksheet, $"{Column(c + 1)}{21 + extra}", work, ns);
+            SetNumber(worksheet, $"{Column(c + 1)}{22 + extra}", work - paid, ns);
         }
         var workTotal = account.TotalOutgoing;
-        SetText(worksheet, "L20", "اجمالي الاعمال", ns);
-        SetNumber(worksheet, "L21", workTotal, ns);
-        ClearCell(worksheet, "L22", ns);
-        ClearCell(worksheet, "M20", ns);
-        ClearCell(worksheet, "M21", ns);
-        SetNumber(worksheet, "N22", account.TotalIncoming, ns);
-        SetText(worksheet, "O21", "دفعات غير موزعة", ns);
-        SetNumber(worksheet, "O22", account.TotalIncoming - account.IncomingByCategory.Values.Sum(), ns);
+        SetText(worksheet, $"L{20 + extra}", "اجمالي الاعمال", ns);
+        SetNumber(worksheet, $"L{21 + extra}", workTotal, ns);
+        ClearCell(worksheet, $"L{22 + extra}", ns);
+        ClearCell(worksheet, $"M{20 + extra}", ns);
+        ClearCell(worksheet, $"M{21 + extra}", ns);
+        SetFormula(worksheet, $"N{22 + extra}", $"SUM(N4:N{totalRow - 2})", account.TotalIncoming, ns);
+        SetText(worksheet, $"O{21 + extra}", "دفعات غير موزعة", ns);
+        SetNumber(worksheet, $"O{22 + extra}", account.TotalIncoming - account.IncomingByCategory.Values.Sum(), ns);
         var officeAllocated = Value(account.IncomingByCategory, "المكتب");
-        SetNumber(worksheet, "G24", workTotal - (account.IncomingByCategory.Values.Sum() - officeAllocated), ns);
-        SetNumber(worksheet, "L24", account.TotalIncoming - workTotal, ns);
+        SetNumber(worksheet, $"G{24 + extra}", workTotal - (account.IncomingByCategory.Values.Sum() - officeAllocated), ns);
+        SetNumber(worksheet, $"L{24 + extra}", account.TotalIncoming - workTotal, ns);
         if (account.HistoricalFundingUnknown)
-            foreach (var address in new[] { "N22", "O22", "L24" }) ClearCell(worksheet, address, ns);
+            foreach (var address in new[] { $"N{22 + extra}", $"O{22 + extra}", $"L{24 + extra}" }) ClearCell(worksheet, address, ns);
         foreach (var section in account.Sections.Where(s => s.Currency == "EGP" && s.FundingUnknown))
         {
             var c = Array.IndexOf(categories,section.Category);
             if (c >= 0)
             {
-                ClearCell(worksheet, $"{Column(c + 1)}19", ns);
-                ClearCell(worksheet, $"{Column(c + 1)}22", ns);
+                ClearCell(worksheet, $"{Column(c + 1)}{19 + extra}", ns);
+                ClearCell(worksheet, $"{Column(c + 1)}{22 + extra}", ns);
             }
-            ClearCell(worksheet, "M19", ns);
-            ClearCell(worksheet, "G24", ns);
+            ClearCell(worksheet, $"M{19 + extra}", ns);
+            ClearCell(worksheet, $"G{24 + extra}", ns);
         }
     }
 
@@ -373,20 +431,21 @@ internal static class XlsxBuilder
 
     private static void PopulateSiteTemplate(XElement worksheet, ProjectReportSummary report, XNamespace ns)
     {
-        var movements = report.Movements;
+        var movements = report.Movements.Where(m => m.Type != "وارد" && m.Currency == "EGP").ToList();
+        var capacity = Math.Max(SiteTemplateRows, movements.Count);
         var account = report.FinalAccount;
         SetText(worksheet, "C2", "خاص باعمال الموقع", ns);
         SetText(worksheet, "A5", $"اسم العميل: {account.ClientName}", ns);
         SetText(worksheet, "E6", $"رقم قطعه :{account.ProjectCode}", ns);
         // Keep the template's shared-string headers. Inline text without
         // xml:space="preserve" can lose the trailing space in a table heading.
-        for (var row = 10; row <= 51; row++) ClearRow(worksheet, row, ns, preserveFormulaColumns: true);
-        for (var i = 0; i < SiteTemplateRows; i++)
+        for (var row = 10; row < 10 + capacity; row++) ClearRow(worksheet, row, ns, preserveFormulaColumns: true);
+        for (var i = 0; i < capacity; i++)
         {
             var row = i + 10;
             SetNumber(worksheet, $"G{row}", 0m, ns);
         }
-        for (var i = 0; i < movements.Count && i < SiteTemplateRows; i++)
+        for (var i = 0; i < movements.Count; i++)
         {
             var row = i + 10;
             var item = movements[i];
@@ -399,7 +458,7 @@ internal static class XlsxBuilder
             SetNumber(worksheet, $"H{row}", item.Quantity ?? 0m, ns);
             SetText(worksheet, $"K{row}", item.Reference, ns);
         }
-        for (var i = 0; i < SiteTemplateRows; i++)
+        for (var i = 0; i < capacity; i++)
         {
             var row = i + 10;
             var quantity = i < movements.Count ? movements[i].Quantity ?? 0m : 0m;
@@ -408,20 +467,20 @@ internal static class XlsxBuilder
             SetFormulaCache(worksheet, $"I{row}", quantity, ns);
             // Amount-only expenses and historically documented overrides
             // have an authoritative posted amount that Excel must retain.
-            if (i < movements.Count && decimal.Round(quantity * price, 2) != movements[i].Amount)
+            if (i < movements.Count && quantity * price != movements[i].Amount)
                 SetNumber(worksheet, $"J{row}", movements[i].Amount, ns);
             else
                 SetFormulaCache(worksheet, $"J{row}", quantity * price, ns);
         }
         SetNumber(worksheet, "K5", Value(account.OutgoingByCategory, "المقاول"), ns);
         SetNumber(worksheet, "K6", Value(account.OutgoingByCategory, "المحطة"), ns);
-        SetNumber(worksheet, "K7", Value(account.OutgoingByCategory, "الموقع"), ns);
+        SetFormula(worksheet, "K7", $"SUM(J10:J{9 + capacity})", movements.Sum(m => m.Amount), ns);
         SetNumber(worksheet, "K8", Value(account.OutgoingByCategory, "المقاول") + Value(account.OutgoingByCategory, "المحطة") + Value(account.OutgoingByCategory, "الموقع"), ns);
     }
 
-    private static void PopulateWorkTemplate(XElement worksheet, int number, ProjectReportSummary report, XNamespace ns)
+    private static void PopulateWorkTemplate(XElement worksheet, int number, ProjectReportSummary report, XNamespace ns, int extra)
     {
-        var title = number switch { 1 => "حساب العرب (الحفر)", 2 => "اعمال توريد الحديد", 3 => "اعمال الخرسانات", 7 => "كشف حساب مقاول المباني / باقي المصنعيات", 8 => "كشف حساب مقاول المحاره", 9 => "كشف حساب مقاول العزل", 10 => "كشف حساب مصنعية الكهرباء", 11 => "كشف حساب مصنعية السباكه", _ => "أعمال المشروع" };
+        var title = number switch { 1 => "حساب العرب (الحفر)", 2 => "اعمال توريد الحديد", 3 => "اعمال الخرسانات", 7 => "كشف حساب مقاول المباني", 8 => "كشف حساب مقاول المحاره", 9 => "كشف حساب مقاول العزل", 10 => "كشف حساب مصنعية الكهرباء", 11 => "كشف حساب مصنعية السباكه", _ => "أعمال المشروع" };
         // The concrete-work template intentionally has no title in C2; its
         // original workbook starts with the owner/client metadata block.
         if (number == 2) SetText(worksheet, "A2", title, ns);
@@ -448,20 +507,13 @@ internal static class XlsxBuilder
             SetText(worksheet, "E6", $"رقم قطعه :{report.FinalAccount.ProjectCode}", ns);
         }
         if (number == 1) PopulateExcavationTemplate(worksheet, report.Excavations, report, ns);
-        else if (number == 2) PopulateSteelTemplate(worksheet, report.Steels, report, ns);
-        else if (number == 3) PopulateConcreteTemplate(worksheet, report.Concretes, report, ns);
+        else if (number == 2) PopulateSteelTemplate(worksheet, report.Steels, report, ns, extra);
+        else if (number == 3) PopulateConcreteTemplate(worksheet, report.Concretes, report, ns, extra);
         else
         {
-            var finishings = report.Finishings.Where(item => number switch
-            {
-                7 => IsBuilding(item) || IsUnclassifiedFinishing(item),
-                8 => IsPlaster(item),
-                9 => IsInsulation(item),
-                10 => IsElectrical(item),
-                11 => IsPlumbing(item),
-                _ => true
-            }).ToList();
-            PopulateFinishingTemplate(worksheet, finishings, report, number, ns);
+            var category = FinishingCategories[number - 7];
+            var finishings = report.Finishings.Where(item => FinishingCategory(item) == category).ToList();
+            PopulateFinishingTemplate(worksheet, finishings, report, category, ns);
         }
     }
 
@@ -469,14 +521,15 @@ internal static class XlsxBuilder
     {
         var headers = new[] { "م", "التاريخ", "البيان", "الوحد", "الكميه", "السعر", "الاجمالي", "الدفعات" };
         for (var i = 0; i < headers.Length; i++) SetText(worksheet, $"{Column(i + 3)}8", headers[i], ns);
-        for (var row = 9; row <= 45; row++) ClearRow(worksheet, row, ns, preserveFormulaColumns: true);
-        for (var i = 0; i < items.Count && i < 37; i++)
+        var capacity = Math.Max(21, items.Count);
+        for (var row = 9; row < 9 + capacity; row++) ClearRow(worksheet, row, ns, preserveFormulaColumns: true);
+        for (var i = 0; i < items.Count; i++)
         {
             var item = items[i]; var row = i + 9;
-            SetDate(worksheet, $"E{row}", item.Date, ns); SetText(worksheet, $"F{row}", item.Description, ns);
+            SetDate(worksheet, $"E{row}", item.Date, ns); SetText(worksheet, $"F{row}", Combine(item.Description, item.Reference), ns);
             SetText(worksheet, $"G{row}", item.Unit, ns); SetNumber(worksheet, $"H{row}", item.Quantity ?? 0m, ns); SetNumber(worksheet, $"I{row}", item.UnitPrice ?? 0m, ns); SetText(worksheet, $"K{row}", item.Extra1 + " " + item.Extra2, ns);
         }
-        for (var i = 0; i < 37; i++)
+        for (var i = 0; i < capacity; i++)
         {
             var row = i + 9;
             SetFormulaCache(worksheet, $"D{row}", i + 1, ns);
@@ -487,38 +540,38 @@ internal static class XlsxBuilder
         var total = items.Sum(item => item.TotalAmount);
         var paid = Value(report.FinalAccount.IncomingByCategory, "العرب");
         SetNumber(worksheet, "J5", total - paid, ns);
-        SetNumber(worksheet, "J7", total, ns);
+        SetFormula(worksheet, "J7", $"SUM(J9:J{8 + capacity})", total, ns);
         SetNumber(worksheet, "K7", paid, ns);
     }
 
-    private static void PopulateSteelTemplate(XElement worksheet, IReadOnlyList<ProjectWorkRow> items, ProjectReportSummary report, XNamespace ns)
+    private static void PopulateSteelTemplate(XElement worksheet, IReadOnlyList<ProjectWorkRow> items, ProjectReportSummary report, XNamespace ns, int extra)
     {
         var headers = new[] { "م", "التاريخ", "الوزن بالطن", "المقاس(مم)", "السعر", "التكلفه", "ملاحظات", "الدفعات" };
         for (var i = 0; i < headers.Length; i++) SetText(worksheet, $"{Column(i)}6", headers[i], ns);
         // Do not clear or write through the reserved summary rows.
-        for (var row = 7; row <= 51; row++) ClearRow(worksheet, row, ns);
-        for (var i = 0; i < 45; i++)
+        for (var row = 7; row <= 51 + extra; row++) ClearRow(worksheet, row, ns);
+        for (var i = 0; i < 45 + extra; i++)
         {
             var row = i + 7;
             SetNumber(worksheet, $"A{row}", i + 1, ns);
             SetNumber(worksheet, $"F{row}", 0m, ns);
         }
-        for (var i = 0; i < items.Count && i < 45; i++)
+        for (var i = 0; i < items.Count; i++)
         {
             var item = items[i]; var row = i + 7;
             SetNumber(worksheet, $"A{row}", i + 1, ns); SetDate(worksheet, $"B{row}", item.Date, ns); SetNumber(worksheet, $"C{row}", item.Quantity ?? 0m, ns);
-            SetText(worksheet, $"D{row}", item.Extra1, ns); SetNumber(worksheet, $"E{row}", item.UnitPrice ?? 0m, ns); SetNumber(worksheet, $"F{row}", item.TotalAmount, ns); SetText(worksheet, $"G{row}", string.IsNullOrWhiteSpace(item.SupplierName) ? item.Item : $"{item.SupplierName} — {item.Item}", ns); SetText(worksheet, $"H{row}", item.Extra2 + " " + item.Extra3, ns);
+            SetText(worksheet, $"D{row}", item.Extra1, ns); SetNumber(worksheet, $"E{row}", item.UnitPrice ?? 0m, ns); SetNumber(worksheet, $"F{row}", item.TotalAmount, ns); SetText(worksheet, $"G{row}", Combine(item.SupplierName, item.Description, item.Reference), ns); SetText(worksheet, $"H{row}", item.Extra2 + " " + item.Extra3, ns);
         }
         var total = items.Sum(item => item.TotalAmount);
         var paid = Value(report.FinalAccount.IncomingByCategory, "الحديد");
         ClearCell(worksheet, "F5", ns);
-        SetNumber(worksheet, "C52", items.Sum(item => item.Quantity ?? 0m), ns);
-        SetNumber(worksheet, "F52", total, ns);
-        SetNumber(worksheet, "H52", paid, ns);
-        SetNumber(worksheet, "E54", total - paid, ns);
+        SetNumber(worksheet, $"C{52 + extra}", items.Sum(item => item.Quantity ?? 0m), ns);
+        SetFormula(worksheet, $"F{52 + extra}", $"SUM(F7:F{51 + extra})", total, ns);
+        SetNumber(worksheet, $"H{52 + extra}", paid, ns);
+        SetNumber(worksheet, $"E{54 + extra}", total - paid, ns);
     }
 
-    private static void PopulateConcreteTemplate(XElement worksheet, IReadOnlyList<ProjectWorkRow> items, ProjectReportSummary report, XNamespace ns)
+    private static void PopulateConcreteTemplate(XElement worksheet, IReadOnlyList<ProjectWorkRow> items, ProjectReportSummary report, XNamespace ns, int extra)
     {
         // The concrete header is a merged layout. Write only to each merge's
         // top-left cell; writing to A8/B8/C8/J8 corrupts merged-cell content.
@@ -534,16 +587,16 @@ internal static class XlsxBuilder
         SetText(worksheet, "M7", "م", ns); SetText(worksheet, "N7", "بيان بالاعمال", ns); SetText(worksheet, "O7", "الوحده", ns); SetText(worksheet, "P7", "الكميه", ns); SetText(worksheet, "S7", "الفئه", ns); SetText(worksheet, "T7", "النسبه", ns); SetText(worksheet, "U7", "الاجمالي", ns); SetText(worksheet, "V7", "دفعات", ns); SetText(worksheet, "W7", "البيان", ns);
         // Rows 7-9 are merged headers and rows 30-31 are merged summaries.
         // Never clear or write detail values into either reserved region.
-        for (var row = 10; row <= 29; row++) ClearRow(worksheet, row, ns);
-        for (var i = 0; i < 20; i++)
+        for (var row = 10; row <= 29 + extra; row++) ClearRow(worksheet, row, ns);
+        for (var i = 0; i < 20 + extra; i++)
         {
             var row = i + 10;
             SetNumber(worksheet, $"A{row}", i + 1, ns);
             SetNumber(worksheet, $"H{row}", 0m, ns);
             SetNumber(worksheet, $"U{row}", 0m, ns);
         }
-        var station = items.Where(item => item.Family == "concrete" || item.Family == "" && item.Category == "المحطة").Take(20).ToList();
-        var workmanship = items.Where(item => item.Family == "workmanship" || item.Family == "" && item.Category != "المحطة").Take(20).ToList();
+        var station = items.Where(IsStation).ToList();
+        var workmanship = items.Where(item => !IsStation(item)).ToList();
         for (var i = 0; i < station.Count; i++)
         {
             var item = station[i];
@@ -553,7 +606,7 @@ internal static class XlsxBuilder
             if (item.Quantity is decimal qty) SetNumber(worksheet, $"D{row}", qty, ns);
             if (item.UnitPrice is decimal rate) SetNumber(worksheet, $"G{row}", rate, ns);
             SetNumber(worksheet, $"H{row}", item.TotalAmount, ns);
-            SetText(worksheet, $"I{row}", item.Description, ns);
+            SetText(worksheet, $"I{row}", Combine(item.Description, item.Reference), ns);
             SetText(worksheet, $"J{row}", item.SupplierName, ns);
         }
         for (var i = 0; i < workmanship.Count; i++)
@@ -567,32 +620,33 @@ internal static class XlsxBuilder
             if (item.UnitPrice is decimal rate) SetNumber(worksheet, $"S{row}", rate, ns);
             if (item.Progress is decimal progress) SetNumber(worksheet, $"T{row}", progress, ns);
             SetNumber(worksheet, $"U{row}", item.TotalAmount, ns);
-            SetText(worksheet, $"W{row}", item.Reference, ns);
+            SetText(worksheet, $"W{row}", string.Join(" — ", new[] { item.Description, item.Reference }.Where(v => v.Length > 0)), ns);
         }
-        var total = items.Where(item => item.Category != "المحطة").Sum(item => item.TotalAmount);
+        var total = workmanship.Sum(item => item.TotalAmount);
         var paid = Value(report.FinalAccount.IncomingByCategory, "المقاول");
-        SetNumber(worksheet, "G31", Value(report.FinalAccount.OutgoingByCategory, "المحطة"), ns);
-        SetNumber(worksheet, "U30", total, ns);
-        SetNumber(worksheet, "V31", paid, ns);
-        SetNumber(worksheet, "W31", total - paid, ns);
+        SetFormula(worksheet, $"G{31 + extra}", $"SUM(H10:H{29 + extra})", station.Sum(w => w.TotalAmount), ns);
+        SetFormula(worksheet, $"U{30 + extra}", $"SUM(U10:U{29 + extra})", total, ns);
+        SetNumber(worksheet, $"V{31 + extra}", paid, ns);
+        SetNumber(worksheet, $"W{31 + extra}", total - paid, ns);
     }
 
-    private static void PopulateFinishingTemplate(XElement worksheet, IReadOnlyList<ProjectWorkRow> items, ProjectReportSummary report, int sheetNumber, XNamespace ns)
+    private static void PopulateFinishingTemplate(XElement worksheet, IReadOnlyList<ProjectWorkRow> items, ProjectReportSummary report, string category, XNamespace ns)
     {
         // Preserve the template's shared-string headers and their exact
         // accountant-approved labels, including trailing spaces.
-        for (var row = 10; row <= 45; row++) ClearRow(worksheet, row, ns, preserveFormulaColumns: true);
-        for (var i = 0; i < 36; i++)
+        var capacity = Math.Max(36, items.Count);
+        for (var row = 10; row < 10 + capacity; row++) ClearRow(worksheet, row, ns, preserveFormulaColumns: true);
+        for (var i = 0; i < capacity; i++)
         {
             var row = i + 10;
             SetNumber(worksheet, $"G{row}", 0m, ns);
         }
-        for (var i = 0; i < items.Count && i < 36; i++)
+        for (var i = 0; i < items.Count; i++)
         {
             var item = items[i]; var row = i + 10;
-            SetDate(worksheet, $"B{row}", item.Date, ns); SetText(worksheet, $"C{row}", item.Item, ns); SetText(worksheet, $"D{row}", item.SupplierName, ns); SetText(worksheet, $"E{row}", item.Unit, ns); SetNumber(worksheet, $"F{row}", item.UnitPrice ?? 0m, ns); SetNumber(worksheet, $"G{row}", 0m, ns); SetNumber(worksheet, $"H{row}", item.Quantity ?? 0m, ns);
+            SetDate(worksheet, $"B{row}", item.Date, ns); SetText(worksheet, $"C{row}", string.IsNullOrEmpty(item.Description) ? item.Item : item.Description, ns); SetText(worksheet, $"K{row}", item.Reference, ns); SetText(worksheet, $"D{row}", item.SupplierName, ns); SetText(worksheet, $"E{row}", item.Unit, ns); SetNumber(worksheet, $"F{row}", item.UnitPrice ?? 0m, ns); SetNumber(worksheet, $"G{row}", 0m, ns); SetNumber(worksheet, $"H{row}", item.Quantity ?? 0m, ns);
         }
-        for (var i = 0; i < 36; i++)
+        for (var i = 0; i < capacity; i++)
         {
             var row = i + 10;
             var quantity = i < items.Count ? items[i].Quantity ?? 0m : 0m;
@@ -603,12 +657,9 @@ internal static class XlsxBuilder
                 SetNumber(worksheet, $"J{row}", items[i].TotalAmount, ns);
             else SetFormulaCache(worksheet, $"J{row}", quantity * price, ns);
         }
-        var category = sheetNumber switch { 7 => "المباني", 8 => "المحارة", 9 => "العزل", 10 => "الكهرباء", 11 => "السباكة", _ => string.Empty };
         var paid = Value(report.FinalAccount.IncomingByCategory, category);
-        if (sheetNumber == 7)
-            paid += Value(report.FinalAccount.IncomingByCategory, "باقي المصنعيات") + Value(report.FinalAccount.IncomingByCategory, "غير محدد");
         SetNumber(worksheet, "K6", paid, ns);
-        SetNumber(worksheet, "K7", items.Sum(item => item.TotalAmount), ns);
+        SetFormula(worksheet, "K7", $"SUM(J10:J{9 + capacity})", items.Sum(item => item.TotalAmount), ns);
         SetNumber(worksheet, "K8", items.Sum(item => item.TotalAmount) - paid, ns);
     }
 
@@ -617,7 +668,6 @@ internal static class XlsxBuilder
     private static bool IsInsulation(ProjectWorkRow item) => HasAny(item, "عزل", "عوازل");
     private static bool IsElectrical(ProjectWorkRow item) => HasAny(item, "كهرب", "كهرباء");
     private static bool IsPlumbing(ProjectWorkRow item) => HasAny(item, "سباك", "سباكة", "صرف", "تغذية");
-    private static bool IsUnclassifiedFinishing(ProjectWorkRow item) => !IsBuilding(item) && !IsPlaster(item) && !IsInsulation(item) && !IsElectrical(item) && !IsPlumbing(item);
 
     private static bool HasAny(ProjectWorkRow item, params string[] terms)
     {
@@ -626,12 +676,14 @@ internal static class XlsxBuilder
         return terms.Any(term => category.Contains(term, StringComparison.OrdinalIgnoreCase) || itemName.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static string Combine(params string[] fields) => string.Join(" — ", fields.Where(s => !string.IsNullOrWhiteSpace(s)));
+
     private static string Normalize(string? value)
         => string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private static void ClearRow(XElement worksheet, int row, XNamespace ns, bool preserveFormulaColumns = false)
     {
-        foreach (var cell in worksheet.Descendants(ns + "c").Where(cell => RegexRow(cell.Attribute("r")?.Value) == row))
+        foreach (var cell in worksheet.Element(ns + "sheetData")!.Elements(ns + "row").Where(r => (int)r.Attribute("r")! == row).Elements(ns + "c"))
         {
             var column = new string((cell.Attribute("r")?.Value ?? string.Empty).TakeWhile(char.IsLetter).ToArray());
             if (preserveFormulaColumns && (column is "A" or "D" or "I" or "J") && cell.Element(ns + "f") is not null)
@@ -647,14 +699,20 @@ internal static class XlsxBuilder
 
     private static void ClearCell(XElement worksheet, string address, XNamespace ns)
     {
-        var cell = worksheet.Descendants(ns + "c").FirstOrDefault(item => (string?)item.Attribute("r") == address);
+        var cell = GetCells(worksheet, ns).GetValueOrDefault(address);
         if (cell is null) return;
         cell.Attribute("t")?.Remove(); cell.Element(ns + "f")?.Remove(); cell.Element(ns + "v")?.Remove(); cell.Element(ns + "is")?.Remove();
     }
 
+    private static void SetFormula(XElement worksheet, string address, string formula, decimal value, XNamespace ns)
+    {
+        SetNumber(worksheet, address, value, ns);
+        GetCells(worksheet, ns)[address].AddFirst(new XElement(ns + "f", formula));
+    }
+
     private static void SetFormulaCache(XElement worksheet, string address, decimal value, XNamespace ns)
     {
-        var cell = worksheet.Descendants(ns + "c").FirstOrDefault(item => (string?)item.Attribute("r") == address);
+        var cell = GetCells(worksheet, ns).GetValueOrDefault(address);
         if (cell?.Element(ns + "f") is null) return;
         cell.Element(ns + "v")?.Remove();
         cell.Add(new XElement(ns + "v", value.ToString("0.########", CultureInfo.InvariantCulture)));
@@ -683,17 +741,27 @@ internal static class XlsxBuilder
         return result;
     }
 
+    private static Dictionary<string, XElement> GetCells(XElement worksheet, XNamespace ns)
+    {
+        var cells = worksheet.Annotation<Dictionary<string, XElement>>();
+        if (cells != null) return cells;
+        cells = worksheet.Descendants(ns + "c").ToDictionary(c => (string)c.Attribute("r")!);
+        worksheet.AddAnnotation(cells);
+        return cells;
+    }
+
     private static void SetText(XElement worksheet, string address, string? value, XNamespace ns) => SetCell(worksheet, address, value ?? string.Empty, false, ns);
     private static void SetNumber(XElement worksheet, string address, decimal value, XNamespace ns) => SetCell(worksheet, address, value.ToString("0.########", CultureInfo.InvariantCulture), true, ns);
     private static void SetCell(XElement worksheet, string address, string value, bool number, XNamespace ns)
     {
-        var cell = worksheet.Descendants(ns + "c").FirstOrDefault(item => (string?)item.Attribute("r") == address);
+        var cell = GetCells(worksheet, ns).GetValueOrDefault(address);
         if (cell is null)
         {
             var rowNumber = RegexRow(address);
             var row = worksheet.Descendants(ns + "row").FirstOrDefault(item => (string?)item.Attribute("r") == rowNumber.ToString(CultureInfo.InvariantCulture));
             if (row is null) { row = new XElement(ns + "row", new XAttribute("r", rowNumber)); worksheet.Element(ns + "sheetData")!.Add(row); }
             cell = new XElement(ns + "c", new XAttribute("r", address)); row.Add(cell);
+            GetCells(worksheet, ns)[address] = cell;
         }
         cell.Element(ns + "f")?.Remove(); cell.Element(ns + "v")?.Remove(); cell.Element(ns + "is")?.Remove(); cell.Attribute("t")?.Remove();
         if (number) cell.Add(new XElement(ns + "v", value));
@@ -759,14 +827,14 @@ internal static class XlsxBuilder
 
     private static XDocument MovementsSheet(IReadOnlyList<ProjectMovementRow> movements)
     {
-        var rows = new List<string[]> { new[] { "رقم البند", "التاريخ", "نوع الأعمال", "اسم المورد", "الوحدة", "السعر بالجنيه", "الكمية", "إجمالي تكلفة الأعمال", "تصنيف الحساب", "الحالة", "المرجع", "الوصف" } };
+        var rows = new List<string[]> { new[] { "رقم البند", "التاريخ", "نوع الأعمال", "اسم المورد", "الوحدة", "سعر الوحدة", "الكمية", "إجمالي تكلفة الأعمال", "تصنيف الحساب", "الحالة", "المرجع", "الوصف", "العملة" } };
         rows.AddRange(movements.Select((item, index) => new[]
         {
             (index + 1).ToString(CultureInfo.InvariantCulture), item.Date?.ToString("yyyy-MM-dd") ?? "",
             string.IsNullOrWhiteSpace(item.Type) ? item.Description : item.Type, item.SupplierName, item.Unit,
             item.UnitPrice?.ToString(CultureInfo.InvariantCulture) ?? "",
             item.Quantity?.ToString(CultureInfo.InvariantCulture) ?? "",
-            N(item.Amount), item.ExpenseCategory, item.Status, item.Reference, item.Description
+            N(item.Amount), item.ExpenseCategory, item.Status, item.Reference, item.Description, item.Currency
         }));
         return Sheet(rows, numericColumns: new HashSet<int> { 0, 5, 6, 7 });
     }

@@ -77,3 +77,7 @@ Both route tables and dashboard links retire the standalone review center. Proje
 ### Unified project advances
 
 The scoped ledger returns fundingEntries and allocationEntries. Recognized source components, direct owner settlements and ordinary advances retain their distinct identities. Allocations carry an actual receipt or transaction link only when recorded. Legacy list navigation resolves to project advances. Source references remain available independently. The primary report verifier read all project ledgers and matched the signed funding and allocation schedules. The working frontend type check passed.
+
+### Primary workbook schedules
+
+The approved template expands work, receipt and allocation rows with original references, dates, currencies and signed amounts. The independent primary table check reopened all 38 generated workbooks and matched their source work identities, signed values, receipt and allocation schedules, finishing controls and printed category totals. Twenty active XLSX integrity tests passed. One optional private legacy fixture was skipped. Disputed ownership remains excluded from recognized schedules.

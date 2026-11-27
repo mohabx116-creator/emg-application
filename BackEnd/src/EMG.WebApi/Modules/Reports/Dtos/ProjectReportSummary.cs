@@ -13,12 +13,15 @@ public sealed record ProjectReportSummary(
     IReadOnlyList<ProjectWorkRow> Steels,
     IReadOnlyList<ProjectWorkRow> Finishings)
 {
+    public IReadOnlyList<ProjectScheduleRow> RecognizedFunding { get; init; } = [];
+    public IReadOnlyList<ProjectScheduleRow> Allocations { get; init; } = [];
     public IReadOnlyList<ProjectFundingDetail> HistoricalFunding { get; init; } = [];
     public IReadOnlyList<HistoricalWorkDetail> HistoricalWorks { get; init; } = [];
     public IReadOnlyList<HistoricalSettlementDetail> HistoricalSettlements { get; init; } = [];
     public IReadOnlyList<ProjectContractorPaymentRow> ContractorPayments { get; init; } = [];
 }
 
+public sealed record ProjectScheduleRow(DateTime? Date, string Category, decimal Amount, string Currency, string Narrative, string Reference);
 public sealed record ProjectFundingDetail(string Sheet, string Cell, string Stream, string Basis, string Category, string Currency, decimal Amount, DateTime? Date, string Narrative);
 public sealed record HistoricalWorkDetail(string Sheet, string Cell, string Family, string Category, string Currency,
     decimal Amount, DateTime? Date, string Description, string Party, string Unit, decimal? Quantity, decimal? Rate, decimal? Progress);
@@ -30,4 +33,4 @@ public sealed record ProjectAdvanceRow(int Id, DateTime? Date, string ClientName
 public sealed record ProjectSupplierSupplyRow(int Id, DateTime Date, string SupplierName, string SupplyType, string ItemName, string Unit, decimal Quantity, decimal UnitPrice, decimal TotalAmount, string InvoiceNumber);
 public sealed record ProjectSupplierPaymentRow(int Id, DateTime Date, string SupplierName, decimal Amount, string Method, string Reference, string PaymentSource = "مكتب");
 public sealed record ProjectContractorPaymentRow(int Id, DateTime Date, string ContractorName, decimal Amount, string Currency, string Method, string PaymentSource, string Reference);
-public sealed record ProjectWorkRow(long Id, DateTime? Date, string SupplierName, string Category, string Item, string Description, string Unit, decimal? Quantity, decimal? UnitPrice, decimal TotalAmount, string Extra1, string Extra2, string Extra3, string Status, string Reference, string Family = "", decimal? Progress = null);
+public sealed record ProjectWorkRow(long Id, DateTime? Date, string SupplierName, string Category, string Item, string Description, string Unit, decimal? Quantity, decimal? UnitPrice, decimal TotalAmount, string Extra1, string Extra2, string Extra3, string Status, string Reference, string Family = "", decimal? Progress = null, string Currency = "EGP");
